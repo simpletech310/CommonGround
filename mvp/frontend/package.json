@@ -1,6 +1,7 @@
 {
-  "name": "frontend",
-  "version": "0.1.0",
+  "name": "commonground-frontend",
+  "version": "1.0.0",
+  "description": "CommonGround Co-Parenting Platform - Frontend Application (Next.js 14 + TypeScript)",
   "private": true,
   "scripts": {
     "dev": "next dev",

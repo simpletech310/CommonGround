@@ -67,7 +67,7 @@ function DashboardContent() {
               <div className="text-center py-8">
                 <p className="text-4xl font-bold text-blue-600">0</p>
                 <p className="text-sm text-gray-500 mt-2">Active cases</p>
-                <Button className="mt-4" size="sm">
+                <Button className="mt-4" size="sm" onClick={() => router.push('/cases/new')}>
                   Create new case
                 </Button>
               </div>
@@ -127,11 +127,14 @@ function DashboardContent() {
                 <div className="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-semibold">
                   1
                 </div>
-                <div>
+                <div className="flex-1">
                   <h4 className="font-medium text-gray-900">Create a case</h4>
                   <p className="text-sm text-gray-500">
                     Start by creating a new co-parenting case and inviting the other parent
                   </p>
+                  <Button variant="outline" size="sm" className="mt-2" onClick={() => router.push('/cases/new')}>
+                    Create case
+                  </Button>
                 </div>
               </div>
 
