@@ -45,7 +45,7 @@ class AuditLog(Base, UUIDMixin, TimestampMixin):
 
     # Details
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    extra_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # Changes (for update/delete actions)
     old_values: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

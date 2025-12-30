@@ -5,7 +5,7 @@ User and UserProfile models for authentication and user data.
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Enum, String, Text
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -28,6 +28,10 @@ class User(Base, UUIDMixin, TimestampMixin):
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     phone_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Name fields (duplicated for easy access, also in UserProfile)
+    first_name: Mapped[str] = mapped_column(String(100))
+    last_name: Mapped[str] = mapped_column(String(100))
 
     # Account status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -61,7 +65,7 @@ class UserProfile(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "user_profiles"
 
     # Link to User
-    user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
 
     # Personal information
     first_name: Mapped[str] = mapped_column(String(100))

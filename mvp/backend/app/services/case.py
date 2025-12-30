@@ -1,0 +1,434 @@
+"""
+Case management service for creating and managing co-parenting cases.
+"""
+
+from datetime import datetime, date
+from typing import List, Optional, Tuple
+
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models.case import Case, CaseParticipant
+from app.models.child import Child
+from app.models.user import User
+from app.schemas.case import CaseCreate, CaseUpdate
+
+
+class CaseService:
+    """Service for handling case operations."""
+
+    def __init__(self, db: AsyncSession):
+        """
+        Initialize case service.
+
+        Args:
+            db: Database session
+        """
+        self.db = db
+
+    async def create_case(
+        self,
+        case_data: CaseCreate,
+        creator: User
+    ) -> Tuple[Case, str]:
+        """
+        Create a new co-parenting case.
+
+        Creates a case with the creator as the first participant and sends
+        an invitation to the other parent.
+
+        Args:
+            case_data: Case creation data
+            creator: User creating the case
+
+        Returns:
+            Tuple of (Case, invitation_token)
+
+        Raises:
+            HTTPException: If case creation fails
+        """
+        try:
+            # Create the case
+            case = Case(
+                case_name=case_data.case_name,
+                state=case_data.state,
+                county=case_data.county,
+                status="pending",  # Pending until other parent joins
+            )
+            self.db.add(case)
+            await self.db.flush()
+
+            # Add creator as first participant
+            creator_participant = CaseParticipant(
+                case_id=case.id,
+                user_id=creator.id,
+                role="petitioner",
+                parent_type="parent_a",
+                is_active=True,
+                joined_at=datetime.utcnow(),
+            )
+            self.db.add(creator_participant)
+
+            # Second participant will be created when they accept the invitation
+
+            # Add children if provided
+            if case_data.children:
+                for child_data in case_data.children:
+                    # Parse date_of_birth if it's a string
+                    dob = child_data.get("date_of_birth")
+                    if isinstance(dob, str):
+                        dob = date.fromisoformat(dob)
+
+                    child = Child(
+                        case_id=case.id,
+                        first_name=child_data.get("first_name"),
+                        last_name=child_data.get("last_name"),
+                        middle_name=child_data.get("middle_name"),
+                        date_of_birth=dob,
+                        gender=child_data.get("gender"),
+                    )
+                    self.db.add(child)
+
+            await self.db.commit()
+            await self.db.refresh(case)
+
+            # Generate invitation token (simplified - in production use JWT or secure token)
+            invitation_token = f"{case.id}:{case_data.other_parent_email}"
+
+            # TODO: Send invitation email to other parent
+            # This would use an email service to send the invitation
+            # For now, we'll just return the token
+
+            return case, invitation_token
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create case: {str(e)}"
+            ) from e
+
+    async def accept_invitation(
+        self,
+        case_id: str,
+        user: User,
+        invitation_token: str
+    ) -> Case:
+        """
+        Accept a case invitation.
+
+        Updates the pending participant with the accepting user's information.
+
+        Args:
+            case_id: ID of the case
+            user: User accepting the invitation
+            invitation_token: Invitation token for verification
+
+        Returns:
+            Updated case
+
+        Raises:
+            HTTPException: If acceptance fails
+        """
+        try:
+            # Get the case
+            result = await self.db.execute(
+                select(Case)
+                .options(selectinload(Case.participants))
+                .where(Case.id == case_id)
+            )
+            case = result.scalar_one_or_none()
+
+            if not case:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Case not found"
+                )
+
+            # Check if user is already a participant
+            existing_participant = any(
+                p.user_id == user.id for p in case.participants
+            )
+            if existing_participant:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You are already a participant in this case"
+                )
+
+            # Create new participant for the accepting user
+            new_participant = CaseParticipant(
+                case_id=case.id,
+                user_id=user.id,
+                role="respondent",
+                parent_type="parent_b",
+                is_active=True,
+                invited_at=datetime.utcnow(),  # Time when invitation was sent (from token)
+                joined_at=datetime.utcnow(),
+            )
+            self.db.add(new_participant)
+
+            # Activate the case (now has both parents)
+            case.status = "active"
+
+            await self.db.commit()
+            await self.db.refresh(case)
+
+            return case
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to accept invitation: {str(e)}"
+            ) from e
+
+    async def get_user_cases(self, user: User) -> List[Case]:
+        """
+        Get all cases for a user.
+
+        Args:
+            user: User to get cases for
+
+        Returns:
+            List of cases
+        """
+        result = await self.db.execute(
+            select(Case)
+            .join(CaseParticipant)
+            .options(
+                selectinload(Case.participants),
+                selectinload(Case.children)
+            )
+            .where(CaseParticipant.user_id == user.id)
+            .where(CaseParticipant.is_active == True)
+        )
+        return list(result.scalars().all())
+
+    async def get_case(self, case_id: str, user: User) -> Case:
+        """
+        Get a specific case.
+
+        Args:
+            case_id: ID of the case
+            user: User requesting the case
+
+        Returns:
+            Case details
+
+        Raises:
+            HTTPException: If case not found or user doesn't have access
+        """
+        result = await self.db.execute(
+            select(Case)
+            .options(
+                selectinload(Case.participants),
+                selectinload(Case.children)
+            )
+            .where(Case.id == case_id)
+        )
+        case = result.scalar_one_or_none()
+
+        if not case:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Case not found"
+            )
+
+        # Verify user has access to this case
+        has_access = any(
+            p.user_id == user.id and p.is_active
+            for p in case.participants
+        )
+
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have access to this case"
+            )
+
+        return case
+
+    async def update_case(
+        self,
+        case_id: str,
+        update_data: CaseUpdate,
+        user: User
+    ) -> Case:
+        """
+        Update case details.
+
+        Args:
+            case_id: ID of the case
+            update_data: Update data
+            user: User making the update
+
+        Returns:
+            Updated case
+
+        Raises:
+            HTTPException: If update fails
+        """
+        # First verify access
+        case = await self.get_case(case_id, user)
+
+        # Update fields
+        if update_data.case_name is not None:
+            case.case_name = update_data.case_name
+        if update_data.county is not None:
+            case.county = update_data.county
+        if update_data.court is not None:
+            case.court = update_data.court
+
+        try:
+            await self.db.commit()
+            await self.db.refresh(case)
+            return case
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update case: {str(e)}"
+            ) from e
+
+    async def add_child(
+        self,
+        case_id: str,
+        child_data: dict,
+        user: User
+    ) -> Child:
+        """
+        Add a child to a case.
+
+        Args:
+            case_id: ID of the case
+            child_data: Child information
+            user: User adding the child
+
+        Returns:
+            Created child
+
+        Raises:
+            HTTPException: If creation fails
+        """
+        # Verify access to case
+        await self.get_case(case_id, user)
+
+        try:
+            # Parse date_of_birth if it's a string
+            dob = child_data.get("date_of_birth")
+            if isinstance(dob, str):
+                dob = date.fromisoformat(dob)
+
+            child = Child(
+                case_id=case_id,
+                first_name=child_data.get("first_name"),
+                last_name=child_data.get("last_name"),
+                middle_name=child_data.get("middle_name"),
+                date_of_birth=dob,
+                gender=child_data.get("gender"),
+                pronouns=child_data.get("pronouns"),
+            )
+            self.db.add(child)
+            await self.db.commit()
+            await self.db.refresh(child)
+            return child
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to add child: {str(e)}"
+            ) from e
+
+    async def update_child(
+        self,
+        child_id: str,
+        child_data: dict,
+        user: User
+    ) -> Child:
+        """
+        Update child information.
+
+        Args:
+            child_id: ID of the child
+            child_data: Updated child information
+            user: User making the update
+
+        Returns:
+            Updated child
+
+        Raises:
+            HTTPException: If update fails
+        """
+        # Get child and verify access
+        result = await self.db.execute(
+            select(Child).where(Child.id == child_id)
+        )
+        child = result.scalar_one_or_none()
+
+        if not child:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Child not found"
+            )
+
+        # Verify user has access to the case
+        await self.get_case(child.case_id, user)
+
+        # Update fields
+        for key, value in child_data.items():
+            if hasattr(child, key) and value is not None:
+                setattr(child, key, value)
+
+        try:
+            await self.db.commit()
+            await self.db.refresh(child)
+            return child
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update child: {str(e)}"
+            ) from e
+
+    async def delete_child(self, child_id: str, user: User) -> None:
+        """
+        Delete a child from a case.
+
+        Args:
+            child_id: ID of the child
+            user: User deleting the child
+
+        Raises:
+            HTTPException: If deletion fails
+        """
+        # Get child and verify access
+        result = await self.db.execute(
+            select(Child).where(Child.id == child_id)
+        )
+        child = result.scalar_one_or_none()
+
+        if not child:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Child not found"
+            )
+
+        # Verify user has access to the case
+        await self.get_case(child.case_id, user)
+
+        try:
+            await self.db.delete(child)
+            await self.db.commit()
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete child: {str(e)}"
+            ) from e

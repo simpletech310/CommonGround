@@ -1,0 +1,613 @@
+"""
+Agreement service for managing custody agreements and parenting plans.
+"""
+
+from datetime import datetime
+from typing import Optional, Dict, Any, List
+import hashlib
+import json
+
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+import io
+
+from app.models.agreement import Agreement, AgreementSection, AgreementVersion
+from app.models.case import Case, CaseParticipant
+from app.models.user import User
+from app.schemas.agreement import SECTION_TEMPLATES, AgreementSectionUpdate
+from app.services.case import CaseService
+
+
+class AgreementService:
+    """Service for handling agreement operations."""
+
+    def __init__(self, db: AsyncSession):
+        """
+        Initialize agreement service.
+
+        Args:
+            db: Database session
+        """
+        self.db = db
+        self.case_service = CaseService(db)
+
+    async def create_agreement(
+        self,
+        case_id: str,
+        user: User,
+        title: str = "Parenting Agreement"
+    ) -> Agreement:
+        """
+        Create a new agreement for a case.
+
+        Initializes agreement with 18 section templates.
+
+        Args:
+            case_id: ID of the case
+            user: User creating the agreement
+            title: Agreement title
+
+        Returns:
+            Created agreement
+
+        Raises:
+            HTTPException: If creation fails
+        """
+        # Verify user has access to case
+        case = await self.case_service.get_case(case_id, user)
+
+        # Check if case already has an active agreement
+        result = await self.db.execute(
+            select(Agreement)
+            .where(Agreement.case_id == case_id)
+            .where(Agreement.status.in_(["draft", "pending_approval", "active"]))
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Case already has an active agreement. Create a new version instead."
+            )
+
+        try:
+            # Create agreement
+            agreement = Agreement(
+                case_id=case_id,
+                title=title,
+                version=1,
+                status="draft",
+            )
+            self.db.add(agreement)
+            await self.db.flush()
+
+            # Create sections from templates
+            for template in SECTION_TEMPLATES:
+                section = AgreementSection(
+                    agreement_id=agreement.id,
+                    section_number=template["section_number"],
+                    section_title=template["section_title"],
+                    section_type=template["section_type"],
+                    display_order=template["display_order"],
+                    is_required=template["is_required"],
+                    content=template["template"],
+                    is_completed=False,
+                )
+                self.db.add(section)
+
+            await self.db.commit()
+            await self.db.refresh(agreement)
+
+            return agreement
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create agreement: {str(e)}"
+            ) from e
+
+    async def get_agreement(
+        self,
+        agreement_id: str,
+        user: User
+    ) -> Agreement:
+        """
+        Get agreement with sections.
+
+        Args:
+            agreement_id: ID of the agreement
+            user: User requesting the agreement
+
+        Returns:
+            Agreement with sections
+
+        Raises:
+            HTTPException: If not found or no access
+        """
+        result = await self.db.execute(
+            select(Agreement)
+            .options(selectinload(Agreement.sections))
+            .where(Agreement.id == agreement_id)
+        )
+        agreement = result.scalar_one_or_none()
+
+        if not agreement:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Agreement not found"
+            )
+
+        # Verify user has access to the case
+        await self.case_service.get_case(agreement.case_id, user)
+
+        return agreement
+
+    async def get_case_agreement(
+        self,
+        case_id: str,
+        user: User
+    ) -> Optional[Agreement]:
+        """
+        Get active agreement for a case.
+
+        Args:
+            case_id: ID of the case
+            user: User requesting the agreement
+
+        Returns:
+            Active agreement or None
+
+        Raises:
+            HTTPException: If no access to case
+        """
+        # Verify access
+        await self.case_service.get_case(case_id, user)
+
+        result = await self.db.execute(
+            select(Agreement)
+            .options(selectinload(Agreement.sections))
+            .where(Agreement.case_id == case_id)
+            .where(Agreement.status.in_(["draft", "pending_approval", "active"]))
+            .order_by(Agreement.version.desc())
+        )
+        return result.scalar_one_or_none()
+
+    async def update_section(
+        self,
+        section_id: str,
+        update_data: AgreementSectionUpdate,
+        user: User
+    ) -> AgreementSection:
+        """
+        Update an agreement section.
+
+        Args:
+            section_id: ID of the section
+            update_data: Update data
+            user: User making the update
+
+        Returns:
+            Updated section
+
+        Raises:
+            HTTPException: If update fails
+        """
+        # Get section
+        result = await self.db.execute(
+            select(AgreementSection).where(AgreementSection.id == section_id)
+        )
+        section = result.scalar_one_or_none()
+
+        if not section:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Section not found"
+            )
+
+        # Get agreement and verify access
+        agreement = await self.get_agreement(section.agreement_id, user)
+
+        # Can only update draft agreements
+        if agreement.status != "draft":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only update sections in draft agreements"
+            )
+
+        try:
+            # Update section
+            section.content = update_data.content
+            if update_data.structured_data:
+                section.structured_data = update_data.structured_data
+            section.is_completed = True
+
+            await self.db.commit()
+            await self.db.refresh(section)
+
+            return section
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update section: {str(e)}"
+            ) from e
+
+    async def compile_rules(self, agreement: Agreement) -> Dict[str, Any]:
+        """
+        Compile machine-readable rules from agreement sections.
+
+        Args:
+            agreement: Agreement to compile rules from
+
+        Returns:
+            Compiled rules dictionary
+        """
+        rules = {
+            "version": agreement.version,
+            "effective_date": agreement.effective_date.isoformat() if agreement.effective_date else None,
+            "sections": {},
+            "schedule": {},
+            "financial": {},
+            "decision_making": {}
+        }
+
+        # Load sections
+        result = await self.db.execute(
+            select(AgreementSection)
+            .where(AgreementSection.agreement_id == agreement.id)
+            .order_by(AgreementSection.display_order)
+        )
+        sections = result.scalars().all()
+
+        for section in sections:
+            section_data = {
+                "title": section.section_title,
+                "content": section.content,
+                "structured_data": section.structured_data or {}
+            }
+
+            rules["sections"][section.section_number] = section_data
+
+            # Categorize by type
+            if section.section_type == "schedule":
+                rules["schedule"][section.section_number] = section_data
+            elif section.section_type == "financial":
+                rules["financial"][section.section_number] = section_data
+            elif section.section_type == "decision_making":
+                rules["decision_making"][section.section_number] = section_data
+
+        return rules
+
+    async def generate_pdf(self, agreement: Agreement) -> bytes:
+        """
+        Generate PDF document from agreement.
+
+        Args:
+            agreement: Agreement to generate PDF for
+
+        Returns:
+            PDF bytes
+
+        Raises:
+            HTTPException: If generation fails
+        """
+        try:
+            # Create PDF in memory
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=letter,
+                                   topMargin=0.75*inch, bottomMargin=0.75*inch)
+
+            # Build story (content)
+            story = []
+            styles = getSampleStyleSheet()
+
+            # Title style
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=18,
+                textColor='black',
+                spaceAfter=30,
+                alignment=TA_CENTER
+            )
+
+            # Add title
+            story.append(Paragraph(agreement.title, title_style))
+            story.append(Spacer(1, 0.3*inch))
+
+            # Add metadata
+            meta_style = styles['Normal']
+            story.append(Paragraph(f"<b>Agreement ID:</b> {agreement.id}", meta_style))
+            story.append(Paragraph(f"<b>Version:</b> {agreement.version}", meta_style))
+            story.append(Paragraph(f"<b>Status:</b> {agreement.status.upper()}", meta_style))
+            story.append(Paragraph(f"<b>Created:</b> {agreement.created_at.strftime('%B %d, %Y')}", meta_style))
+
+            if agreement.effective_date:
+                story.append(Paragraph(
+                    f"<b>Effective Date:</b> {agreement.effective_date.strftime('%B %d, %Y')}",
+                    meta_style
+                ))
+
+            story.append(Spacer(1, 0.5*inch))
+
+            # Add sections
+            result = await self.db.execute(
+                select(AgreementSection)
+                .where(AgreementSection.agreement_id == agreement.id)
+                .order_by(AgreementSection.display_order)
+            )
+            sections = result.scalars().all()
+
+            section_style = ParagraphStyle(
+                'SectionTitle',
+                parent=styles['Heading2'],
+                fontSize=14,
+                textColor='black',
+                spaceAfter=12,
+                spaceBefore=20
+            )
+
+            content_style = ParagraphStyle(
+                'SectionContent',
+                parent=styles['Normal'],
+                fontSize=11,
+                alignment=TA_JUSTIFY,
+                spaceAfter=12
+            )
+
+            for section in sections:
+                # Section title
+                story.append(Paragraph(
+                    f"{section.section_number}. {section.section_title}",
+                    section_style
+                ))
+
+                # Section content
+                story.append(Paragraph(section.content, content_style))
+                story.append(Spacer(1, 0.2*inch))
+
+            # Add signature block
+            story.append(PageBreak())
+            story.append(Spacer(1, 0.5*inch))
+            story.append(Paragraph("<b>SIGNATURES</b>", title_style))
+            story.append(Spacer(1, 0.3*inch))
+
+            sig_style = styles['Normal']
+            story.append(Paragraph(
+                "By signing below, both parties acknowledge that they have read, understood, and agree to the terms of this Parenting Agreement.",
+                sig_style
+            ))
+            story.append(Spacer(1, 0.5*inch))
+
+            # Parent signatures
+            story.append(Paragraph("_" * 50, sig_style))
+            story.append(Paragraph("Parent A Signature", sig_style))
+            story.append(Paragraph(
+                f"Date: {agreement.petitioner_approved_at.strftime('%B %d, %Y') if agreement.petitioner_approved_at else '___________'}",
+                sig_style
+            ))
+            story.append(Spacer(1, 0.5*inch))
+
+            story.append(Paragraph("_" * 50, sig_style))
+            story.append(Paragraph("Parent B Signature", sig_style))
+            story.append(Paragraph(
+                f"Date: {agreement.respondent_approved_at.strftime('%B %d, %Y') if agreement.respondent_approved_at else '___________'}",
+                sig_style
+            ))
+
+            # Build PDF
+            doc.build(story)
+
+            # Get PDF bytes
+            pdf_bytes = buffer.getvalue()
+            buffer.close()
+
+            return pdf_bytes
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate PDF: {str(e)}"
+            ) from e
+
+    async def submit_for_approval(
+        self,
+        agreement_id: str,
+        user: User
+    ) -> Agreement:
+        """
+        Submit agreement for dual approval.
+
+        Args:
+            agreement_id: ID of the agreement
+            user: User submitting for approval
+
+        Returns:
+            Updated agreement
+
+        Raises:
+            HTTPException: If submission fails
+        """
+        agreement = await self.get_agreement(agreement_id, user)
+
+        if agreement.status != "draft":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only submit draft agreements for approval"
+            )
+
+        # Check all required sections are completed
+        result = await self.db.execute(
+            select(AgreementSection)
+            .where(AgreementSection.agreement_id == agreement_id)
+            .where(AgreementSection.is_required == True)
+        )
+        required_sections = result.scalars().all()
+
+        incomplete = [s for s in required_sections if not s.is_completed]
+        if incomplete:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Complete all required sections first. Missing: {', '.join(s.section_title for s in incomplete)}"
+            )
+
+        try:
+            # Compile rules
+            rules = await self.compile_rules(agreement)
+            agreement.rules = rules
+
+            # Generate PDF
+            pdf_bytes = await self.generate_pdf(agreement)
+            pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
+            agreement.pdf_hash = pdf_hash
+
+            # TODO: Upload PDF to storage and set pdf_url
+            # For now, we'll just store the hash
+            agreement.pdf_url = f"/agreements/{agreement_id}/document.pdf"
+
+            # Update status
+            agreement.status = "pending_approval"
+
+            await self.db.commit()
+            await self.db.refresh(agreement)
+
+            return agreement
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to submit for approval: {str(e)}"
+            ) from e
+
+    async def approve_agreement(
+        self,
+        agreement_id: str,
+        user: User,
+        notes: Optional[str] = None
+    ) -> Agreement:
+        """
+        Approve an agreement.
+
+        Requires both parents to approve before becoming active.
+
+        Args:
+            agreement_id: ID of the agreement
+            user: User approving the agreement
+            notes: Optional approval notes
+
+        Returns:
+            Updated agreement
+
+        Raises:
+            HTTPException: If approval fails
+        """
+        agreement = await self.get_agreement(agreement_id, user)
+
+        if agreement.status not in ["pending_approval", "active"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Agreement must be submitted for approval first"
+            )
+
+        # Determine user's role in the case
+        result = await self.db.execute(
+            select(CaseParticipant)
+            .where(CaseParticipant.case_id == agreement.case_id)
+            .where(CaseParticipant.user_id == user.id)
+        )
+        participant = result.scalar_one_or_none()
+
+        if not participant:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not a participant in this case"
+            )
+
+        try:
+            # Mark approval based on role
+            if participant.role == "petitioner":
+                if agreement.petitioner_approved:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="You have already approved this agreement"
+                    )
+                agreement.petitioner_approved = True
+                agreement.petitioner_approved_at = datetime.utcnow()
+
+            elif participant.role == "respondent":
+                if agreement.respondent_approved:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="You have already approved this agreement"
+                    )
+                agreement.respondent_approved = True
+                agreement.respondent_approved_at = datetime.utcnow()
+
+            # Check if both parents have approved
+            if agreement.petitioner_approved and agreement.respondent_approved:
+                agreement.status = "active"
+                agreement.effective_date = datetime.utcnow()
+
+                # Create version snapshot
+                version = AgreementVersion(
+                    agreement_id=agreement.id,
+                    version_number=agreement.version,
+                    created_by=user.id,
+                    data=agreement.rules or {},
+                    petitioner_approved=True,
+                    petitioner_approved_at=agreement.petitioner_approved_at,
+                    respondent_approved=True,
+                    respondent_approved_at=agreement.respondent_approved_at,
+                    pdf_url=agreement.pdf_url,
+                    pdf_hash=agreement.pdf_hash,
+                    version_notes=notes
+                )
+                self.db.add(version)
+
+            await self.db.commit()
+            await self.db.refresh(agreement)
+
+            return agreement
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to approve agreement: {str(e)}"
+            ) from e
+
+    async def get_completion_percentage(self, agreement: Agreement) -> float:
+        """
+        Calculate agreement completion percentage.
+
+        Args:
+            agreement: Agreement to calculate completion for
+
+        Returns:
+            Completion percentage (0-100)
+        """
+        result = await self.db.execute(
+            select(AgreementSection)
+            .where(AgreementSection.agreement_id == agreement.id)
+        )
+        sections = result.scalars().all()
+
+        if not sections:
+            return 0.0
+
+        completed = sum(1 for s in sections if s.is_completed)
+        return (completed / len(sections)) * 100
