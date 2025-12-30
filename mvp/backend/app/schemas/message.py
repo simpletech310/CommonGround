@@ -2,31 +2,82 @@
 
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from app.utils.sanitize import sanitize_text
 
 
 class MessageCreate(BaseModel):
     """Create a new message."""
 
-    case_id: str
-    recipient_id: str
-    content: str
-    thread_id: Optional[str] = None
-    message_type: str = "text"  # text, voice, request
+    case_id: str = Field(..., min_length=1, max_length=100)
+    recipient_id: str = Field(..., min_length=1, max_length=100)
+    content: str = Field(..., min_length=1, max_length=10000)
+    thread_id: Optional[str] = Field(None, max_length=100)
+    message_type: str = Field(default="text", max_length=50)
+
+    @field_validator('content')
+    @classmethod
+    def sanitize_content(cls, v: str) -> str:
+        """Sanitize message content for XSS protection."""
+        if not v or not v.strip():
+            raise ValueError('Content cannot be empty')
+        # Sanitize but preserve length for user feedback
+        sanitized = sanitize_text(v, max_length=10000)
+        if not sanitized:
+            raise ValueError('Content is empty after sanitization')
+        return sanitized
+
+    @field_validator('message_type')
+    @classmethod
+    def validate_message_type(cls, v: str) -> str:
+        """Validate message type is one of allowed values."""
+        allowed_types = ['text', 'voice', 'request', 'system', 'notification']
+        if v not in allowed_types:
+            raise ValueError(f'Invalid message type. Must be one of: {", ".join(allowed_types)}')
+        return v
 
 
 class MessageUpdate(BaseModel):
     """Update message (for editing sent messages)."""
 
-    content: str
+    content: str = Field(..., min_length=1, max_length=10000)
+
+    @field_validator('content')
+    @classmethod
+    def sanitize_content(cls, v: str) -> str:
+        """Sanitize message content for XSS protection."""
+        if not v or not v.strip():
+            raise ValueError('Content cannot be empty')
+        sanitized = sanitize_text(v, max_length=10000)
+        if not sanitized:
+            raise ValueError('Content is empty after sanitization')
+        return sanitized
 
 
 class InterventionAction(BaseModel):
     """User's response to ARIA intervention."""
 
-    action: str  # accepted, modified, rejected, cancelled
-    final_message: Optional[str] = None  # If modified
-    notes: Optional[str] = None
+    action: str = Field(..., max_length=50)
+    final_message: Optional[str] = Field(None, max_length=10000)
+    notes: Optional[str] = Field(None, max_length=1000)
+
+    @field_validator('action')
+    @classmethod
+    def validate_action(cls, v: str) -> str:
+        """Validate action is one of allowed values."""
+        allowed_actions = ['accepted', 'modified', 'rejected', 'cancelled']
+        if v not in allowed_actions:
+            raise ValueError(f'Invalid action. Must be one of: {", ".join(allowed_actions)}')
+        return v
+
+    @field_validator('final_message', 'notes')
+    @classmethod
+    def sanitize_text_fields(cls, v: Optional[str]) -> Optional[str]:
+        """Sanitize text fields for XSS protection."""
+        if v is None:
+            return None
+        sanitized = sanitize_text(v, max_length=10000)
+        return sanitized if sanitized else None
 
 
 class ARIAAnalysisResponse(BaseModel):
@@ -101,9 +152,33 @@ class MessageWithFlagResponse(BaseModel):
 class ThreadCreate(BaseModel):
     """Create a new message thread."""
 
-    case_id: str
-    subject: str
-    participants: List[str]  # List of user IDs
+    case_id: str = Field(..., min_length=1, max_length=100)
+    subject: str = Field(..., min_length=1, max_length=200)
+    participants: List[str] = Field(..., min_items=2, max_items=10)
+
+    @field_validator('subject')
+    @classmethod
+    def sanitize_subject(cls, v: str) -> str:
+        """Sanitize thread subject for XSS protection."""
+        if not v or not v.strip():
+            raise ValueError('Subject cannot be empty')
+        sanitized = sanitize_text(v, max_length=200)
+        if not sanitized:
+            raise ValueError('Subject is empty after sanitization')
+        return sanitized
+
+    @field_validator('participants')
+    @classmethod
+    def validate_participants(cls, v: List[str]) -> List[str]:
+        """Validate participants list."""
+        if len(v) < 2:
+            raise ValueError('Thread must have at least 2 participants')
+        if len(v) > 10:
+            raise ValueError('Thread cannot have more than 10 participants')
+        # Check for duplicates
+        if len(v) != len(set(v)):
+            raise ValueError('Duplicate participants not allowed')
+        return v
 
 
 class ThreadResponse(BaseModel):

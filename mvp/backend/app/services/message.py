@@ -15,6 +15,10 @@ from app.models.user import User
 from app.schemas.message import MessageCreate, InterventionAction
 from app.services.aria import ARIAService, ToxicityLevel
 from app.services.case import CaseService
+from app.services.email import EmailService
+from app.core.config import settings
+from app.core.websocket import manager
+import hashlib
 
 
 class MessageService:
@@ -30,6 +34,7 @@ class MessageService:
         self.db = db
         self.aria = ARIAService()
         self.case_service = CaseService(db)
+        self.email_service = EmailService()
 
     async def analyze_message(
         self,
@@ -177,6 +182,62 @@ class MessageService:
 
             await self.db.commit()
             await self.db.refresh(message)
+
+            # Send email notification to recipient
+            try:
+                if message_data.recipient_id:
+                    # Get recipient user info
+                    result = await self.db.execute(
+                        select(User).where(User.id == message_data.recipient_id)
+                    )
+                    recipient = result.scalar_one_or_none()
+
+                    # Get case info
+                    result = await self.db.execute(
+                        select(Case).where(Case.id == message_data.case_id)
+                    )
+                    case = result.scalar_one_or_none()
+
+                    if recipient and case:
+                        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+                        message_link = f"{frontend_url}/cases/{message_data.case_id}/messages"
+
+                        # Truncate message for preview
+                        message_preview = final_content[:100] if len(final_content) > 100 else final_content
+
+                        await self.email_service.send_message_notification(
+                            to_email=recipient.email,
+                            to_name=f"{recipient.first_name} {recipient.last_name}",
+                            sender_name=f"{sender.first_name} {sender.last_name}",
+                            case_name=case.case_name,
+                            message_preview=message_preview,
+                            message_link=message_link,
+                            was_flagged=analysis_result["is_flagged"]
+                        )
+            except Exception as email_error:
+                # Log email error but don't fail message send
+                print(f"Warning: Failed to send message notification email: {email_error}")
+
+            # Broadcast message via WebSocket to connected users
+            try:
+                await manager.broadcast_to_case(
+                    {
+                        "type": "message",
+                        "message_id": str(message.id),
+                        "case_id": str(message.case_id),
+                        "sender_id": str(sender.id),
+                        "sender_name": f"{sender.first_name} {sender.last_name}",
+                        "recipient_id": str(message.recipient_id) if message.recipient_id else None,
+                        "content": final_content,
+                        "message_type": message.message_type,
+                        "sent_at": message.sent_at.isoformat(),
+                        "was_flagged": analysis_result["is_flagged"]
+                    },
+                    str(message.case_id)
+                )
+            except Exception as ws_error:
+                # Log WebSocket error but don't fail message send
+                print(f"Warning: Failed to broadcast message via WebSocket: {ws_error}")
 
             return message
 

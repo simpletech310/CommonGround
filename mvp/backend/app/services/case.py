@@ -14,6 +14,8 @@ from app.models.case import Case, CaseParticipant
 from app.models.child import Child
 from app.models.user import User
 from app.schemas.case import CaseCreate, CaseUpdate
+from app.services.email import EmailService
+from app.core.config import settings
 
 
 class CaseService:
@@ -27,6 +29,7 @@ class CaseService:
             db: Database session
         """
         self.db = db
+        self.email_service = EmailService()
 
     async def create_case(
         self,
@@ -97,9 +100,30 @@ class CaseService:
             # Generate invitation token (simplified - in production use JWT or secure token)
             invitation_token = f"{case.id}:{case_data.other_parent_email}"
 
-            # TODO: Send invitation email to other parent
-            # This would use an email service to send the invitation
-            # For now, we'll just return the token
+            # Send invitation email to other parent
+            try:
+                # Get children names for the email
+                children_names = [
+                    child_data.get("first_name", "")
+                    for child_data in (case_data.children or [])
+                ]
+
+                # Build invitation link (frontend URL + token)
+                frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+                invitation_link = f"{frontend_url}/accept-invitation?token={invitation_token}"
+
+                # Send the email
+                await self.email_service.send_case_invitation(
+                    to_email=case_data.other_parent_email,
+                    to_name=case_data.other_parent_email.split('@')[0],  # Use email prefix as name
+                    inviter_name=f"{creator.first_name} {creator.last_name}",
+                    case_name=case_data.case_name,
+                    invitation_link=invitation_link,
+                    children_names=children_names
+                )
+            except Exception as email_error:
+                # Log email error but don't fail case creation
+                print(f"Warning: Failed to send invitation email: {email_error}")
 
             return case, invitation_token
 

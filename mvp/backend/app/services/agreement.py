@@ -23,6 +23,8 @@ from app.models.case import Case, CaseParticipant
 from app.models.user import User
 from app.schemas.agreement import SECTION_TEMPLATES, AgreementSectionUpdate
 from app.services.case import CaseService
+from app.services.email import EmailService
+from app.core.config import settings
 
 
 class AgreementService:
@@ -37,6 +39,7 @@ class AgreementService:
         """
         self.db = db
         self.case_service = CaseService(db)
+        self.email_service = EmailService()
 
     async def create_agreement(
         self,
@@ -479,6 +482,38 @@ class AgreementService:
 
             await self.db.commit()
             await self.db.refresh(agreement)
+
+            # Send email notification to other parent
+            try:
+                # Get case participants to find the other parent
+                result = await self.db.execute(
+                    select(CaseParticipant)
+                    .options(selectinload(CaseParticipant.user))
+                    .where(CaseParticipant.case_id == agreement.case_id)
+                    .where(CaseParticipant.is_active == True)
+                )
+                participants = result.scalars().all()
+
+                # Find the other parent (not the current user)
+                other_parent = next(
+                    (p for p in participants if p.user_id != user.id),
+                    None
+                )
+
+                if other_parent and other_parent.user:
+                    frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+                    approval_link = f"{frontend_url}/agreements/{agreement_id}/review"
+
+                    await self.email_service.send_agreement_approval_needed(
+                        to_email=other_parent.user.email,
+                        to_name=f"{other_parent.user.first_name} {other_parent.user.last_name}",
+                        case_name=agreement.case.case_name if agreement.case else "Your Case",
+                        agreement_title=agreement.title,
+                        approval_link=approval_link
+                    )
+            except Exception as email_error:
+                # Log email error but don't fail approval submission
+                print(f"Warning: Failed to send approval email: {email_error}")
 
             return agreement
 
