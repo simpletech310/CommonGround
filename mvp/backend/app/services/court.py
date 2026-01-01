@@ -1016,8 +1016,8 @@ class ARIACourtService:
         checkins = result.scalars().all()
 
         total = len(checkins)
-        on_time = sum(1 for c in checkins if c.was_on_time)
-        late = sum(1 for c in checkins if not c.was_on_time and c.actual_time)
+        on_time = sum(1 for c in checkins if c.is_on_time)
+        late = sum(1 for c in checkins if not c.is_on_time and c.actual_time)
         missed = sum(1 for c in checkins if not c.actual_time)
 
         response = f"In the last {total} exchanges: {on_time} on-time, {late} late, {missed} missed."
