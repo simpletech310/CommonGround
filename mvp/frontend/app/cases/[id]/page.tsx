@@ -29,6 +29,9 @@ function CaseDetailsContent() {
   const [isAccepting, setIsAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
 
+  // Builder choice modal
+  const [showBuilderChoice, setShowBuilderChoice] = useState(false);
+
   useEffect(() => {
     loadCase();
     loadAgreement();
@@ -68,20 +71,31 @@ function CaseDetailsContent() {
       // Agreement exists - navigate to it
       router.push(`/agreements/${agreement.id}`);
     } else {
-      // No agreement - create one first
-      try {
-        setIsCreatingAgreement(true);
-        const newAgreement = await agreementsAPI.create({
-          case_id: caseId,
-          title: `${caseData?.case_name} - Parenting Agreement`,
-          agreement_type: 'parenting_plan',
-        });
+      // No agreement - show choice modal
+      setShowBuilderChoice(true);
+    }
+  };
+
+  const createAgreementWithBuilder = async (useAria: boolean) => {
+    try {
+      setIsCreatingAgreement(true);
+      setShowBuilderChoice(false);
+      const newAgreement = await agreementsAPI.create({
+        case_id: caseId,
+        title: `${caseData?.case_name} - Parenting Agreement`,
+        agreement_type: 'parenting_plan',
+      });
+
+      // Navigate to chosen builder
+      if (useAria) {
+        router.push(`/agreements/${newAgreement.id}/aria`);
+      } else {
         router.push(`/agreements/${newAgreement.id}/builder`);
-      } catch (err: any) {
-        console.error('Failed to create agreement:', err);
-        setError(err.message || 'Failed to create agreement');
-        setIsCreatingAgreement(false);
       }
+    } catch (err: any) {
+      console.error('Failed to create agreement:', err);
+      setError(err.message || 'Failed to create agreement');
+      setIsCreatingAgreement(false);
     }
   };
 
@@ -458,6 +472,92 @@ function CaseDetailsContent() {
                     </p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Builder Choice Modal */}
+        {showBuilderChoice && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <Card className="max-w-2xl w-full">
+              <CardHeader>
+                <CardTitle>Choose How to Build Your Agreement</CardTitle>
+                <CardDescription>
+                  Pick the method that works best for you
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* ARIA Option */}
+                <button
+                  onClick={() => createAgreementWithBuilder(true)}
+                  disabled={isCreatingAgreement}
+                  className="w-full p-6 border-2 border-purple-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-all text-left"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
+                      A
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        Talk to ARIA (Recommended)
+                      </h3>
+                      <p className="text-gray-600 text-sm mb-3">
+                        Have a natural conversation about your custody arrangement. ARIA understands casual language and will guide you through everything.
+                      </p>
+                      <div className="text-sm text-gray-500">
+                        <p className="font-medium text-purple-700 mb-1">Best for:</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>People who prefer talking over forms</li>
+                          <li>Complex or unique arrangements</li>
+                          <li>Those who want conversational guidance</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Wizard Option */}
+                <button
+                  onClick={() => createAgreementWithBuilder(false)}
+                  disabled={isCreatingAgreement}
+                  className="w-full p-6 border-2 border-blue-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all text-left"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        Step-by-Step Wizard
+                      </h3>
+                      <p className="text-gray-600 text-sm mb-3">
+                        Fill out structured forms with clear sections. Good for straightforward arrangements.
+                      </p>
+                      <div className="text-sm text-gray-500">
+                        <p className="font-medium text-blue-700 mb-1">Best for:</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>People who prefer forms and structure</li>
+                          <li>Standard custody arrangements</li>
+                          <li>Those who like to see progress step-by-step</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Cancel */}
+                <div className="flex justify-end pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowBuilderChoice(false)}
+                    disabled={isCreatingAgreement}
+                  >
+                    Cancel
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>

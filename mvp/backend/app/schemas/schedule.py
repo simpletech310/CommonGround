@@ -1,65 +1,192 @@
 """Schedule schemas for request/response validation."""
 
-from datetime import datetime
-from typing import Optional, List
+from datetime import datetime, date
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
+
+# ========== MY TIME COLLECTION SCHEMAS ==========
+
+class MyTimeCollectionCreate(BaseModel):
+    """Create a new My Time collection."""
+
+    case_id: str
+    name: str = Field(..., min_length=1, max_length=100)
+    color: str = Field(default="#3B82F6", pattern=r"^#[0-9A-Fa-f]{6}$")
+    is_default: bool = False
+
+
+class MyTimeCollectionUpdate(BaseModel):
+    """Update a My Time collection."""
+
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    color: Optional[str] = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    is_default: Optional[bool] = None
+
+
+class MyTimeCollectionResponse(BaseModel):
+    """My Time collection response (privacy filtered)."""
+
+    id: str
+    case_id: str
+    owner_id: str
+    name: str  # Filtered for non-owners
+    color: str  # Filtered for non-owners
+    is_default: bool
+    is_active: bool
+    display_order: int
+    is_owner: bool  # Whether viewer owns this collection
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ========== TIME BLOCK SCHEMAS ==========
+
+class TimeBlockCreate(BaseModel):
+    """Create a new time block."""
+
+    collection_id: str
+    title: str = Field(..., min_length=1, max_length=200)
+    start_time: datetime
+    end_time: datetime
+    all_day: bool = False
+    is_recurring: bool = False
+    recurrence_pattern: Optional[str] = Field(None, pattern=r"^(daily|weekly)$")
+    recurrence_days: Optional[List[int]] = Field(None, description="0=Mon, 6=Sun")
+    recurrence_end_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class TimeBlockUpdate(BaseModel):
+    """Update a time block."""
+
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class TimeBlockResponse(BaseModel):
+    """Time block response."""
+
+    id: str
+    collection_id: str
+    title: str
+    start_time: datetime
+    end_time: datetime
+    all_day: bool
+    is_recurring: bool
+    recurrence_pattern: Optional[str]
+    recurrence_days: Optional[List[int]]
+    recurrence_end_date: Optional[date]
+    notes: Optional[str]
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ========== EVENT ATTENDANCE SCHEMAS ==========
+
+class EventAttendanceCreate(BaseModel):
+    """Create event attendance (invitation)."""
+
+    parent_id: str
+    invited_role: str = Field(default="optional", pattern=r"^(required|optional|not_invited)$")
+
+
+class EventAttendanceUpdate(BaseModel):
+    """Update RSVP status."""
+
+    rsvp_status: str = Field(..., pattern=r"^(going|not_going|maybe|no_response)$")
+    rsvp_note: Optional[str] = None
+
+
+class EventAttendanceResponse(BaseModel):
+    """Event attendance response."""
+
+    id: str
+    event_id: str
+    parent_id: str
+    invited_role: str
+    invited_at: datetime
+    rsvp_status: str
+    rsvp_at: Optional[datetime]
+    rsvp_note: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ========== SCHEDULE EVENT SCHEMAS (UPDATED) ==========
 
 class ScheduleEventCreate(BaseModel):
     """Create a new schedule event."""
 
-    case_id: str
-    event_type: str  # regular, holiday, vacation, makeup, special
+    collection_id: str
+    title: str = Field(..., min_length=1)
     start_time: datetime
     end_time: datetime
-    all_day: bool = False
-    custodial_parent_id: str
-    transition_from_id: Optional[str] = None
-    transition_to_id: Optional[str] = None
     child_ids: List[str]
-    title: str
     description: Optional[str] = None
     location: Optional[str] = None
-    is_exchange: bool = False
-    exchange_location: Optional[str] = None
-    exchange_lat: Optional[float] = None
-    exchange_lng: Optional[float] = None
-    grace_period_minutes: int = 15
+    location_shared: bool = False
+    visibility: str = Field(default="co_parent", pattern=r"^(private|co_parent)$")
+    all_day: bool = False
+    attendance_invites: Optional[List[Dict[str, str]]] = None  # [{parent_id, invited_role}]
+    # V2: Event category for specialized forms
+    event_category: str = Field(
+        default="general",
+        pattern=r"^(general|medical|school|sports|exchange)$"
+    )
+    category_data: Optional[Dict[str, Any]] = None  # Category-specific fields
 
 
 class ScheduleEventUpdate(BaseModel):
     """Update a schedule event."""
 
+    title: Optional[str] = Field(None, min_length=1)
+    description: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     location: Optional[str] = None
-    exchange_location: Optional[str] = None
-    status: Optional[str] = None
-    cancellation_reason: Optional[str] = None
+    location_shared: Optional[bool] = None
+    # V2: Event category for specialized forms
+    event_category: Optional[str] = Field(
+        None,
+        pattern=r"^(general|medical|school|sports|exchange)$"
+    )
+    category_data: Optional[Dict[str, Any]] = None
 
 
 class ScheduleEventResponse(BaseModel):
-    """Schedule event response."""
+    """Schedule event response (privacy filtered)."""
 
     id: str
     case_id: str
-    event_type: str
+    collection_id: Optional[str] = None
+    created_by: Optional[str] = None
+    title: str  # Filtered for non-creators
+    description: Optional[str] = None  # Filtered
     start_time: datetime
     end_time: datetime
     all_day: bool
-    custodial_parent_id: str
-    transition_from_id: Optional[str]
-    transition_to_id: Optional[str]
     child_ids: List[str]
-    title: str
-    description: Optional[str]
-    location: Optional[str]
-    is_exchange: bool
-    exchange_location: Optional[str]
-    grace_period_minutes: int
+    location: Optional[str] = None  # Filtered based on location_shared
+    visibility: str
     status: str
-    is_agreement_derived: bool
-    is_modification: bool
+    is_owner: bool  # Whether viewer created this event
+    my_attendance: Optional[Dict[str, str]] = None  # {invited_role, rsvp_status}
+    # V2: Event category for specialized forms
+    event_category: str = "general"
+    category_data: Optional[Dict[str, Any]] = None  # Filtered based on visibility
     created_at: datetime
     updated_at: datetime
 
@@ -152,3 +279,81 @@ class ScheduleGenerationRequest(BaseModel):
     start_date: datetime
     end_date: datetime
     include_holidays: bool = True
+
+
+# ========== CONFLICT DETECTION SCHEMAS ==========
+
+class ConflictCheckRequest(BaseModel):
+    """Request to check for scheduling conflicts."""
+
+    case_id: str
+    start_time: datetime
+    end_time: datetime
+    exclude_user_id: Optional[str] = None
+
+
+class ConflictWarning(BaseModel):
+    """ARIA conflict warning (privacy-preserving)."""
+
+    type: str = "time_conflict"
+    severity: str = "medium"
+    message: str
+    suggestion: str
+    can_proceed: bool = True
+
+
+class ConflictCheckResponse(BaseModel):
+    """Response from conflict check."""
+
+    has_conflicts: bool
+    conflicts: List[ConflictWarning]
+    can_proceed: bool
+
+
+# ========== CALENDAR & BUSY PERIODS ==========
+
+class BusyPeriod(BaseModel):
+    """Neutral busy period for calendar display."""
+
+    start_time: datetime
+    end_time: datetime
+    label: str = "Busy"
+    color: str = "#94A3B8"  # Neutral gray
+    type: str = "busy"
+    details_hidden: bool = True
+
+
+class CalendarDataRequest(BaseModel):
+    """Request calendar data for a date range."""
+
+    case_id: str
+    start_date: datetime
+    end_date: datetime
+    include_busy_periods: bool = True
+
+
+class CustodyExchangeInstanceForCalendar(BaseModel):
+    """Simplified exchange instance for calendar display."""
+    id: str
+    exchange_id: str
+    exchange_type: str  # pickup, dropoff, both
+    title: str
+    scheduled_time: datetime
+    duration_minutes: int
+    location: Optional[str] = None
+    status: str
+    is_owner: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class CalendarDataResponse(BaseModel):
+    """Combined calendar data response."""
+
+    case_id: str
+    events: List[ScheduleEventResponse]
+    exchanges: List[CustodyExchangeInstanceForCalendar] = []
+    busy_periods: List[BusyPeriod]
+    my_collections: List[MyTimeCollectionResponse]
+    start_date: datetime
+    end_date: datetime

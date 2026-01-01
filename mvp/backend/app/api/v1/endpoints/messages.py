@@ -29,6 +29,7 @@ from app.services.aria import aria_service
 from app.core.websocket import manager
 from datetime import datetime
 import uuid
+import hashlib
 
 
 router = APIRouter()
@@ -38,8 +39,6 @@ router = APIRouter()
 async def analyze_message_content(
     case_id: str,
     content: str = Query(..., min_length=1),
-    use_ai: bool = Query(default=False),
-    ai_provider: str = Query(default="claude", regex="^(claude|openai|regex)$"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -47,18 +46,29 @@ async def analyze_message_content(
     Analyze message content before sending (preview mode).
 
     This allows users to check their message before sending.
+    Uses case-level ARIA settings (provider and enabled status).
 
     Args:
         case_id: Case ID for context
         content: Message content to analyze
-        use_ai: Whether to use AI analysis (slower but more accurate)
-        ai_provider: Which AI provider to use (claude, openai, or regex for fast analysis)
 
     Returns:
         ARIA analysis result
     """
-    # Verify user has access to case
+    # Get case and verify access
     result = await db.execute(
+        select(Case).where(Case.id == case_id)
+    )
+    case = result.scalar_one_or_none()
+
+    if not case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Case not found"
+        )
+
+    # Verify user has access to case
+    participant_result = await db.execute(
         select(CaseParticipant).where(
             and_(
                 CaseParticipant.case_id == case_id,
@@ -67,14 +77,27 @@ async def analyze_message_content(
             )
         )
     )
-    participant = result.scalar_one_or_none()
-    
+    participant = participant_result.scalar_one_or_none()
+
     if not participant:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have access to this case"
         )
-    
+
+    # Check if ARIA is enabled for this case
+    if not case.aria_enabled:
+        # ARIA disabled - return clean result
+        return ARIAAnalysisResponse(
+            toxicity_level="green",
+            toxicity_score=0.0,
+            categories=[],
+            triggers=[],
+            explanation="ARIA analysis is disabled for this case",
+            suggestion=None,
+            is_flagged=False
+        )
+
     # Get case context (children for context)
     children_result = await db.execute(
         select(Child).where(
@@ -85,7 +108,7 @@ async def analyze_message_content(
         )
     )
     children = children_result.scalars().all()
-    
+
     case_context = {
         "children": [
             {
@@ -95,14 +118,16 @@ async def analyze_message_content(
             for child in children
         ]
     }
-    
-    # Analyze with ARIA
-    if use_ai and ai_provider == "claude":
+
+    # Analyze with ARIA using case settings
+    ai_provider = case.aria_provider
+
+    if ai_provider == "claude":
         analysis = await aria_service.analyze_with_ai(content, case_context)
-    elif use_ai and ai_provider == "openai":
+    elif ai_provider == "openai":
         analysis = await aria_service.analyze_with_openai(content, case_context)
     else:
-        # Fast regex analysis (default or ai_provider="regex")
+        # Fast regex analysis (ai_provider="regex" or default)
         result = aria_service.analyze_message(content)
         analysis = {
             "toxicity_score": result.toxicity_score,
@@ -113,10 +138,10 @@ async def analyze_message_content(
             "ai_powered": False,
             "provider": "regex"
         }
-    
+
     # Determine if flagged
     is_flagged = analysis["toxicity_score"] > 0.3
-    
+
     # Map score to level
     score = analysis["toxicity_score"]
     if score < 0.2:
@@ -127,7 +152,7 @@ async def analyze_message_content(
         toxicity_level = "orange"
     else:
         toxicity_level = "red"
-    
+
     return ARIAAnalysisResponse(
         toxicity_level=toxicity_level,
         toxicity_score=analysis["toxicity_score"],
@@ -147,20 +172,33 @@ async def send_message(
 ):
     """
     Send a message with ARIA analysis.
-    
+
     Flow:
     1. Verify user access to case
-    2. Analyze message with ARIA
-    3. If toxic, create intervention flag (frontend will show UI)
-    4. Save message and flag (if any)
-    5. Broadcast via WebSocket to other parent
-    
+    2. Get case ARIA settings
+    3. Analyze message with ARIA (if enabled)
+    4. If toxic, create intervention flag (frontend will show UI)
+    5. Save message and flag (if any)
+    6. Broadcast via WebSocket to other parent
+
     Args:
         message_data: Message content and metadata
-        
+
     Returns:
         Created message with ARIA analysis result if flagged
     """
+    # Get case
+    case_result = await db.execute(
+        select(Case).where(Case.id == message_data.case_id)
+    )
+    case = case_result.scalar_one_or_none()
+
+    if not case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Case not found"
+        )
+
     # Verify access
     result = await db.execute(
         select(CaseParticipant).where(
@@ -172,13 +210,13 @@ async def send_message(
         )
     )
     participant = result.scalar_one_or_none()
-    
+
     if not participant:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have access to this case"
         )
-    
+
     # Verify recipient is in the case
     recipient_result = await db.execute(
         select(CaseParticipant).where(
@@ -190,13 +228,13 @@ async def send_message(
         )
     )
     recipient_participant = recipient_result.scalar_one_or_none()
-    
+
     if not recipient_participant:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Recipient is not a participant in this case"
         )
-    
+
     # Get children for context
     children_result = await db.execute(
         select(Child).where(
@@ -207,16 +245,95 @@ async def send_message(
         )
     )
     children = children_result.scalars().all()
-    
+
     case_context = {
         "children": [
             {"first_name": child.first_name}
             for child in children
         ]
     }
+
+    # Analyze with ARIA (using case settings)
+    aria_analysis = None
+    if case.aria_enabled:
+        # Run ARIA analysis based on case provider setting
+        if case.aria_provider == "claude":
+            analysis_result = await aria_service.analyze_with_ai(message_data.content, case_context)
+            # Convert to SentimentAnalysis format
+            from app.services.aria import SentimentAnalysis, ToxicityCategory, ToxicityLevel
+
+            # Determine toxicity level from score
+            score = analysis_result["toxicity_score"]
+            if score < 0.2:
+                toxicity_level = ToxicityLevel.NONE
+            elif score < 0.4:
+                toxicity_level = ToxicityLevel.LOW
+            elif score < 0.6:
+                toxicity_level = ToxicityLevel.MEDIUM
+            elif score < 0.8:
+                toxicity_level = ToxicityLevel.HIGH
+            else:
+                toxicity_level = ToxicityLevel.SEVERE
+
+            aria_analysis = SentimentAnalysis(
+                original_message=message_data.content,
+                toxicity_level=toxicity_level,
+                toxicity_score=score,
+                categories=[ToxicityCategory(cat) for cat in analysis_result.get("categories", [])],
+                triggers=analysis_result.get("triggers", []),
+                explanation=analysis_result.get("explanation", ""),
+                suggestion=analysis_result["suggestions"][0] if analysis_result.get("suggestions") else None,
+                is_flagged=score > 0.3,
+                timestamp=datetime.utcnow()
+            )
+        elif case.aria_provider == "openai":
+            analysis_result = await aria_service.analyze_with_openai(message_data.content, case_context)
+            from app.services.aria import SentimentAnalysis, ToxicityCategory, ToxicityLevel
+
+            # Determine toxicity level from score
+            score = analysis_result["toxicity_score"]
+            if score < 0.2:
+                toxicity_level = ToxicityLevel.NONE
+            elif score < 0.4:
+                toxicity_level = ToxicityLevel.LOW
+            elif score < 0.6:
+                toxicity_level = ToxicityLevel.MEDIUM
+            elif score < 0.8:
+                toxicity_level = ToxicityLevel.HIGH
+            else:
+                toxicity_level = ToxicityLevel.SEVERE
+
+            aria_analysis = SentimentAnalysis(
+                original_message=message_data.content,
+                toxicity_level=toxicity_level,
+                toxicity_score=score,
+                categories=[ToxicityCategory(cat) for cat in analysis_result.get("categories", [])],
+                triggers=analysis_result.get("triggers", []),
+                explanation=analysis_result.get("explanation", ""),
+                suggestion=analysis_result["suggestions"][0] if analysis_result.get("suggestions") else None,
+                is_flagged=score > 0.3,
+                timestamp=datetime.utcnow()
+            )
+        else:
+            # Default to regex
+            aria_analysis = aria_service.analyze_message(message_data.content)
+    else:
+        # ARIA disabled - create clean result
+        from app.services.aria import SentimentAnalysis, ToxicityLevel
+        aria_analysis = SentimentAnalysis(
+            original_message=message_data.content,
+            toxicity_level=ToxicityLevel.NONE,
+            toxicity_score=0.0,
+            categories=[],
+            triggers=[],
+            explanation="ARIA disabled for this case",
+            suggestion=None,
+            is_flagged=False,
+            timestamp=datetime.utcnow()
+        )
     
-    # Analyze with ARIA (fast regex check)
-    aria_analysis = aria_service.analyze_message(message_data.content)
+    # Calculate content hash
+    content_hash = hashlib.sha256(message_data.content.encode()).hexdigest()
     
     # Create message
     new_message = Message(
@@ -226,23 +343,41 @@ async def send_message(
         sender_id=current_user.id,
         recipient_id=message_data.recipient_id,
         content=message_data.content,
+        content_hash=content_hash,
         message_type=message_data.message_type,
         sent_at=datetime.utcnow(),
         was_flagged=aria_analysis.is_flagged
     )
     
     # If flagged, create MessageFlag for analytics
-    message_flag = None
     if aria_analysis.is_flagged:
+        # Calculate severity/level (reuse logic)
+        score = aria_analysis.toxicity_score
+        if score < 0.2:
+            severity = "low"
+            intervention_level = 1
+        elif score < 0.5:
+            severity = "medium"
+            intervention_level = 2
+        elif score < 0.8:
+            severity = "high"
+            intervention_level = 3
+        else:
+            severity = "severe"
+            intervention_level = 4
+
         message_flag = MessageFlag(
             id=str(uuid.uuid4()),
             message_id=new_message.id,
-            flagged_by="aria_auto",
-            flag_type="toxicity_detected",
+            severity=severity,
             toxicity_score=aria_analysis.toxicity_score,
-            toxicity_categories=[cat.value for cat in aria_analysis.categories],
-            suggested_rewrite=aria_analysis.suggestion,
-            user_action=None,  # Will be updated when user responds
+            categories=[cat.value for cat in aria_analysis.categories],
+            suggested_content=aria_analysis.suggestion,
+            user_action="pending",
+            original_content_hash=content_hash,
+            final_content_hash=content_hash,
+            intervention_level=intervention_level,
+            intervention_message=aria_analysis.explanation or "Content flagged by ARIA",
             created_at=datetime.utcnow()
         )
         db.add(message_flag)
@@ -345,7 +480,7 @@ async def handle_intervention_response(
     if action.action == "accepted":
         # Use ARIA's suggestion
         message.original_content = message.content
-        message.content = flag.suggested_rewrite
+        message.content = flag.suggested_content
     elif action.action == "modified":
         # Use user's modified version
         message.original_content = message.content

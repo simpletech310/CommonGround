@@ -104,7 +104,8 @@ async def list_cases(
                     "id": p.id,
                     "role": p.role,
                     "parent_type": p.parent_type,
-                    "user_id": p.user_id
+                    "user_id": p.user_id,
+                    "is_active": p.is_active
                 }
                 for p in case.participants
             ]
@@ -313,6 +314,52 @@ async def create_case_agreement(
     }
 
 
+@router.get("/{case_id}/agreements")
+async def get_case_agreements(
+    case_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all agreements for a case.
+
+    Returns:
+        List of all agreements for the case
+    """
+    from app.services.agreement import AgreementService
+    from app.schemas.agreement import AgreementResponse
+    from sqlalchemy import select
+    from app.models.agreement import Agreement
+
+    # Verify access to case
+    case = await CaseService(db).get_case(case_id, current_user)
+
+    # Get all agreements for this case
+    result = await db.execute(
+        select(Agreement)
+        .where(Agreement.case_id == case_id)
+        .order_by(Agreement.created_at.desc())
+    )
+    agreements = result.scalars().all()
+
+    return [
+        AgreementResponse(
+            id=agreement.id,
+            case_id=agreement.case_id,
+            title=agreement.title,
+            version=agreement.version,
+            status=agreement.status,
+            petitioner_approved=agreement.petitioner_approved,
+            respondent_approved=agreement.respondent_approved,
+            effective_date=agreement.effective_date,
+            pdf_url=agreement.pdf_url,
+            created_at=agreement.created_at,
+            updated_at=agreement.updated_at
+        )
+        for agreement in agreements
+    ]
+
+
 @router.get("/{case_id}/agreement")
 async def get_case_agreement(
     case_id: str,
@@ -320,7 +367,7 @@ async def get_case_agreement(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get active agreement for a case.
+    Get the most relevant agreement for a case (active, or most recent).
 
     Returns:
         Agreement with all sections
@@ -368,4 +415,122 @@ async def get_case_agreement(
             for s in sorted(agreement.sections, key=lambda x: x.display_order)
         ],
         "completion_percentage": completion
+    }
+
+
+@router.get("/{case_id}/aria-settings")
+async def get_aria_settings(
+    case_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get ARIA settings for a case.
+
+    Returns the current ARIA configuration including:
+    - Whether ARIA is enabled
+    - AI provider being used (claude, openai, or regex)
+    - When it was disabled (if applicable)
+    - Who disabled it (if applicable)
+
+    Args:
+        case_id: ID of the case
+
+    Returns:
+        ARIA settings
+    """
+    case_service = CaseService(db)
+    case = await case_service.get_case(case_id, current_user)
+
+    return {
+        "aria_enabled": case.aria_enabled,
+        "aria_provider": case.aria_provider,
+        "aria_disabled_at": case.aria_disabled_at,
+        "aria_disabled_by": case.aria_disabled_by
+    }
+
+
+@router.patch("/{case_id}/aria-settings")
+async def update_aria_settings(
+    case_id: str,
+    aria_enabled: bool = Body(..., embed=True),
+    aria_provider: str = Body(default="claude", embed=True, regex="^(claude|openai|regex)$"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update ARIA settings for a case.
+
+    Allows parents to enable/disable ARIA analysis and change the AI provider.
+    When ARIA is disabled, this action is tracked for court documentation.
+
+    Args:
+        case_id: ID of the case
+        aria_enabled: Whether to enable or disable ARIA
+        aria_provider: AI provider to use (claude, openai, or regex)
+
+    Returns:
+        Updated ARIA settings
+    """
+    from datetime import datetime
+    from app.models.case import Case
+    from sqlalchemy import select, and_
+    from app.models.case import CaseParticipant
+
+    # Verify access
+    result = await db.execute(
+        select(CaseParticipant).where(
+            and_(
+                CaseParticipant.case_id == case_id,
+                CaseParticipant.user_id == current_user.id,
+                CaseParticipant.is_active == True
+            )
+        )
+    )
+    participant = result.scalar_one_or_none()
+
+    if not participant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this case"
+        )
+
+    # Get case
+    case_result = await db.execute(
+        select(Case).where(Case.id == case_id)
+    )
+    case = case_result.scalar_one_or_none()
+
+    if not case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Case not found"
+        )
+
+    # Track when ARIA is disabled (before updating)
+    old_aria_enabled = case.aria_enabled
+
+    # Update settings
+    case.aria_enabled = aria_enabled
+    case.aria_provider = aria_provider
+
+    # Track enable/disable changes
+    if not aria_enabled and old_aria_enabled:
+        # ARIA is being disabled
+        case.aria_disabled_at = datetime.utcnow()
+        case.aria_disabled_by = current_user.id
+    elif aria_enabled and not old_aria_enabled:
+        # ARIA is being re-enabled, clear tracking
+        case.aria_disabled_at = None
+        case.aria_disabled_by = None
+
+    await db.commit()
+    await db.refresh(case)
+
+    return {
+        "aria_enabled": case.aria_enabled,
+        "aria_provider": case.aria_provider,
+        "aria_disabled_at": case.aria_disabled_at,
+        "aria_disabled_by": case.aria_disabled_by,
+        "message": f"ARIA settings updated. ARIA is now {'enabled' if aria_enabled else 'disabled'}."
     }

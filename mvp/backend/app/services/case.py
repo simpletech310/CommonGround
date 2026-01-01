@@ -74,7 +74,25 @@ class CaseService:
             )
             self.db.add(creator_participant)
 
-            # Second participant will be created when they accept the invitation
+            # Create pending participant for invited user
+            # First, check if a user with that email exists
+            invited_user_result = await self.db.execute(
+                select(User).where(User.email == case_data.other_parent_email)
+            )
+            invited_user = invited_user_result.scalar_one_or_none()
+
+            # If user exists, create pending participant record
+            if invited_user:
+                invited_participant = CaseParticipant(
+                    case_id=case.id,
+                    user_id=invited_user.id,
+                    role="respondent",
+                    parent_type="parent_b",
+                    is_active=False,  # Not active until they accept
+                    invited_at=datetime.utcnow(),
+                    # joined_at will be set when they accept
+                )
+                self.db.add(invited_participant)
 
             # Add children if provided
             if case_data.children:
@@ -171,27 +189,33 @@ class CaseService:
                     detail="Case not found"
                 )
 
-            # Check if user is already a participant
-            existing_participant = any(
-                p.user_id == user.id for p in case.participants
+            # Check if user already has an active participant record
+            existing_participant = next(
+                (p for p in case.participants if p.user_id == user.id), None
             )
-            if existing_participant:
+
+            if existing_participant and existing_participant.is_active:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="You are already a participant in this case"
+                    detail="You have already accepted this invitation"
                 )
 
-            # Create new participant for the accepting user
-            new_participant = CaseParticipant(
-                case_id=case.id,
-                user_id=user.id,
-                role="respondent",
-                parent_type="parent_b",
-                is_active=True,
-                invited_at=datetime.utcnow(),  # Time when invitation was sent (from token)
-                joined_at=datetime.utcnow(),
-            )
-            self.db.add(new_participant)
+            if existing_participant and not existing_participant.is_active:
+                # Activate the pending participant
+                existing_participant.is_active = True
+                existing_participant.joined_at = datetime.utcnow()
+            else:
+                # Create new participant (for cases created before this change)
+                new_participant = CaseParticipant(
+                    case_id=case.id,
+                    user_id=user.id,
+                    role="respondent",
+                    parent_type="parent_b",
+                    is_active=True,
+                    invited_at=datetime.utcnow(),
+                    joined_at=datetime.utcnow(),
+                )
+                self.db.add(new_participant)
 
             # Activate the case (now has both parents)
             case.status = "active"
@@ -214,6 +238,8 @@ class CaseService:
         """
         Get all cases for a user.
 
+        Includes both active cases and pending invitations.
+
         Args:
             user: User to get cases for
 
@@ -228,7 +254,8 @@ class CaseService:
                 selectinload(Case.children)
             )
             .where(CaseParticipant.user_id == user.id)
-            .where(CaseParticipant.is_active == True)
+            # Include both active participants and pending invitations
+            # Frontend will filter based on is_active status
         )
         return list(result.scalars().all())
 

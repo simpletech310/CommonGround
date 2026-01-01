@@ -5,6 +5,19 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.utils.sanitize import sanitize_case_name, sanitize_text
 
 
+class CaseParticipantResponse(BaseModel):
+    """Case participant response."""
+
+    id: str
+    role: str
+    parent_type: str
+    user_id: str
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
 class CaseCreate(BaseModel):
     """Create case request."""
 
@@ -83,7 +96,7 @@ class CaseResponse(BaseModel):
     state: str
     status: str
     created_at: datetime
-    participants: list[dict]
+    participants: list[CaseParticipantResponse]
 
     class Config:
         from_attributes = True

@@ -23,6 +23,13 @@ function MessagesContent() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCompose, setShowCompose] = useState(false);
+  const [ariaSettings, setAriaSettings] = useState<{
+    aria_enabled: boolean;
+    aria_provider: string;
+    aria_disabled_at?: string;
+    aria_disabled_by?: string;
+  } | null>(null);
+  const [isUpdatingAria, setIsUpdatingAria] = useState(false);
 
   useEffect(() => {
     loadCases();
@@ -62,6 +69,55 @@ function MessagesContent() {
     setSelectedCase(caseItem);
     setShowCompose(false);
     await loadMessages(caseItem.id);
+    await loadAriaSettings(caseItem.id);
+  };
+
+  const loadAriaSettings = async (caseId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/v1/cases/${caseId}/aria-settings`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAriaSettings(data);
+      }
+    } catch (err) {
+      console.error('Failed to load ARIA settings:', err);
+    }
+  };
+
+  const toggleAriaEnabled = async () => {
+    if (!selectedCase || !ariaSettings) return;
+
+    try {
+      setIsUpdatingAria(true);
+      const response = await fetch(`http://localhost:8000/api/v1/cases/${selectedCase.id}/aria-settings`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          aria_enabled: !ariaSettings.aria_enabled,
+          aria_provider: ariaSettings.aria_provider,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAriaSettings(data);
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to update ARIA settings: ${errorData.detail || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Failed to update ARIA settings:', err);
+      alert('Failed to update ARIA settings');
+    } finally {
+      setIsUpdatingAria(false);
+    }
   };
 
   const loadMessages = async (caseId: string) => {
@@ -222,11 +278,59 @@ function MessagesContent() {
                 <Card>
                   <CardHeader>
                     <div className="flex justify-between items-start">
-                      <div>
+                      <div className="flex-1">
                         <CardTitle>{selectedCase.case_name}</CardTitle>
                         <CardDescription>AI-powered communication with conflict prevention</CardDescription>
+
+                        {/* ARIA Toggle */}
+                        {ariaSettings && (
+                          <div className="flex items-center gap-3 mt-4 pt-4 border-t">
+                            <button
+                              onClick={toggleAriaEnabled}
+                              disabled={isUpdatingAria}
+                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                                ariaSettings.aria_enabled ? 'bg-blue-600' : 'bg-gray-200'
+                              } ${isUpdatingAria ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                  ariaSettings.aria_enabled ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-gray-900">
+                                  ARIA Protection
+                                </span>
+                                <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                  ariaSettings.aria_enabled
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-gray-100 text-gray-700'
+                                }`}>
+                                  {ariaSettings.aria_enabled ? 'ON' : 'OFF'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {ariaSettings.aria_enabled
+                                  ? `AI monitoring with ${ariaSettings.aria_provider === 'claude' ? 'Claude' : ariaSettings.aria_provider === 'openai' ? 'OpenAI' : 'Pattern matching'} • All messages are analyzed for court documentation`
+                                  : 'ARIA is disabled • Messages will not be analyzed'}
+                              </p>
+                              {ariaSettings.aria_disabled_at && !ariaSettings.aria_enabled && (
+                                <p className="text-xs text-amber-600 mt-1">
+                                  ⚠️ Disabled on {new Date(ariaSettings.aria_disabled_at).toLocaleDateString()} • This action is tracked for court records
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <Button onClick={() => setShowCompose(!showCompose)}>
+                      <Button
+                        onClick={() => setShowCompose(!showCompose)}
+                        disabled={!getOtherParentId()}
+                        title={!getOtherParentId() ? "Waiting for other parent to join case" : ""}
+                        className="ml-4"
+                      >
                         {showCompose ? (
                           <>
                             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -249,11 +353,37 @@ function MessagesContent() {
 
                 {/* Compose Area */}
                 {showCompose && selectedCase && (
-                  <MessageCompose
-                    caseId={selectedCase.id}
-                    recipientId={getOtherParentId()}
-                    onMessageSent={handleMessageSent}
-                  />
+                  <>
+                    {getOtherParentId() ? (
+                      <MessageCompose
+                        caseId={selectedCase.id}
+                        recipientId={getOtherParentId()}
+                        onMessageSent={handleMessageSent}
+                        ariaEnabled={ariaSettings?.aria_enabled ?? true}
+                      />
+                    ) : (
+                      <Card className="border-yellow-200 bg-yellow-50">
+                        <CardContent className="pt-6">
+                          <div className="flex items-center gap-3">
+                            <svg className="w-5 h-5 text-yellow-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <div>
+                              <p className="font-medium text-yellow-900">Can't send messages yet</p>
+                              <p className="text-sm text-yellow-700 mt-1">
+                                The other parent needs to accept your case invitation before you can exchange messages.
+                                {selectedCase.status === 'pending' && (
+                                  <span className="block mt-2">
+                                    Case status: <span className="font-semibold">Pending</span> - Waiting for other parent to join
+                                  </span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </>
                 )}
 
                 {/* Messages Thread */}

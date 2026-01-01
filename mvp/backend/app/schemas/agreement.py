@@ -14,6 +14,17 @@ class AgreementSectionUpdate(BaseModel):
     structured_data: Optional[Dict[str, Any]] = None
 
 
+class AgreementSectionCreate(BaseModel):
+    """Create a new agreement section."""
+
+    agreement_id: str
+    section_type: str
+    content: Dict[str, Any]
+    section_number: str = ""
+    section_title: str = ""
+    structured_data: Optional[Dict[str, Any]] = None
+
+
 class AgreementCreate(BaseModel):
     """Create a new agreement for a case."""
 

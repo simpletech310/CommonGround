@@ -14,17 +14,48 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 class ScheduleEvent(Base, UUIDMixin, TimestampMixin):
     """
     Schedule event - parenting time, exchanges, holidays.
+
+    MVP Updates:
+    - Added collection_id for My Time Collections
+    - Added created_by to track event creator
+    - Added visibility for privacy control
+    - Added location_shared for location privacy
+    - Added attendance_records relationship
     """
 
     __tablename__ = "schedule_events"
 
-    # Case link
+    # Case and collection
     case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), index=True)
+    collection_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("my_time_collections.id"),
+        nullable=True,
+        index=True
+    )
+
+    # Event creator (for privacy filtering)
+    created_by: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True
+    )
 
     # Event type
     event_type: Mapped[str] = mapped_column(
         String(50)
     )  # regular, holiday, vacation, makeup, special
+
+    # Event category (V2 - category-specific forms)
+    event_category: Mapped[str] = mapped_column(
+        String(50),
+        default="general"
+    )  # general, medical, school, sports, exchange
+    category_data: Mapped[Optional[dict]] = mapped_column(
+        JSON,
+        nullable=True
+    )  # Category-specific fields as JSON
 
     # Timing
     start_time: Mapped[datetime] = mapped_column(DateTime, index=True)
@@ -43,6 +74,16 @@ class ScheduleEvent(Base, UUIDMixin, TimestampMixin):
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     location: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+
+    # Privacy settings (MVP)
+    visibility: Mapped[str] = mapped_column(
+        String(20),
+        default="co_parent"
+    )  # "private" or "co_parent"
+    location_shared: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False
+    )  # Share location with co-parent
 
     # Exchange information (if this is a transition)
     is_exchange: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -75,8 +116,17 @@ class ScheduleEvent(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     case: Mapped["Case"] = relationship("Case", back_populates="schedule_events")
+    collection: Mapped[Optional["MyTimeCollection"]] = relationship(
+        "MyTimeCollection",
+        back_populates="events",
+        foreign_keys=[collection_id]
+    )
+    creator: Mapped[Optional["User"]] = relationship("User", foreign_keys=[created_by])
     check_ins: Mapped[list["ExchangeCheckIn"]] = relationship(
         "ExchangeCheckIn", back_populates="event", cascade="all, delete-orphan"
+    )
+    attendance_records: Mapped[list["EventAttendance"]] = relationship(
+        "EventAttendance", back_populates="event", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

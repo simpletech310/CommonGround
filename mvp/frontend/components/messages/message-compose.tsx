@@ -10,16 +10,15 @@ interface MessageComposeProps {
   caseId: string;
   recipientId: string;
   onMessageSent: () => void;
+  ariaEnabled?: boolean;
 }
 
-export function MessageCompose({ caseId, recipientId, onMessageSent }: MessageComposeProps) {
+export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled = true }: MessageComposeProps) {
   const [message, setMessage] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [analysis, setAnalysis] = useState<ARIAAnalysisResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [aiProvider, setAiProvider] = useState<'regex' | 'claude' | 'openai'>('regex');
-  const [useAI, setUseAI] = useState(false);
 
   const handleAnalyze = async () => {
     if (!message.trim()) {
@@ -30,7 +29,8 @@ export function MessageCompose({ caseId, recipientId, onMessageSent }: MessageCo
     try {
       setIsAnalyzing(true);
       setError(null);
-      const result = await messagesAPI.analyze(caseId, message, useAI, aiProvider);
+      // Use case-level ARIA settings (backend reads from case)
+      const result = await messagesAPI.analyze(caseId, message);
       setAnalysis(result);
     } catch (err: any) {
       console.error('Analysis failed:', err);
@@ -45,13 +45,21 @@ export function MessageCompose({ caseId, recipientId, onMessageSent }: MessageCo
       setIsSending(true);
       setError(null);
 
+      // Debug: Check if we have auth token
+      const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+      console.log('Sending message with auth token:', token ? 'Present' : 'Missing');
+      console.log('Message payload:', {
+        case_id: caseId,
+        recipient_id: recipientId,
+        content: content.substring(0, 50) + '...',
+        message_type: 'text',
+      });
+
       await messagesAPI.send({
-        message_data: {
-          case_id: caseId,
-          recipient_id: recipientId,
-          content,
-          message_type: 'text',
-        },
+        case_id: caseId,
+        recipient_id: recipientId,
+        content,
+        message_type: 'text',
       });
 
       // Clear form
@@ -60,7 +68,20 @@ export function MessageCompose({ caseId, recipientId, onMessageSent }: MessageCo
       onMessageSent();
     } catch (err: any) {
       console.error('Failed to send message:', err);
-      setError(err.message || 'Failed to send message');
+
+      // More detailed error messages
+      let errorMessage = 'Failed to send message';
+      if (err.status === 401) {
+        errorMessage = 'Authentication error. Please try logging in again.';
+      } else if (err.status === 422) {
+        errorMessage = 'Invalid message format. Please check your message.';
+      } else if (err.status === 403) {
+        errorMessage = 'You do not have permission to send messages in this case.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      setError(errorMessage);
     } finally {
       setIsSending(false);
     }
@@ -89,12 +110,39 @@ export function MessageCompose({ caseId, recipientId, onMessageSent }: MessageCo
     setError(null);
   };
 
-  const handleQuickSend = () => {
-    // For green messages, send directly without showing intervention
-    if (analysis && analysis.toxicity_level === 'green') {
-      handleSendDirect(message);
+  const handleQuickSend = async () => {
+    // If ARIA is enabled, automatically analyze before sending
+    if (ariaEnabled) {
+      if (!message.trim()) {
+        setError('Please enter a message');
+        return;
+      }
+
+      try {
+        setIsAnalyzing(true);
+        setError(null);
+
+        // Analyze the message with ARIA
+        const result = await messagesAPI.analyze(caseId, message);
+
+        // If flagged, show intervention UI
+        if (result.is_flagged) {
+          setAnalysis(result);
+          setIsAnalyzing(false);
+          return; // Don't send automatically - wait for user decision
+        }
+
+        // Not flagged - send automatically
+        setIsAnalyzing(false);
+        await handleSendDirect(message);
+      } catch (err: any) {
+        console.error('ARIA analysis failed:', err);
+        setError(err.message || 'Failed to analyze message');
+        setIsAnalyzing(false);
+      }
     } else {
-      handleAnalyze();
+      // ARIA disabled - send directly without analysis
+      await handleSendDirect(message);
     }
   };
 
@@ -149,30 +197,6 @@ export function MessageCompose({ caseId, recipientId, onMessageSent }: MessageCo
               </p>
             </div>
 
-            {/* AI Provider Selection */}
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={useAI}
-                  onChange={(e) => setUseAI(e.target.checked)}
-                  className="rounded border-gray-300"
-                />
-                <span className="text-sm text-gray-700">Use AI Analysis</span>
-              </label>
-
-              {useAI && (
-                <select
-                  value={aiProvider}
-                  onChange={(e) => setAiProvider(e.target.value as 'claude' | 'openai')}
-                  className="px-3 py-1 border border-gray-300 rounded-md text-sm"
-                >
-                  <option value="claude">Claude (Anthropic)</option>
-                  <option value="openai">GPT-4 (OpenAI)</option>
-                </select>
-              )}
-            </div>
-
             {/* Analysis Result (Green) */}
             {analysis && !analysis.is_flagged && (
               <Card className="border-green-200 bg-green-50">
@@ -217,7 +241,12 @@ export function MessageCompose({ caseId, recipientId, onMessageSent }: MessageCo
                 disabled={!message.trim() || isAnalyzing || isSending}
                 className="flex-1"
               >
-                {isSending ? (
+                {isAnalyzing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    {ariaEnabled ? 'Checking with ARIA...' : 'Processing...'}
+                  </>
+                ) : isSending ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                     Sending...
@@ -241,8 +270,10 @@ export function MessageCompose({ caseId, recipientId, onMessageSent }: MessageCo
               <div className="text-xs text-blue-900">
                 <p className="font-medium">ARIA helps you communicate effectively</p>
                 <p className="mt-1">
-                  Click "Preview with ARIA" to check for potential conflict before sending.
-                  {useAI ? ' AI analysis provides deeper insights but takes longer.' : ' Fast analysis uses pattern matching.'}
+                  {ariaEnabled
+                    ? "When ARIA is enabled, all messages are automatically analyzed before sending. Use 'Preview with ARIA' to see suggestions before clicking send."
+                    : "ARIA is currently disabled for this case. Click 'Preview with ARIA' to analyze your message, or enable ARIA using the toggle above."
+                  }
                 </p>
               </div>
             </div>

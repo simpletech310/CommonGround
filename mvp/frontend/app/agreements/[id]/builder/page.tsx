@@ -110,24 +110,86 @@ function AgreementBuilderContent() {
     loadAgreement();
   }, [agreementId]);
 
+  // Helper to get all wizard keys that map to a backend section
+  const getWizardKeysForBackendSection = (sectionType: string, sectionNumber: string): SectionKey[] => {
+    const allMappings = {
+      'intro': [],
+      'parent_info': [{ type: 'basic_info', number: '1', title: 'Basic Information' }],
+      'other_parent_info': [{ type: 'basic_info', number: '1', title: 'Basic Information' }],
+      'children_info': [{ type: 'basic_info', number: '1', title: 'Basic Information' }],
+      'legal_custody': [{ type: 'custody', number: '2', title: 'Legal Custody' }],
+      'physical_custody': [{ type: 'custody', number: '3', title: 'Physical Custody' }],
+      'parenting_schedule': [{ type: 'schedule', number: '4', title: 'Parenting Time Schedule' }],
+      'holiday_schedule': [{ type: 'schedule', number: '5', title: 'Holiday Schedule' }],
+      'exchange_logistics': [{ type: 'logistics', number: '8', title: 'Transportation' }],
+      'transportation': [{ type: 'logistics', number: '8', title: 'Transportation' }],
+      'child_support': [
+        { type: 'financial', number: '14', title: 'Child Support' },
+        { type: 'financial', number: '15', title: 'Expense Sharing' }
+      ],
+      'medical_healthcare': [{ type: 'decision_making', number: '11', title: 'Healthcare Decisions' }],
+      'education': [{ type: 'decision_making', number: '10', title: 'Education Decisions' }],
+      'parent_communication': [{ type: 'communication', number: '16', title: 'Communication Guidelines' }],
+      'child_communication': [{ type: 'communication', number: '16', title: 'Communication Guidelines' }],
+      'travel': [{ type: 'schedule', number: '6', title: 'Vacation Time' }],
+      'relocation': [{ type: 'legal', number: '18', title: 'Modification Process' }],
+      'dispute_resolution': [{ type: 'legal', number: '17', title: 'Dispute Resolution' }],
+      'other_provisions': [{ type: 'decision_making', number: '9', title: 'Decision-Making Authority' }],
+      'review': [],
+    } as Record<SectionKey, Array<{ type: string; number: string; title: string }>>;
+
+    // Find all wizard keys that have this backend section in their mappings
+    return (Object.entries(allMappings) as [SectionKey, typeof allMappings[SectionKey]][])
+      .filter(([_, mappings]) =>
+        mappings.some(mapping =>
+          mapping.type === sectionType &&
+          mapping.number === sectionNumber
+        )
+      )
+      .map(([key]) => key);
+  };
+
   const loadAgreement = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const [agreementData, sectionsData] = await Promise.all([
-        agreementsAPI.get(agreementId),
-        agreementsAPI.getSections(agreementId),
-      ]);
+      const data = await agreementsAPI.get(agreementId);
 
-      setAgreement(agreementData);
-      setSections(sectionsData);
+      setAgreement(data.agreement);
+      setSections(data.sections);
 
       // Load existing section data into state
+      // Map backend template sections to wizard sections
       const dataMap: Record<string, any> = {};
-      sectionsData.forEach((section) => {
-        dataMap[section.section_type] = section.content;
+
+      data.sections.forEach((section) => {
+        // Parse structured_data if it exists, otherwise try to parse content
+        let sectionContent = section.structured_data;
+        if (!sectionContent && section.content) {
+          try {
+            sectionContent = JSON.parse(section.content);
+          } catch {
+            sectionContent = { content: section.content };
+          }
+        }
+
+        // Find all wizard keys that map to this backend section
+        const wizardKeys = getWizardKeysForBackendSection(section.section_type, section.section_number);
+
+        // For each wizard key, extract its specific data from the merged structure
+        wizardKeys.forEach(key => {
+          // If the backend data has the wizard key as a property, use that
+          // This handles merged sections (parent_info, other_parent_info, children_info all in basic_info)
+          if (sectionContent && typeof sectionContent === 'object' && key in sectionContent) {
+            dataMap[key] = sectionContent[key];
+          } else {
+            // Otherwise use the entire section content (for non-merged sections)
+            dataMap[key] = sectionContent;
+          }
+        });
       });
+
       setSectionData(dataMap);
     } catch (err: any) {
       console.error('Failed to load agreement:', err);
@@ -135,6 +197,39 @@ function AgreementBuilderContent() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Map frontend wizard sections to backend template section types
+  // Returns an array because some wizard sections need to update multiple backend sections
+  const getSectionMappings = (wizardKey: SectionKey): Array<{ type: string; number: string; title: string }> => {
+    const mappings: Record<SectionKey, Array<{ type: string; number: string; title: string }>> = {
+      'intro': [], // No backend equivalent - skip
+      'parent_info': [{ type: 'basic_info', number: '1', title: 'Basic Information' }],
+      'other_parent_info': [{ type: 'basic_info', number: '1', title: 'Basic Information' }],
+      'children_info': [{ type: 'basic_info', number: '1', title: 'Basic Information' }],
+      'legal_custody': [{ type: 'custody', number: '2', title: 'Legal Custody' }],
+      'physical_custody': [{ type: 'custody', number: '3', title: 'Physical Custody' }],
+      'parenting_schedule': [{ type: 'schedule', number: '4', title: 'Parenting Time Schedule' }],
+      'holiday_schedule': [{ type: 'schedule', number: '5', title: 'Holiday Schedule' }],
+      'exchange_logistics': [{ type: 'logistics', number: '8', title: 'Transportation' }],
+      'transportation': [{ type: 'logistics', number: '8', title: 'Transportation' }],
+      // Child support wizard section covers BOTH backend financial sections
+      'child_support': [
+        { type: 'financial', number: '14', title: 'Child Support' },
+        { type: 'financial', number: '15', title: 'Expense Sharing' }
+      ],
+      'medical_healthcare': [{ type: 'decision_making', number: '11', title: 'Healthcare Decisions' }],
+      'education': [{ type: 'decision_making', number: '10', title: 'Education Decisions' }],
+      'parent_communication': [{ type: 'communication', number: '16', title: 'Communication Guidelines' }],
+      'child_communication': [{ type: 'communication', number: '16', title: 'Communication Guidelines' }],
+      'travel': [{ type: 'schedule', number: '6', title: 'Vacation Time' }],
+      'relocation': [{ type: 'legal', number: '18', title: 'Modification Process' }],
+      'dispute_resolution': [{ type: 'legal', number: '17', title: 'Dispute Resolution' }],
+      'other_provisions': [{ type: 'decision_making', number: '9', title: 'Decision-Making Authority' }],
+      'review': [], // No backend equivalent - skip
+    };
+
+    return mappings[wizardKey] || [];
   };
 
   const handleSaveSection = async (data: any) => {
@@ -145,21 +240,66 @@ function AgreementBuilderContent() {
       const currentSection = SECTIONS[currentSectionIndex];
       const sectionKey = currentSection.key;
 
-      // Find or create section
-      const existingSection = sections.find((s) => s.section_type === sectionKey);
+      // Get backend mappings for this wizard section (can be multiple)
+      const backendMappings = getSectionMappings(sectionKey);
 
-      if (existingSection) {
-        // Update existing section
-        await agreementsAPI.updateSection(agreementId, existingSection.id, {
-          content: data,
-        });
-      } else {
-        // Create new section (this would need a new API endpoint)
-        // For now, we'll just save to local state
-        console.log('Would create new section:', sectionKey, data);
+      // Skip sections that don't map to backend (intro, review)
+      if (backendMappings.length === 0) {
+        // Just store locally for UI purposes
+        setSectionData((prev) => ({
+          ...prev,
+          [sectionKey]: data,
+        }));
+        setIsSaving(false);
+        return;
       }
 
-      // Update local state
+      // Update all backend sections that this wizard section maps to
+      for (const backendMapping of backendMappings) {
+        // Find the backend template section that matches this mapping
+        const existingSection = sections.find((s) =>
+          s.section_type === backendMapping.type &&
+          s.section_number === backendMapping.number
+        );
+
+        if (existingSection) {
+          // For sections that map to the same backend section (like basic_info),
+          // we need to merge the data instead of overwriting
+          let mergedData = { ...(existingSection.structured_data || {}) };
+
+          // Store this wizard section's data under its own key
+          mergedData[sectionKey] = data;
+
+          // Update existing template section with merged data
+          const updatedSection = await agreementsAPI.updateSection(agreementId, existingSection.id, {
+            section_number: backendMapping.number,
+            section_title: backendMapping.title,
+            content: JSON.stringify(mergedData),
+            structured_data: mergedData,
+          });
+
+          // Update sections array
+          setSections((prev) =>
+            prev.map((s) => (s.id === updatedSection.id ? updatedSection : s))
+          );
+        } else {
+          // If template section doesn't exist, create it
+          // This shouldn't happen if create_agreement() was called properly
+          console.warn(`Template section not found: ${backendMapping.type} #${backendMapping.number}`);
+
+          // Store data under wizard section key
+          const sectionData = { [sectionKey]: data };
+
+          const newSection = await agreementsAPI.createSection(
+            agreementId,
+            backendMapping.type,
+            sectionData
+          );
+          setSections((prev) => [...prev, newSection]);
+        }
+      }
+
+      // Update local state with wizard key for UI
       setSectionData((prev) => ({
         ...prev,
         [sectionKey]: data,

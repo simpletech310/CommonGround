@@ -66,19 +66,8 @@ class AgreementService:
         # Verify user has access to case
         case = await self.case_service.get_case(case_id, user)
 
-        # Check if case already has an active agreement
-        result = await self.db.execute(
-            select(Agreement)
-            .where(Agreement.case_id == case_id)
-            .where(Agreement.status.in_(["draft", "pending_approval", "active"]))
-        )
-        existing = result.scalar_one_or_none()
-
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Case already has an active agreement. Create a new version instead."
-            )
+        # No restrictions on creating multiple agreements
+        # Only restriction is that only one can be ACTIVE at a time (enforced in activate method)
 
         try:
             # Create agreement
@@ -159,14 +148,16 @@ class AgreementService:
         user: User
     ) -> Optional[Agreement]:
         """
-        Get active agreement for a case.
+        Get the most relevant agreement for a case.
+
+        Priority: active > approved > pending_approval > draft
 
         Args:
             case_id: ID of the case
             user: User requesting the agreement
 
         Returns:
-            Active agreement or None
+            Most relevant agreement or None
 
         Raises:
             HTTPException: If no access to case
@@ -174,14 +165,92 @@ class AgreementService:
         # Verify access
         await self.case_service.get_case(case_id, user)
 
+        # Try to get active agreement first
         result = await self.db.execute(
             select(Agreement)
             .options(selectinload(Agreement.sections))
             .where(Agreement.case_id == case_id)
-            .where(Agreement.status.in_(["draft", "pending_approval", "active"]))
+            .where(Agreement.status == "active")
             .order_by(Agreement.version.desc())
+            .limit(1)
         )
-        return result.scalar_one_or_none()
+        active = result.scalars().first()
+        if active:
+            return active
+
+        # Otherwise, get the most recent non-inactive agreement
+        result = await self.db.execute(
+            select(Agreement)
+            .options(selectinload(Agreement.sections))
+            .where(Agreement.case_id == case_id)
+            .where(Agreement.status.in_(["approved", "pending_approval", "draft"]))
+            .order_by(Agreement.version.desc())
+            .limit(1)
+        )
+        return result.scalars().first()
+
+    async def create_section(
+        self,
+        create_data,
+        user: User
+    ) -> AgreementSection:
+        """
+        Create a new agreement section.
+
+        Args:
+            create_data: Section creation data
+            user: User creating the section
+
+        Returns:
+            Created section
+
+        Raises:
+            HTTPException: If creation fails
+        """
+        # Verify user has access to the agreement
+        agreement = await self.get_agreement(create_data.agreement_id, user)
+
+        # Can only create sections in draft agreements
+        if agreement.status != "draft":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only create sections in draft agreements"
+            )
+
+        try:
+            # Get next display order
+            result = await self.db.execute(
+                select(AgreementSection)
+                .where(AgreementSection.agreement_id == create_data.agreement_id)
+            )
+            existing_sections = result.scalars().all()
+            next_order = max([s.display_order for s in existing_sections], default=0) + 1
+
+            # Create section
+            section = AgreementSection(
+                agreement_id=create_data.agreement_id,
+                section_type=create_data.section_type,
+                section_number=create_data.section_number or "",
+                section_title=create_data.section_title or "",
+                content=json.dumps(create_data.content) if isinstance(create_data.content, dict) else create_data.content,
+                structured_data=create_data.structured_data,
+                display_order=next_order,
+                is_required=False,
+                is_completed=True
+            )
+
+            self.db.add(section)
+            await self.db.commit()
+            await self.db.refresh(section)
+
+            return section
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create section: {str(e)}"
+            ) from e
 
     async def update_section(
         self,
@@ -592,8 +661,8 @@ class AgreementService:
 
             # Check if both parents have approved
             if agreement.petitioner_approved and agreement.respondent_approved:
-                agreement.status = "active"
-                agreement.effective_date = datetime.utcnow()
+                # Change status to "approved" (not active yet - requires manual activation)
+                agreement.status = "approved"
 
                 # Create version snapshot
                 version = AgreementVersion(
@@ -646,3 +715,151 @@ class AgreementService:
 
         completed = sum(1 for s in sections if s.is_completed)
         return (completed / len(sections)) * 100
+
+    async def activate_agreement(
+        self,
+        agreement_id: str,
+        user: User
+    ) -> Agreement:
+        """
+        Activate an approved agreement.
+
+        Deactivates any currently active agreements for the same case.
+
+        Args:
+            agreement_id: ID of the agreement to activate
+            user: User activating the agreement
+
+        Returns:
+            Activated agreement
+
+        Raises:
+            HTTPException: If activation fails
+        """
+        agreement = await self.get_agreement(agreement_id, user)
+
+        # Can only activate approved agreements
+        if agreement.status != "approved":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only activate approved agreements"
+            )
+
+        try:
+            # Deactivate any currently active agreements for this case
+            result = await self.db.execute(
+                select(Agreement)
+                .where(Agreement.case_id == agreement.case_id)
+                .where(Agreement.status == "active")
+            )
+            active_agreements = result.scalars().all()
+
+            for active_agreement in active_agreements:
+                active_agreement.status = "inactive"
+
+            # Activate this agreement
+            agreement.status = "active"
+            agreement.effective_date = datetime.utcnow()
+
+            await self.db.commit()
+            await self.db.refresh(agreement)
+
+            return agreement
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to activate agreement: {str(e)}"
+            ) from e
+
+    async def deactivate_agreement(
+        self,
+        agreement_id: str,
+        user: User
+    ) -> Agreement:
+        """
+        Deactivate an active agreement.
+
+        Args:
+            agreement_id: ID of the agreement to deactivate
+            user: User deactivating the agreement
+
+        Returns:
+            Deactivated agreement
+
+        Raises:
+            HTTPException: If deactivation fails
+        """
+        agreement = await self.get_agreement(agreement_id, user)
+
+        # Can only deactivate active agreements
+        if agreement.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only deactivate active agreements"
+            )
+
+        try:
+            agreement.status = "inactive"
+
+            await self.db.commit()
+            await self.db.refresh(agreement)
+
+            return agreement
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to deactivate agreement: {str(e)}"
+            ) from e
+
+    async def delete_agreement(
+        self,
+        agreement_id: str,
+        user: User
+    ) -> None:
+        """
+        Delete an agreement (only if in draft status).
+
+        Args:
+            agreement_id: ID of the agreement
+            user: User requesting deletion
+
+        Raises:
+            HTTPException: If deletion fails or agreement is not draft
+        """
+        agreement = await self.get_agreement(agreement_id, user)
+
+        # Can only delete draft agreements
+        if agreement.status != "draft":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Can only delete draft agreements"
+            )
+
+        try:
+            # Delete all sections first (cascade should handle this, but explicit is better)
+            await self.db.execute(
+                select(AgreementSection)
+                .where(AgreementSection.agreement_id == agreement_id)
+            )
+            sections = (await self.db.execute(
+                select(AgreementSection)
+                .where(AgreementSection.agreement_id == agreement_id)
+            )).scalars().all()
+
+            for section in sections:
+                await self.db.delete(section)
+
+            # Delete agreement
+            await self.db.delete(agreement)
+            await self.db.commit()
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete agreement: {str(e)}"
+            ) from e

@@ -32,7 +32,12 @@ export function ParentInfoSection({ data, onSave, onNext, onPrevious }: ParentIn
   const [isSaving, setIsSaving] = useState(false);
 
   const handleChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    console.log(`🎯 ParentInfo handleChange called:`, { field, value });
+    setFormData((prev) => {
+      const updated = { ...prev, [field]: value };
+      console.log(`📊 ParentInfo new state:`, updated);
+      return updated;
+    });
   };
 
   const handleSaveAndNext = async () => {
@@ -67,7 +72,11 @@ export function ParentInfoSection({ data, onSave, onNext, onPrevious }: ParentIn
             <Input
               id="full_name"
               value={formData.full_name}
-              onChange={(e) => handleChange('full_name', e.target.value)}
+              onChange={(e) => {
+                console.log(`⚡ Input onChange event:`, e.target.value);
+                handleChange('full_name', e.target.value);
+              }}
+              onInput={(e) => console.log(`⌨️ Input onInput event:`, (e.target as HTMLInputElement).value)}
               placeholder="John Michael Smith"
               required
             />

@@ -81,9 +81,13 @@ class ARIAService:
 
     HOSTILITY_PATTERNS = [
         r'\bshut\s*up\b', r'\bleave\s+me\s+alone\b', r'\bget\s+out\b',
-        r'\bi\s+hate\s+you\b', r'\byou\s+never\b', r'\byou\s+always\b',
+        r'\bi\s+hate\s+you\b', r'\bhate\s+you\b', r'\bcan\'?t\s+stand\s+you\b',
+        r'\byou\s+never\b', r'\byou\s+always\b', r'\bevery\s+time\s+you\b',
         r'\byour\s+fault\b', r'\bblame\s+you\b', r"\bdon'?t\s+care\b",
         r'\bwhatever\b', r'\bfigure\s+it\s+out\b',
+        r'\bgo\s+to\s+hell\b', r'\bfuck\s+off\b', r'\bget\s+lost\b',
+        r'\bstop\s+bothering\s+me\b', r'\bwaste\s+of\s+time\b',
+        r'\byou\'?re\s+(the\s+)?worst\b', r'\bcan\'?t\s+believe\s+you\b',
     ]
 
     DISMISSIVE_PATTERNS = [
@@ -106,28 +110,68 @@ class ARIAService:
     ]
 
     THREATENING_PATTERNS = [
+        # Legal threats
         r'\bi\'?ll?\s+(get|take)\s+(my\s+)?lawyer\b', r'\bsee\s+you\s+in\s+court\b',
+        r'\btake\s+you\s+to\s+court\b', r'\bfile\s+a\s+motion\b',
+        # General threats
         r'\byou\'?ll?\s+(be\s+)?sorry\b', r'\byou\'?ll?\s+regret\b',
         r'\bi\'?ll?\s+make\s+sure\b', r'\bwatch\s+(out|yourself)\b',
         r'\bdon\'?t\s+test\s+me\b', r'\bor\s+else\b',
+        # Physical violence (CRITICAL)
+        r'\bi\'?ll?\s+kill\s+you\b', r'\bkill\s+you\b', r'\bwanna\s+kill\b',
+        r'\bi\'?ll?\s+hurt\s+you\b', r'\bhurt\s+you\b', r'\bharm\s+you\b',
+        r'\bi\'?ll?\s+beat\s+you\b', r'\bbeat\s+you\s+up\b',
+        r'\bi\'?ll?\s+destroy\s+you\b', r'\bcome\s+after\s+you\b',
+        r'\byou\'?re\s+dead\b', r'\byou\'?re\s+gonna\s+pay\b',
+        # Intimidation
+        r'\bwatch\s+your\s+back\b', r'\byou\s+better\b',
+        r'\bi\s+know\s+where\s+you\s+live\b', r'\bi\'?ll?\s+find\s+you\b',
+        # Custody threats
+        r'\byou\'?ll?\s+never\s+see\s+(the\s+)?kids?\b',
+        r'\btake\s+(away\s+)?the\s+kids?\b', r'\bi\'?ll?\s+get\s+full\s+custody\b',
     ]
 
     # Suggested phrase replacements
     SUGGESTIONS = {
-        r'\bwhat\s+type\s+of\s+stupid\s+shit\s+is\s+that\b': "I'm confused by this",
-        r'\bgo\s+look\b': "you can find it in the schedule we agreed on",
+        # Profanity and hostility
+        r'\bwhat\s+type\s+of\s+stupid\s+shit\s+is\s+that\b': "I'm confused by this approach",
+        r'\bshut\s*up\b': "I need a moment to process this",
+        r'\bfuck\s+off\b': "I need some space right now",
+        r'\bgo\s+to\s+hell\b': "I'm very upset about this",
+        r'\bget\s+lost\b': "I need to step away from this conversation",
+
+        # Hate and contempt
+        r'\bi\s+hate\s+you\b': "I'm very frustrated with this situation",
+        r'\bhate\s+you\b': "I'm having difficulty with this",
+        r'\bcan\'?t\s+stand\s+you\b': "I'm finding this challenging",
+
+        # Absolutes (never/always)
         r'\byou\s+never\b': "I've noticed that sometimes",
-        r'\byou\s+always\b': "I've noticed that sometimes",
-        r'\bshut\s*up\b': "I need a moment before responding",
-        r'\bi\s+don\'?t\s+care\b': "I need to think about this",
+        r'\byou\s+always\b': "I've noticed that often",
+        r'\bevery\s+time\s+you\b': "I've observed that when",
+
+        # Dismissive
+        r'\bwhatever\b': "I understand your perspective",
+        r'\bfigure\s+it\s+out\b': "let me know if you need clarification",
+        r'\bnot\s+my\s+problem\b': "this is something we should discuss",
+        r'\bdeal\s+with\s+it\b': "let's work on this together",
+        r'\bgo\s+look\b': "you can find it in our agreement/schedule",
+
+        # Blame
+        r'\byour\s+fault\b': "this situation occurred",
+        r'\bblame\s+you\b': "this needs to be addressed",
+
+        # Insults
         r'\bstupid\b': "confusing",
         r'\bidiot\b': "",
-        r'\bwhatever\b': "I understand",
-        r'\bfigure\s+it\s+out\b': "let me know if you need the details",
-        r'\bnot\s+my\s+problem\b': "I'm not sure how to help with that",
-        r'\bdeal\s+with\s+it\b': "I hope we can work through this",
-        r'\byour\s+fault\b': "this situation",
-        r'\bi\s+hate\s+you\b': "I'm frustrated right now",
+        r'\bmoron\b': "",
+        r'\bdumb\b': "unclear",
+
+        # Threats (these should be flagged as severe)
+        r'\bi\'?ll?\s+kill\s+you\b': "I am extremely upset",
+        r'\bkill\s+you\b': "I am extremely upset",
+        r'\bhurt\s+you\b': "I am very angry",
+        r'\byou\'?ll?\s+never\s+see\s+(the\s+)?kids?\b': "We need to discuss the custody schedule",
     }
 
     def __init__(self):
@@ -224,27 +268,33 @@ class ARIAService:
         categories: List[ToxicityCategory],
         triggers: List[str]
     ) -> float:
-        """Calculate toxicity score from 0.0 to 1.0"""
+        """
+        Calculate toxicity score from 0.0 to 1.0
+
+        IMPORTANT: This is for COURT DOCUMENTATION.
+        We use stricter scoring because all communication may be reviewed by a judge.
+        """
         if not categories:
             return 0.0
 
-        # Weight by category severity
+        # Weight by category severity (stricter for court context)
         weights = {
-            ToxicityCategory.THREATENING: 0.4,
-            ToxicityCategory.PROFANITY: 0.25,
-            ToxicityCategory.INSULT: 0.25,
-            ToxicityCategory.HOSTILITY: 0.2,
-            ToxicityCategory.BLAME: 0.15,
-            ToxicityCategory.DISMISSIVE: 0.1,
-            ToxicityCategory.PASSIVE_AGGRESSIVE: 0.1,
-            ToxicityCategory.SARCASM: 0.1,
-            ToxicityCategory.ALL_CAPS: 0.15,
+            ToxicityCategory.THREATENING: 0.9,      # Physical threats = SEVERE
+            ToxicityCategory.HOSTILITY: 0.5,        # "I hate you" inappropriate for court
+            ToxicityCategory.PROFANITY: 0.4,        # Swearing = unprofessional
+            ToxicityCategory.INSULT: 0.4,           # Name-calling = unprofessional
+            ToxicityCategory.BLAME: 0.3,            # Blame = conflict escalation
+            ToxicityCategory.DISMISSIVE: 0.25,      # Dismissive = non-collaborative
+            ToxicityCategory.PASSIVE_AGGRESSIVE: 0.25,  # PA = conflict escalation
+            ToxicityCategory.SARCASM: 0.25,         # Sarcasm = unprofessional
+            ToxicityCategory.ALL_CAPS: 0.2,         # Shouting = aggressive
+            ToxicityCategory.MANIPULATION: 0.4,     # Manipulation = bad faith
         }
 
-        score = sum(weights.get(cat, 0.1) for cat in set(categories))
+        score = sum(weights.get(cat, 0.2) for cat in set(categories))
 
-        # Add bonus for multiple triggers
-        score += len(triggers) * 0.05
+        # Add bonus for multiple triggers (indicates pattern)
+        score += len(triggers) * 0.08
 
         return min(1.0, score)
 
@@ -262,27 +312,33 @@ class ARIAService:
             return ToxicityLevel.SEVERE
 
     def _generate_explanation(self, categories: List[ToxicityCategory]) -> str:
-        """Generate human-readable explanation"""
+        """
+        Generate human-readable explanation.
+
+        Emphasizes that this is court documentation to encourage professional communication.
+        """
         if not categories:
-            return "This message looks good! Clear and respectful communication."
+            return "This message is appropriate for court documentation. Professional and focused on the children's needs."
 
         explanations = {
-            ToxicityCategory.PROFANITY: "contains strong language",
-            ToxicityCategory.INSULT: "includes words that could feel hurtful",
-            ToxicityCategory.HOSTILITY: "has a confrontational tone",
-            ToxicityCategory.DISMISSIVE: "might come across as dismissive",
-            ToxicityCategory.PASSIVE_AGGRESSIVE: "could be seen as passive-aggressive",
-            ToxicityCategory.BLAME: "places blame directly on the other person",
-            ToxicityCategory.THREATENING: "contains language that could feel threatening",
-            ToxicityCategory.ALL_CAPS: "uses caps which can feel like shouting",
+            ToxicityCategory.THREATENING: "contains threatening language (completely inappropriate for court records and may have legal consequences)",
+            ToxicityCategory.HOSTILITY: "has hostile language that judges view negatively",
+            ToxicityCategory.PROFANITY: "contains profanity (unprofessional in court documentation)",
+            ToxicityCategory.INSULT: "includes insulting language (reflects poorly in court)",
+            ToxicityCategory.BLAME: "places blame on the other parent (courts prefer collaborative language)",
+            ToxicityCategory.DISMISSIVE: "appears dismissive (courts want to see good-faith communication)",
+            ToxicityCategory.PASSIVE_AGGRESSIVE: "has passive-aggressive tone (judges notice this)",
+            ToxicityCategory.SARCASM: "contains sarcasm (inappropriate for legal documentation)",
+            ToxicityCategory.ALL_CAPS: "uses all caps (appears aggressive in court records)",
+            ToxicityCategory.MANIPULATION: "appears manipulative (bad faith in court's eyes)",
         }
 
         issues = [explanations.get(cat, str(cat)) for cat in set(categories)]
 
         if len(issues) == 1:
-            return f"This message {issues[0]}."
+            return f"⚠️ Court Context Warning: This message {issues[0]}."
         else:
-            return f"This message {', '.join(issues[:-1])}, and {issues[-1]}."
+            return f"⚠️ Court Context Warning: This message {', '.join(issues[:-1])}, and {issues[-1]}."
 
     def _generate_suggestion(
         self,
@@ -308,16 +364,21 @@ class ARIAService:
             sentences = suggestion.split('. ')
             suggestion = '. '.join(s.capitalize() if s else s for s in sentences)
 
-        # If suggestion is too short or same as original, provide template
+        # If suggestion is too short or same as original, provide court-appropriate template
         if len(suggestion) < 5 or suggestion.lower() == message.lower():
-            if ToxicityCategory.DISMISSIVE in categories:
-                suggestion = "I understand you have questions. Let me know what specific information would help."
+            if ToxicityCategory.THREATENING in categories:
+                # Threats require immediate de-escalation
+                suggestion = "I need to take some time to cool down before we continue this discussion. Let's focus on what's best for the children."
             elif ToxicityCategory.HOSTILITY in categories:
-                suggestion = "I'm feeling frustrated right now. Can we discuss this calmly for the kids' sake?"
+                suggestion = "I'm frustrated with this situation. Can we please discuss this calmly and focus on our children's needs?"
+            elif ToxicityCategory.DISMISSIVE in categories:
+                suggestion = "I understand you have questions. Let me know what specific information would be helpful."
             elif ToxicityCategory.BLAME in categories:
-                suggestion = "I think there's been a miscommunication. Let's figure this out together."
+                suggestion = "I think there's been a miscommunication. Let's work together to resolve this."
+            elif ToxicityCategory.PROFANITY in categories or ToxicityCategory.INSULT in categories:
+                suggestion = "I'm upset about this situation. Can we please keep our communication professional?"
             else:
-                suggestion = "Let's take a moment and approach this calmly. What do you need from me?"
+                suggestion = "Let's approach this calmly and professionally. What do you need to know?"
 
         return suggestion
 
@@ -335,21 +396,30 @@ class ARIAService:
             return {}
 
         level_headers = {
-            ToxicityLevel.LOW: "Just a thought...",
-            ToxicityLevel.MEDIUM: "Hey, quick check-in...",
-            ToxicityLevel.HIGH: "Hold on a moment...",
-            ToxicityLevel.SEVERE: "Let's pause here...",
+            ToxicityLevel.LOW: "Professional Communication Note",
+            ToxicityLevel.MEDIUM: "Court Documentation Warning",
+            ToxicityLevel.HIGH: "IMPORTANT: Court Review Alert",
+            ToxicityLevel.SEVERE: "CRITICAL: Inappropriate for Court Records",
+        }
+
+        # Court-focused reminders based on severity
+        court_reminders = {
+            ToxicityLevel.LOW: "Reminder: All messages may be reviewed by a judge. Keep communication professional.",
+            ToxicityLevel.MEDIUM: "Warning: This language could reflect poorly in court. Judges favor collaborative, child-focused communication.",
+            ToxicityLevel.HIGH: "This message could seriously damage your case in court. Judges view hostile communication negatively.",
+            ToxicityLevel.SEVERE: "CRITICAL: This type of communication can have serious legal consequences and harm your custody case.",
         }
 
         return {
             "level": analysis.toxicity_level.value,
-            "header": level_headers.get(analysis.toxicity_level, "A gentle note..."),
+            "header": level_headers.get(analysis.toxicity_level, "Communication Alert"),
             "explanation": analysis.explanation,
             "original_message": analysis.original_message,
             "suggestion": analysis.suggestion,
             "toxicity_score": analysis.toxicity_score,
             "categories": [cat.value for cat in analysis.categories],
-            "child_reminder": "Remember, your little one(s) are counting on both of you to communicate kindly.",
+            "court_reminder": court_reminders.get(analysis.toxicity_level, "Remember, this is court documentation."),
+            "child_reminder": "Focus on what's best for your children. The court is watching how you communicate.",
         }
 
     async def analyze_with_ai(
@@ -384,26 +454,37 @@ class ARIAService:
                     context_info = f"\n\nContext: Communication about co-parenting {names}."
 
             # AI system prompt
-            system_prompt = """You are ARIA, an AI assistant for co-parenting communication.
-Your role is to help separated parents communicate effectively and reduce conflict.
+            system_prompt = """You are ARIA, an AI assistant for co-parenting communication in CommonGround.
 
-Analyze messages for:
-- Hostility, blame, passive-aggression
-- Manipulation or guilt-tripping
-- Threats or controlling language
-- Dismissiveness or contempt
-- Any language that could escalate conflict
+CRITICAL CONTEXT: All messages are COURT DOCUMENTATION that may be reviewed by judges, attorneys, and guardians ad litem. This is NOT private messaging - it's legal evidence.
 
-Rate toxicity from 0.0 (perfectly appropriate) to 1.0 (highly toxic).
+Your role is to ensure communication is appropriate for court review and focused on children's welfare.
+
+Analyze messages for COURT-INAPPROPRIATE content:
+- Physical threats or violence (CRITICAL - may have criminal implications)
+- Hostility, contempt, or hate speech (judges view very negatively)
+- Profanity or insults (unprofessional in legal context)
+- Blame, manipulation, or guilt-tripping (bad faith communication)
+- Dismissiveness or passive-aggression (non-collaborative)
+- All caps/shouting (appears aggressive)
+- Anything a judge would view as poor co-parenting
+
+Rate toxicity from 0.0 (court-appropriate) to 1.0 (completely inappropriate for legal records).
+
+Be STRICT because:
+- Judges notice communication patterns
+- Hostile messages can affect custody decisions
+- Threats can have legal consequences
+- Professional communication shows good faith
 
 Provide:
-1. Toxicity score
+1. Toxicity score (be strict - court standard, not casual messaging)
 2. Categories of issues detected
 3. Specific problematic phrases
-4. Brief explanation
-5. 1-2 alternative phrasings that preserve intent but reduce conflict
+4. Why this is inappropriate for court documentation
+5. 1-2 professional, court-appropriate alternatives
 
-Focus on helping parents communicate about their children's needs, not attacking each other."""
+Focus: Help parents communicate like they're talking in front of a judge."""
 
             # Analysis prompt
             prompt = f"""Analyze this co-parenting message:{context_info}
@@ -489,26 +570,37 @@ Respond in JSON format:
                     context_info = f"\n\nContext: Communication about co-parenting {names}."
 
             # System prompt
-            system_prompt = """You are ARIA, an AI assistant for co-parenting communication.
-Your role is to help separated parents communicate effectively and reduce conflict.
+            system_prompt = """You are ARIA, an AI assistant for co-parenting communication in CommonGround.
 
-Analyze messages for:
-- Hostility, blame, passive-aggression
-- Manipulation or guilt-tripping
-- Threats or controlling language
-- Dismissiveness or contempt
-- Any language that could escalate conflict
+CRITICAL CONTEXT: All messages are COURT DOCUMENTATION that may be reviewed by judges, attorneys, and guardians ad litem. This is NOT private messaging - it's legal evidence.
 
-Rate toxicity from 0.0 (perfectly appropriate) to 1.0 (highly toxic).
+Your role is to ensure communication is appropriate for court review and focused on children's welfare.
+
+Analyze messages for COURT-INAPPROPRIATE content:
+- Physical threats or violence (CRITICAL - may have criminal implications)
+- Hostility, contempt, or hate speech (judges view very negatively)
+- Profanity or insults (unprofessional in legal context)
+- Blame, manipulation, or guilt-tripping (bad faith communication)
+- Dismissiveness or passive-aggression (non-collaborative)
+- All caps/shouting (appears aggressive)
+- Anything a judge would view as poor co-parenting
+
+Rate toxicity from 0.0 (court-appropriate) to 1.0 (completely inappropriate for legal records).
+
+Be STRICT because:
+- Judges notice communication patterns
+- Hostile messages can affect custody decisions
+- Threats can have legal consequences
+- Professional communication shows good faith
 
 Provide:
-1. Toxicity score
+1. Toxicity score (be strict - court standard, not casual messaging)
 2. Categories of issues detected
 3. Specific problematic phrases
-4. Brief explanation
-5. 1-2 alternative phrasings that preserve intent but reduce conflict
+4. Why this is inappropriate for court documentation
+5. 1-2 professional, court-appropriate alternatives
 
-Focus on helping parents communicate about their children's needs, not attacking each other.
+Focus: Help parents communicate like they're talking in front of a judge.
 
 Respond in JSON format only."""
 

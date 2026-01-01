@@ -4,43 +4,17 @@ import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProtectedRoute } from '@/components/protected-route';
+import { Navigation } from '@/components/navigation';
 import { useRouter } from 'next/navigation';
 
 function DashboardContent() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
-
-  const handleLogout = async () => {
-    await logout();
-    router.push('/login');
-  };
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">CommonGround</h1>
-              <p className="text-sm text-gray-500">
-                Where co-parents find common ground
-              </p>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">
-                  {user?.first_name} {user?.last_name}
-                </p>
-                <p className="text-xs text-gray-500">{user?.email}</p>
-              </div>
-              <Button variant="outline" onClick={handleLogout}>
-                Sign out
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
+      {/* Navigation */}
+      <Navigation />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -142,11 +116,14 @@ function DashboardContent() {
                 <div className="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-semibold">
                   2
                 </div>
-                <div>
+                <div className="flex-1">
                   <h4 className="font-medium text-gray-900">Build your agreement</h4>
                   <p className="text-sm text-gray-500">
                     Use our guided interview to create a comprehensive custody agreement
                   </p>
+                  <Button variant="outline" size="sm" className="mt-2" onClick={() => router.push('/agreements')}>
+                    Build agreement
+                  </Button>
                 </div>
               </div>
 
@@ -154,11 +131,14 @@ function DashboardContent() {
                 <div className="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-semibold">
                   3
                 </div>
-                <div>
+                <div className="flex-1">
                   <h4 className="font-medium text-gray-900">Start communicating</h4>
                   <p className="text-sm text-gray-500">
                     Send messages with AI-powered moderation to reduce conflict
                   </p>
+                  <Button variant="outline" size="sm" className="mt-2" onClick={() => router.push('/messages')}>
+                    Start communicating
+                  </Button>
                 </div>
               </div>
             </div>

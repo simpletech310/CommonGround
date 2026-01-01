@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { Navigation } from '@/components/navigation';
 import { casesAPI, agreementsAPI, Case, Agreement } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +19,8 @@ function AgreementsListContent() {
   const [isLoadingCases, setIsLoadingCases] = useState(true);
   const [isLoadingAgreements, setIsLoadingAgreements] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showBuilderChoice, setShowBuilderChoice] = useState(false);
+  const [isCreatingAgreement, setIsCreatingAgreement] = useState(false);
 
   useEffect(() => {
     loadCases();
@@ -56,9 +59,37 @@ function AgreementsListContent() {
       setAgreements(data);
     } catch (err: any) {
       console.error('Failed to load agreements:', err);
-      setError(err.message || 'Failed to load agreements');
+      // Don't set error for 404 - just means no agreements yet
+      if (err.status !== 404) {
+        setError(err.message || 'Failed to load agreements');
+      }
     } finally {
       setIsLoadingAgreements(false);
+    }
+  };
+
+  const createAgreementWithBuilder = async (useAria: boolean) => {
+    if (!selectedCase) return;
+
+    try {
+      setIsCreatingAgreement(true);
+      setShowBuilderChoice(false);
+      const newAgreement = await agreementsAPI.create({
+        case_id: selectedCase.id,
+        title: `${selectedCase.case_name} - Parenting Agreement`,
+        agreement_type: 'parenting_plan',
+      });
+
+      // Navigate to chosen builder
+      if (useAria) {
+        router.push(`/agreements/${newAgreement.id}/aria`);
+      } else {
+        router.push(`/agreements/${newAgreement.id}/builder`);
+      }
+    } catch (err: any) {
+      console.error('Failed to create agreement:', err);
+      setError(err.message || 'Failed to create agreement');
+      setIsCreatingAgreement(false);
     }
   };
 
@@ -85,37 +116,8 @@ function AgreementsListContent() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-8">
-              <Link href="/dashboard" className="text-2xl font-bold text-gray-900">
-                CommonGround
-              </Link>
-              <nav className="flex gap-4">
-                <Link href="/cases" className="text-sm font-medium text-gray-600 hover:text-gray-900">
-                  Cases
-                </Link>
-                <Link href="/messages" className="text-sm font-medium text-gray-600 hover:text-gray-900">
-                  Messages
-                </Link>
-                <Link href="/agreements" className="text-sm font-medium text-blue-600 border-b-2 border-blue-600 pb-1">
-                  Agreements
-                </Link>
-              </nav>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">
-                  {user?.first_name} {user?.last_name}
-                </p>
-                <p className="text-xs text-gray-500">{user?.email}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+      {/* Navigation */}
+      <Navigation />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -200,14 +202,24 @@ function AgreementsListContent() {
                         <CardTitle>{selectedCase.case_name} - Agreements</CardTitle>
                         <CardDescription>Custody and parenting agreements</CardDescription>
                       </div>
-                      <Link href={`/agreements/new?case=${selectedCase.id}`}>
-                        <Button>
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                          </svg>
-                          Create Agreement
-                        </Button>
-                      </Link>
+                      <Button
+                        onClick={() => setShowBuilderChoice(true)}
+                        disabled={isCreatingAgreement}
+                      >
+                        {isCreatingAgreement ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Creating...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                            Create Agreement
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </CardHeader>
                 </Card>
@@ -278,7 +290,7 @@ function AgreementsListContent() {
                             <div className="flex-1">
                               <CardTitle className="text-lg">{agreement.title}</CardTitle>
                               <CardDescription className="mt-1">
-                                {getStatusLabel(agreement.agreement_type)}
+                                Version {agreement.version}
                               </CardDescription>
                             </div>
                             <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(agreement.status)}`}>
@@ -295,6 +307,10 @@ function AgreementsListContent() {
                                 <p className="text-xs font-medium text-yellow-900">
                                   Awaiting approval from both parents
                                 </p>
+                                <div className="mt-2 text-xs text-yellow-800">
+                                  <p>Petitioner: {agreement.petitioner_approved ? '✓ Approved' : '○ Pending'}</p>
+                                  <p>Respondent: {agreement.respondent_approved ? '✓ Approved' : '○ Pending'}</p>
+                                </div>
                               </div>
                             )}
 
@@ -324,6 +340,100 @@ function AgreementsListContent() {
             )}
           </div>
         </div>
+
+        {/* Builder Choice Modal */}
+        {showBuilderChoice && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">
+                Choose How to Build Your Agreement
+              </h2>
+              <p className="text-gray-600 mb-6">
+                Select the approach that works best for you
+              </p>
+
+              <div className="space-y-4">
+                {/* ARIA Option */}
+                <button
+                  onClick={() => createAgreementWithBuilder(true)}
+                  disabled={isCreatingAgreement}
+                  className="w-full text-left p-6 border-2 border-purple-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
+                      A
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        Talk to ARIA (Recommended)
+                      </h3>
+                      <p className="text-sm text-gray-600 mb-3">
+                        Have a natural conversation about your custody arrangement. ARIA will ask
+                        questions, understand casual language, and create your agreement for you.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                          Conversational
+                        </span>
+                        <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                          Faster
+                        </span>
+                        <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                          AI-Powered
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Wizard Option */}
+                <button
+                  onClick={() => createAgreementWithBuilder(false)}
+                  disabled={isCreatingAgreement}
+                  className="w-full text-left p-6 border-2 border-blue-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        Step-by-Step Wizard
+                      </h3>
+                      <p className="text-sm text-gray-600 mb-3">
+                        Fill out structured forms with clear sections for custody schedules,
+                        holidays, decision-making, and more.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                          Structured
+                        </span>
+                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                          Traditional
+                        </span>
+                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                          Detailed
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowBuilderChoice(false)}
+                  disabled={isCreatingAgreement}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -31,7 +31,12 @@ export function createSection(
     const [isSaving, setIsSaving] = useState(false);
 
     const handleChange = (field: string, value: string) => {
-      setFormData((prev) => ({ ...prev, [field]: value }));
+      console.log(`📝 Field "${field}" changed to:`, value);
+      setFormData((prev) => {
+        const updated = { ...prev, [field]: value };
+        console.log('📊 Updated formData:', updated);
+        return updated;
+      });
     };
 
     const handleSaveAndNext = async () => {
@@ -48,7 +53,35 @@ export function createSection(
 
     const isValid = fields
       .filter((f) => f.required)
-      .every((f) => formData[f.name]?.trim());
+      .every((f) => {
+        const value = formData[f.name];
+        const trimmed = value?.trim();
+        const isFieldValid = Boolean(trimmed);
+
+        // Debug logging - only log invalid fields
+        if (!isFieldValid) {
+          console.log(`❌ Field "${f.name}" is invalid:`, {
+            value,
+            trimmed,
+            hasValue: Boolean(value),
+            afterTrim: Boolean(trimmed)
+          });
+        }
+
+        return isFieldValid;
+      });
+
+    // Monitor formData and validation changes
+    useEffect(() => {
+      console.log('🔄 Form state updated:', {
+        formData,
+        isValid,
+        requiredFields: fields.filter(f => f.required).map(f => f.name),
+        filledFields: Object.entries(formData)
+          .filter(([_, value]) => value?.trim())
+          .map(([key]) => key)
+      });
+    }, [formData, isValid]);
 
     return (
       <Card>
@@ -67,16 +100,29 @@ export function createSection(
           </div>
 
           <div className="space-y-4">
-            {fields.map((field) => (
+            {fields.map((field) => {
+              const fieldValue = formData[field.name];
+              const isFieldFilled = fieldValue?.trim();
+
+              return (
               <div key={field.name}>
-                <Label htmlFor={field.name}>
-                  {field.label} {field.required && '*'}
+                <Label htmlFor={field.name} className="flex items-center gap-2">
+                  {field.label} {field.required && <span className="text-red-500">*</span>}
+                  {field.required && isFieldFilled && (
+                    <span className="text-green-600 text-xs">✓</span>
+                  )}
+                  {field.required && !isFieldFilled && (
+                    <span className="text-gray-400 text-xs">(required)</span>
+                  )}
                 </Label>
                 {field.type === 'textarea' ? (
                   <textarea
                     id={field.name}
-                    value={formData[field.name]}
-                    onChange={(e) => handleChange(field.name, e.target.value)}
+                    value={formData[field.name] || ''}
+                    onChange={(e) => {
+                      console.log(`🎯 Textarea onChange fired for "${field.name}"`, e.target.value);
+                      handleChange(field.name, e.target.value);
+                    }}
                     placeholder={field.placeholder}
                     rows={4}
                     required={field.required}
@@ -85,8 +131,11 @@ export function createSection(
                 ) : field.type === 'select' ? (
                   <select
                     id={field.name}
-                    value={formData[field.name]}
-                    onChange={(e) => handleChange(field.name, e.target.value)}
+                    value={formData[field.name] || ''}
+                    onChange={(e) => {
+                      console.log(`🎯 Select onChange fired for "${field.name}"`, e.target.value);
+                      handleChange(field.name, e.target.value);
+                    }}
                     required={field.required}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
@@ -101,16 +150,36 @@ export function createSection(
                   <input
                     id={field.name}
                     type={field.type || 'text'}
-                    value={formData[field.name]}
-                    onChange={(e) => handleChange(field.name, e.target.value)}
+                    value={formData[field.name] || ''}
+                    onChange={(e) => {
+                      console.log(`🎯 Input onChange fired for "${field.name}"`, e.target.value);
+                      handleChange(field.name, e.target.value);
+                    }}
+                    onInput={(e) => console.log(`⌨️ Input onInput fired for "${field.name}"`, (e.target as HTMLInputElement).value)}
                     placeholder={field.placeholder}
                     required={field.required}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
+
+          {/* Debug validation status */}
+          {!isValid && (
+            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p className="text-sm font-medium text-yellow-900">Required fields not completed:</p>
+              <ul className="text-xs text-yellow-800 mt-2 list-disc list-inside">
+                {fields
+                  .filter((f) => f.required)
+                  .filter((f) => !formData[f.name]?.trim())
+                  .map((f) => (
+                    <li key={f.name}>{f.label}</li>
+                  ))}
+              </ul>
+            </div>
+          )}
 
           <div className="flex justify-between items-center pt-4 border-t">
             <Button variant="outline" onClick={onPrevious}>

@@ -51,6 +51,20 @@ class Case(Base, UUIDMixin, TimestampMixin):
         Boolean, default=True
     )  # Can agreement be modified
 
+    # ARIA Settings (Court Documentation Protection)
+    aria_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True
+    )  # ARIA analysis enabled by default (court protection)
+    aria_provider: Mapped[str] = mapped_column(
+        String(20), default="claude"
+    )  # AI provider: claude, openai, or regex
+    aria_disabled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )  # When ARIA was disabled (tracked for court)
+    aria_disabled_by: Mapped[Optional[str]] = mapped_column(
+        String(36), nullable=True
+    )  # Which parent disabled it (user_id)
+
     # Relationships
     participants: Mapped[list["CaseParticipant"]] = relationship(
         "CaseParticipant", back_populates="case", cascade="all, delete-orphan"
@@ -67,8 +81,14 @@ class Case(Base, UUIDMixin, TimestampMixin):
     schedule_events: Mapped[list["ScheduleEvent"]] = relationship(
         "ScheduleEvent", back_populates="case", cascade="all, delete-orphan"
     )
+    my_time_collections: Mapped[list["MyTimeCollection"]] = relationship(
+        "MyTimeCollection", back_populates="case", cascade="all, delete-orphan"
+    )
     payments: Mapped[list["Payment"]] = relationship(
         "Payment", back_populates="case", cascade="all, delete-orphan"
+    )
+    custody_exchanges: Mapped[list["CustodyExchange"]] = relationship(
+        "CustodyExchange", back_populates="case", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
