@@ -1399,3 +1399,167 @@ async def get_case_summary(
         unread_court_messages=unread,
         investigation_mode=settings.investigation_mode,
     )
+
+
+# =============================================================================
+# ClearFund Financial Endpoints (Court Read-Only Access)
+# =============================================================================
+
+@router.get(
+    "/clearfund/obligations/{case_id}",
+    summary="Get obligations for case (court view)",
+)
+async def get_case_obligations(
+    case_id: str,
+    page: int = 1,
+    page_size: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get all financial obligations for a case.
+
+    Court professionals can view all obligations for compliance monitoring.
+    """
+    from app.services.clearfund import ClearFundService
+    from app.schemas.clearfund import ObligationFilters
+
+    service = ClearFundService(db)
+    filters = ObligationFilters()
+    result = await service.list_obligations(case_id, filters, page, page_size)
+
+    return {
+        "items": [
+            {
+                "id": str(ob.id),
+                "title": ob.title,
+                "purpose_category": ob.purpose_category,
+                "total_amount": str(ob.total_amount),
+                "petitioner_share": str(ob.petitioner_share),
+                "respondent_share": str(ob.respondent_share),
+                "status": ob.status,
+                "amount_funded": str(ob.amount_funded),
+                "amount_verified": str(ob.amount_verified),
+                "due_date": ob.due_date.isoformat() if ob.due_date else None,
+                "is_overdue": ob.is_overdue,
+                "verification_required": ob.verification_required,
+                "receipt_required": ob.receipt_required,
+                "created_by": str(ob.created_by),
+                "created_at": ob.created_at.isoformat(),
+            }
+            for ob in result["items"]
+        ],
+        "total": result["total"],
+        "page": page,
+        "page_size": page_size,
+        "has_more": result["has_more"],
+    }
+
+
+@router.get(
+    "/clearfund/balance/{case_id}",
+    summary="Get balance summary for case (court view)",
+)
+async def get_case_balance(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get financial balance summary between parents.
+
+    Shows who owes whom and overall financial standing.
+    """
+    from app.services.clearfund import ClearFundService
+
+    service = ClearFundService(db)
+    balance = await service.get_balance_summary(case_id)
+
+    return {
+        "case_id": balance.case_id,
+        "petitioner_id": balance.petitioner_id,
+        "respondent_id": balance.respondent_id,
+        "petitioner_balance": str(balance.petitioner_balance),
+        "respondent_balance": str(balance.respondent_balance),
+        "petitioner_owes_respondent": str(balance.petitioner_owes_respondent),
+        "respondent_owes_petitioner": str(balance.respondent_owes_petitioner),
+        "net_balance": str(balance.net_balance),
+        "total_obligations_open": balance.total_obligations_open,
+        "total_obligations_funded": balance.total_obligations_funded,
+        "total_obligations_completed": balance.total_obligations_completed,
+        "total_this_month": str(balance.total_this_month),
+        "total_overdue": str(balance.total_overdue),
+    }
+
+
+@router.get(
+    "/clearfund/metrics/{case_id}",
+    summary="Get obligation metrics for case (court view)",
+)
+async def get_case_metrics(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get obligation metrics for compliance reporting.
+
+    Summary counts by status for court oversight.
+    """
+    from app.services.clearfund import ClearFundService
+
+    service = ClearFundService(db)
+    metrics = await service.get_obligation_metrics(case_id)
+
+    return {
+        "total_open": metrics.total_open,
+        "total_pending_funding": metrics.total_pending_funding,
+        "total_funded": metrics.total_funded,
+        "total_verified": metrics.total_verified,
+        "total_completed": metrics.total_completed,
+        "total_overdue": metrics.total_overdue,
+        "total_cancelled": metrics.total_cancelled,
+    }
+
+
+@router.get(
+    "/clearfund/ledger/{case_id}",
+    summary="Get transaction ledger for case (court view)",
+)
+async def get_case_ledger(
+    case_id: str,
+    page: int = 1,
+    page_size: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get immutable transaction ledger for court records.
+
+    All financial transactions with running balances for evidence.
+    """
+    from app.services.clearfund import LedgerService
+    from app.schemas.clearfund import LedgerFilters
+
+    service = LedgerService(db)
+    filters = LedgerFilters()
+    result = await service.get_ledger_history(case_id, filters, page, page_size)
+
+    return {
+        "items": [
+            {
+                "id": str(entry.id),
+                "entry_type": entry.entry_type,
+                "obligor_id": str(entry.obligor_id),
+                "obligee_id": str(entry.obligee_id),
+                "amount": str(entry.amount),
+                "running_balance": str(entry.running_balance),
+                "obligation_id": str(entry.obligation_id) if entry.obligation_id else None,
+                "description": entry.description,
+                "effective_date": entry.effective_date.isoformat(),
+                "is_reconciled": entry.is_reconciled,
+                "created_at": entry.created_at.isoformat(),
+            }
+            for entry in result["items"]
+        ],
+        "total": result["total"],
+        "page": page,
+        "page_size": page_size,
+        "has_more": result["has_more"],
+    }
