@@ -18,6 +18,22 @@ from app.models.payment import Payment, ExpenseRequest, PaymentLedger
 from app.models.legal import LegalAccess, CourtExport
 from app.models.audit import AuditLog, EventLog
 from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
+from app.models.court import (
+    CourtProfessional,
+    CourtAccessGrant,
+    CourtAccessLog,
+    CourtCaseSettings,
+    CourtEvent,
+    CourtMessage,
+    InvestigationReport,
+    CourtRole,
+    AccessScope,
+    GrantStatus,
+    CourtEventType,
+    CourtMessageType,
+    ReportType,
+    DEFAULT_ACCESS_DURATION,
+)
 
 __all__ = [
     "Base",
@@ -46,4 +62,19 @@ __all__ = [
     "EventLog",
     "CustodyExchange",
     "CustodyExchangeInstance",
+    # Court Access Mode
+    "CourtProfessional",
+    "CourtAccessGrant",
+    "CourtAccessLog",
+    "CourtCaseSettings",
+    "CourtEvent",
+    "CourtMessage",
+    "InvestigationReport",
+    "CourtRole",
+    "AccessScope",
+    "GrantStatus",
+    "CourtEventType",
+    "CourtMessageType",
+    "ReportType",
+    "DEFAULT_ACCESS_DURATION",
 ]

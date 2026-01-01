@@ -1,20 +1,121 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
 import { useRouter } from 'next/navigation';
+import { casesAPI, courtSettingsAPI, Case, CourtSettingsPublic } from '@/lib/api';
+
+interface CaseWithCourtSettings {
+  case: Case;
+  settings: CourtSettingsPublic | null;
+}
 
 function DashboardContent() {
   const { user } = useAuth();
   const router = useRouter();
+  const [casesWithSettings, setCasesWithSettings] = useState<CaseWithCourtSettings[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadCasesAndSettings();
+  }, []);
+
+  const loadCasesAndSettings = async () => {
+    try {
+      setIsLoading(true);
+      const cases = await casesAPI.list();
+
+      // Fetch court settings for each active case
+      const casesWithSettings: CaseWithCourtSettings[] = await Promise.all(
+        cases.map(async (c) => {
+          if (c.status === 'active') {
+            try {
+              const settings = await courtSettingsAPI.getSettings(c.id);
+              return { case: c, settings };
+            } catch {
+              return { case: c, settings: null };
+            }
+          }
+          return { case: c, settings: null };
+        })
+      );
+
+      setCasesWithSettings(casesWithSettings);
+    } catch (error) {
+      console.error('Failed to load cases:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Get cases with active court controls
+  const casesWithActiveControls = casesWithSettings.filter(
+    (c) => c.settings && c.settings.active_controls && c.settings.active_controls.length > 0
+  );
+
+  const activeCases = casesWithSettings.filter((c) => c.case.status === 'active');
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Navigation */}
       <Navigation />
+
+      {/* Court Controls Banner */}
+      {casesWithActiveControls.length > 0 && (
+        <div className="bg-amber-50 border-b border-amber-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            {casesWithActiveControls.map(({ case: c, settings }) => (
+              <div key={c.id} className="flex items-start gap-3">
+                <span className="text-xl">⚖️</span>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-amber-900">
+                      Court-Ordered Controls Active
+                    </span>
+                    <span className="text-amber-700 text-sm">
+                      ({c.case_name})
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-1.5">
+                    {settings?.gps_checkins_required && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">
+                        <span>📍</span> GPS Check-ins Required
+                      </span>
+                    )}
+                    {settings?.supervised_exchange_required && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">
+                        <span>👁️</span> Supervised Exchanges
+                      </span>
+                    )}
+                    {settings?.in_app_communication_only && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">
+                        <span>💬</span> In-App Communication Only
+                      </span>
+                    )}
+                    {settings?.aria_enforcement_locked && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">
+                        <span>🤖</span> ARIA Moderation Locked
+                      </span>
+                    )}
+                    {settings?.agreement_edits_locked && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">
+                        <span>🔒</span> Agreement Edits Locked
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-amber-600 mt-1">
+                    These controls have been set by the court and cannot be modified.
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -39,10 +140,12 @@ function DashboardContent() {
             </CardHeader>
             <CardContent>
               <div className="text-center py-8">
-                <p className="text-4xl font-bold text-blue-600">0</p>
+                <p className="text-4xl font-bold text-blue-600">
+                  {isLoading ? '...' : activeCases.length}
+                </p>
                 <p className="text-sm text-gray-500 mt-2">Active cases</p>
-                <Button className="mt-4" size="sm" onClick={() => router.push('/cases/new')}>
-                  Create new case
+                <Button className="mt-4" size="sm" onClick={() => router.push(activeCases.length > 0 ? '/cases' : '/cases/new')}>
+                  {activeCases.length > 0 ? 'View cases' : 'Create new case'}
                 </Button>
               </div>
             </CardContent>

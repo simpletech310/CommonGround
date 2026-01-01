@@ -28,12 +28,15 @@ from app.schemas.schedule import (
     BusyPeriod,
     MyTimeCollectionResponse,
     CustodyExchangeInstanceForCalendar,
+    CourtEventForCalendar,
 )
 from app.services.event import EventService
 from app.services.time_block import TimeBlockService
 from app.services.collection import CollectionService
 from app.services.custody_exchange import CustodyExchangeService
+from app.services.court import CourtEventService
 from sqlalchemy import select
+import logging
 
 router = APIRouter()
 
@@ -185,13 +188,39 @@ async def get_calendar_data(
             ))
     except Exception as e:
         # Don't fail if exchanges can't be retrieved
-        import logging
         logging.error(f"Error fetching exchanges for calendar: {e}")
+
+    # Get court events
+    court_events_list = []
+    try:
+        court_event_service = CourtEventService(db)
+        court_events = await court_event_service.get_events_for_case(case_id, include_past=False)
+
+        for ce in court_events:
+            court_events_list.append(CourtEventForCalendar(
+                id=str(ce.id),
+                event_type=ce.event_type,
+                title=ce.title,
+                description=ce.description,
+                event_date=ce.event_date,
+                start_time=str(ce.start_time) if ce.start_time else None,
+                end_time=str(ce.end_time) if ce.end_time else None,
+                location=ce.location,
+                virtual_link=ce.virtual_link,
+                is_mandatory=ce.is_mandatory,
+                shared_notes=ce.shared_notes,
+                is_court_event=True,
+            ))
+        logging.info(f"[CALENDAR] Found {len(court_events_list)} court events for calendar")
+    except Exception as e:
+        # Don't fail if court events can't be retrieved
+        logging.error(f"Error fetching court events for calendar: {e}")
 
     return CalendarDataResponse(
         case_id=case_id,
         events=filtered_events,
         exchanges=exchanges_list,
+        court_events=court_events_list,
         busy_periods=busy_periods_list,
         my_collections=my_collections,
         start_date=start_date,

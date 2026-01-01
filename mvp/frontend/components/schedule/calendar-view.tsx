@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
-import { calendarAPI, CalendarDataV2, EventV2, BusyPeriod, ExchangeInstanceForCalendar } from '@/lib/api';
+import { ChevronLeft, ChevronRight, Plus, RefreshCw, Gavel } from 'lucide-react';
+import { calendarAPI, CalendarDataV2, EventV2, BusyPeriod, ExchangeInstanceForCalendar, CourtEventForCalendar } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
@@ -129,6 +129,19 @@ export default function CalendarView({
     });
   };
 
+  const getCourtEventsForDate = (date: Date): CourtEventForCalendar[] => {
+    if (!calendarData?.court_events) return [];
+
+    return calendarData.court_events.filter(event => {
+      const eventDate = new Date(event.event_date);
+      return (
+        eventDate.getDate() === date.getDate() &&
+        eventDate.getMonth() === date.getMonth() &&
+        eventDate.getFullYear() === date.getFullYear()
+      );
+    });
+  };
+
   const isToday = (date: Date): boolean => {
     const today = new Date();
     return (
@@ -191,6 +204,10 @@ export default function CalendarView({
             <span className="text-sm text-gray-600">Pickup/Dropoff</span>
           </div>
           <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-red-600" />
+            <span className="text-sm text-gray-600">Court Event</span>
+          </div>
+          <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-gray-400" />
             <span className="text-sm text-gray-600">Other Parent (Busy)</span>
           </div>
@@ -218,6 +235,7 @@ export default function CalendarView({
 
             const events = getEventsForDate(date);
             const exchanges = getExchangesForDate(date);
+            const courtEvents = getCourtEventsForDate(date);
             const busyPeriods = getBusyPeriodsForDate(date);
             const isTodayDate = isToday(date);
 
@@ -302,6 +320,22 @@ export default function CalendarView({
                     </div>
                   ))}
 
+                  {/* Court Events */}
+                  {courtEvents.slice(0, 2).map(courtEvent => (
+                    <div
+                      key={courtEvent.id}
+                      className={`w-full px-2 py-1 rounded text-xs text-white truncate flex items-center gap-1 ${
+                        courtEvent.is_mandatory ? 'bg-red-600' : 'bg-slate-600'
+                      }`}
+                      title={`${courtEvent.title}${courtEvent.is_mandatory ? ' (Required)' : ''} - ${courtEvent.location || 'See details'}`}
+                    >
+                      <Gavel className="h-3 w-3 flex-shrink-0" />
+                      <span className="truncate">
+                        {courtEvent.start_time ? formatTimeString(courtEvent.start_time) : ''} {courtEvent.title}
+                      </span>
+                    </div>
+                  ))}
+
                   {/* Busy Periods */}
                   {busyPeriods.slice(0, 2).map((period, i) => (
                     <div
@@ -314,9 +348,9 @@ export default function CalendarView({
                   ))}
 
                   {/* Show "more" indicator */}
-                  {events.length + exchanges.length + busyPeriods.length > 3 && (
+                  {events.length + exchanges.length + courtEvents.length + busyPeriods.length > 3 && (
                     <div className="text-xs text-gray-500 px-2">
-                      +{events.length + exchanges.length + busyPeriods.length - 3} more
+                      +{events.length + exchanges.length + courtEvents.length + busyPeriods.length - 3} more
                     </div>
                   )}
                 </div>
@@ -330,7 +364,7 @@ export default function CalendarView({
       {/* Summary */}
       {calendarData && (
         <div className="text-sm text-gray-600 text-center">
-          {calendarData.events.length === 0 && (calendarData.exchanges?.length || 0) === 0 && calendarData.busy_periods.length === 0 ? (
+          {calendarData.events.length === 0 && (calendarData.exchanges?.length || 0) === 0 && (calendarData.court_events?.length || 0) === 0 && calendarData.busy_periods.length === 0 ? (
             <span className="text-gray-400">
               No events this month. Click the + on any day to create one!
             </span>
@@ -339,6 +373,9 @@ export default function CalendarView({
               {calendarData.events.length} event{calendarData.events.length !== 1 ? 's' : ''}
               {(calendarData.exchanges?.length || 0) > 0 && (
                 <span> • {calendarData.exchanges.length} exchange{calendarData.exchanges.length !== 1 ? 's' : ''}</span>
+              )}
+              {(calendarData.court_events?.length || 0) > 0 && (
+                <span> • {calendarData.court_events.length} court event{calendarData.court_events.length !== 1 ? 's' : ''}</span>
               )}
               {calendarData.busy_periods.length > 0 && (
                 <span> • {calendarData.busy_periods.length} busy period{calendarData.busy_periods.length !== 1 ? 's' : ''}</span>
@@ -354,4 +391,13 @@ export default function CalendarView({
 function formatEventTime(dateString: string): string {
   const date = new Date(dateString);
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatTimeString(timeString: string): string {
+  // Handle time strings like "09:00:00" or "14:30:00"
+  const [hours, minutes] = timeString.split(':');
+  const hour = parseInt(hours, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${minutes} ${ampm}`;
 }

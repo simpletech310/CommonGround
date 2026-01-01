@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { casesAPI, messagesAPI, Case, Message } from '@/lib/api';
+import { casesAPI, messagesAPI, courtSettingsAPI, Case, Message, CourtSettingsPublic } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProtectedRoute } from '@/components/protected-route';
@@ -30,6 +30,7 @@ function MessagesContent() {
     aria_disabled_by?: string;
   } | null>(null);
   const [isUpdatingAria, setIsUpdatingAria] = useState(false);
+  const [courtSettings, setCourtSettings] = useState<CourtSettingsPublic | null>(null);
 
   useEffect(() => {
     loadCases();
@@ -68,8 +69,20 @@ function MessagesContent() {
   const handleSelectCase = async (caseItem: Case) => {
     setSelectedCase(caseItem);
     setShowCompose(false);
+    setCourtSettings(null);
     await loadMessages(caseItem.id);
     await loadAriaSettings(caseItem.id);
+    await loadCourtSettings(caseItem.id);
+  };
+
+  const loadCourtSettings = async (caseId: string) => {
+    try {
+      const settings = await courtSettingsAPI.getSettings(caseId);
+      setCourtSettings(settings);
+    } catch (err) {
+      console.error('Failed to load court settings:', err);
+      setCourtSettings(null);
+    }
   };
 
   const loadAriaSettings = async (caseId: string) => {
@@ -274,6 +287,36 @@ function MessagesContent() {
 
             {selectedCase && (
               <div className="space-y-6">
+                {/* Court Controls Notice */}
+                {courtSettings && (courtSettings.in_app_communication_only || courtSettings.aria_enforcement_locked) && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl">⚖️</span>
+                      <div>
+                        <div className="font-medium text-amber-900">Court-Ordered Controls Active</div>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {courtSettings.in_app_communication_only && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">
+                              <span>💬</span> In-App Communication Only
+                            </span>
+                          )}
+                          {courtSettings.aria_enforcement_locked && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">
+                              <span>🤖</span> ARIA Moderation Required
+                            </span>
+                          )}
+                        </div>
+                        {courtSettings.in_app_communication_only && (
+                          <p className="text-xs text-amber-700 mt-2">
+                            You are required to use this platform for all communication with the other parent.
+                            Communications outside this platform may not be considered by the court.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Case Header */}
                 <Card>
                   <CardHeader>
@@ -285,12 +328,14 @@ function MessagesContent() {
                         {/* ARIA Toggle */}
                         {ariaSettings && (
                           <div className="flex items-center gap-3 mt-4 pt-4 border-t">
+                            {/* Toggle - disabled if court locked */}
                             <button
-                              onClick={toggleAriaEnabled}
-                              disabled={isUpdatingAria}
+                              onClick={courtSettings?.aria_enforcement_locked ? undefined : toggleAriaEnabled}
+                              disabled={isUpdatingAria || courtSettings?.aria_enforcement_locked}
                               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                                 ariaSettings.aria_enabled ? 'bg-blue-600' : 'bg-gray-200'
-                              } ${isUpdatingAria ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                              } ${(isUpdatingAria || courtSettings?.aria_enforcement_locked) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                              title={courtSettings?.aria_enforcement_locked ? 'ARIA is locked by court order' : ''}
                             >
                               <span
                                 className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
@@ -310,13 +355,20 @@ function MessagesContent() {
                                 }`}>
                                   {ariaSettings.aria_enabled ? 'ON' : 'OFF'}
                                 </span>
+                                {courtSettings?.aria_enforcement_locked && (
+                                  <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">
+                                    🔒 Court Locked
+                                  </span>
+                                )}
                               </div>
                               <p className="text-xs text-gray-500 mt-0.5">
-                                {ariaSettings.aria_enabled
-                                  ? `AI monitoring with ${ariaSettings.aria_provider === 'claude' ? 'Claude' : ariaSettings.aria_provider === 'openai' ? 'OpenAI' : 'Pattern matching'} • All messages are analyzed for court documentation`
-                                  : 'ARIA is disabled • Messages will not be analyzed'}
+                                {courtSettings?.aria_enforcement_locked
+                                  ? 'ARIA moderation is required by court order and cannot be disabled.'
+                                  : ariaSettings.aria_enabled
+                                    ? `AI monitoring with ${ariaSettings.aria_provider === 'claude' ? 'Claude' : ariaSettings.aria_provider === 'openai' ? 'OpenAI' : 'Pattern matching'} • All messages are analyzed for court documentation`
+                                    : 'ARIA is disabled • Messages will not be analyzed'}
                               </p>
-                              {ariaSettings.aria_disabled_at && !ariaSettings.aria_enabled && (
+                              {ariaSettings.aria_disabled_at && !ariaSettings.aria_enabled && !courtSettings?.aria_enforcement_locked && (
                                 <p className="text-xs text-amber-600 mt-1">
                                   ⚠️ Disabled on {new Date(ariaSettings.aria_disabled_at).toLocaleDateString()} • This action is tracked for court records
                                 </p>

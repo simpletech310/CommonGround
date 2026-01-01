@@ -347,12 +347,32 @@ class CustodyExchangeInstanceForCalendar(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CourtEventForCalendar(BaseModel):
+    """Court event for parent calendar display."""
+
+    id: str
+    event_type: str
+    title: str
+    description: Optional[str] = None
+    event_date: date
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    location: Optional[str] = None
+    virtual_link: Optional[str] = None
+    is_mandatory: bool = True
+    shared_notes: Optional[str] = None
+    is_court_event: bool = True
+
+    model_config = {"from_attributes": True}
+
+
 class CalendarDataResponse(BaseModel):
     """Combined calendar data response."""
 
     case_id: str
     events: List[ScheduleEventResponse]
     exchanges: List[CustodyExchangeInstanceForCalendar] = []
+    court_events: List[CourtEventForCalendar] = []
     busy_periods: List[BusyPeriod]
     my_collections: List[MyTimeCollectionResponse]
     start_date: datetime

@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     events,
     calendar,
     exchanges,
+    court,
 )
 
 api_router = APIRouter()
@@ -36,3 +37,6 @@ api_router.include_router(time_blocks.router, prefix="/time-blocks", tags=["Time
 api_router.include_router(events.router, prefix="/events", tags=["Events"])
 api_router.include_router(calendar.router, prefix="/calendar", tags=["Calendar"])
 api_router.include_router(exchanges.router, prefix="/exchanges", tags=["Custody Exchanges"])
+
+# Court Access Mode (MediatorMode)
+api_router.include_router(court.router, prefix="/court", tags=["Court Access Mode"])

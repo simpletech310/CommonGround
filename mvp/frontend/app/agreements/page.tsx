@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Navigation } from '@/components/navigation';
-import { casesAPI, agreementsAPI, Case, Agreement } from '@/lib/api';
+import { casesAPI, agreementsAPI, courtSettingsAPI, Case, Agreement, CourtSettingsPublic } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProtectedRoute } from '@/components/protected-route';
@@ -21,6 +21,7 @@ function AgreementsListContent() {
   const [error, setError] = useState<string | null>(null);
   const [showBuilderChoice, setShowBuilderChoice] = useState(false);
   const [isCreatingAgreement, setIsCreatingAgreement] = useState(false);
+  const [courtSettings, setCourtSettings] = useState<CourtSettingsPublic | null>(null);
 
   useEffect(() => {
     loadCases();
@@ -48,7 +49,19 @@ function AgreementsListContent() {
 
   const handleSelectCase = async (caseItem: Case) => {
     setSelectedCase(caseItem);
+    setCourtSettings(null);
     await loadAgreements(caseItem.id);
+    await loadCourtSettings(caseItem.id);
+  };
+
+  const loadCourtSettings = async (caseId: string) => {
+    try {
+      const settings = await courtSettingsAPI.getSettings(caseId);
+      setCourtSettings(settings);
+    } catch (err) {
+      console.error('Failed to load court settings:', err);
+      setCourtSettings(null);
+    }
   };
 
   const loadAgreements = async (caseId: string) => {
@@ -194,6 +207,23 @@ function AgreementsListContent() {
 
             {selectedCase && (
               <div className="space-y-6">
+                {/* Court Controls Notice */}
+                {courtSettings?.agreement_edits_locked && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl">⚖️</span>
+                      <div>
+                        <div className="font-medium text-amber-900">Agreement Edits Locked by Court</div>
+                        <p className="text-sm text-amber-700 mt-1">
+                          A court order restricts changes to agreements for this case.
+                          You can view existing agreements but cannot create new ones or make modifications.
+                          Contact the court if you need to request changes.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Case Header */}
                 <Card>
                   <CardHeader>
@@ -204,12 +234,20 @@ function AgreementsListContent() {
                       </div>
                       <Button
                         onClick={() => setShowBuilderChoice(true)}
-                        disabled={isCreatingAgreement}
+                        disabled={isCreatingAgreement || courtSettings?.agreement_edits_locked}
+                        title={courtSettings?.agreement_edits_locked ? 'Agreement edits are locked by court order' : ''}
                       >
                         {isCreatingAgreement ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                             Creating...
+                          </>
+                        ) : courtSettings?.agreement_edits_locked ? (
+                          <>
+                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            Locked
                           </>
                         ) : (
                           <>
