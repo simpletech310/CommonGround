@@ -47,6 +47,15 @@ from app.models.court import (
     ReportType,
     DEFAULT_ACCESS_DURATION,
 )
+from app.models.export import (
+    CaseExport,
+    ExportSection,
+    RedactionRule,
+    SECTION_TYPES,
+    PACKAGE_TYPES,
+    CLAIM_TYPES,
+    REDACTION_LEVELS,
+)
 
 __all__ = [
     "Base",
@@ -102,4 +111,12 @@ __all__ = [
     "CourtMessageType",
     "ReportType",
     "DEFAULT_ACCESS_DURATION",
+    # CaseExport
+    "CaseExport",
+    "ExportSection",
+    "RedactionRule",
+    "SECTION_TYPES",
+    "PACKAGE_TYPES",
+    "CLAIM_TYPES",
+    "REDACTION_LEVELS",
 ]

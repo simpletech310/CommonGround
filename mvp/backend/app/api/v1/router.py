@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     exchanges,
     court,
     clearfund,
+    exports,
 )
 
 api_router = APIRouter()
@@ -44,3 +45,6 @@ api_router.include_router(court.router, prefix="/court", tags=["Court Access Mod
 
 # ClearFund - Purpose-Locked Financial Obligations
 api_router.include_router(clearfund.router, prefix="/clearfund", tags=["ClearFund"])
+
+# CaseExport - Court-ready documentation packages
+api_router.include_router(exports.router, prefix="/exports", tags=["Case Exports"])
