@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     calendar,
     exchanges,
     court,
+    clearfund,
 )
 
 api_router = APIRouter()
@@ -40,3 +41,6 @@ api_router.include_router(exchanges.router, prefix="/exchanges", tags=["Custody 
 
 # Court Access Mode (MediatorMode)
 api_router.include_router(court.router, prefix="/court", tags=["Court Access Mode"])
+
+# ClearFund - Purpose-Locked Financial Obligations
+api_router.include_router(clearfund.router, prefix="/clearfund", tags=["ClearFund"])

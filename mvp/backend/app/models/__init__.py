@@ -15,6 +15,19 @@ from app.models.my_time_collection import MyTimeCollection
 from app.models.time_block import TimeBlock
 from app.models.event_attendance import EventAttendance
 from app.models.payment import Payment, ExpenseRequest, PaymentLedger
+from app.models.clearfund import (
+    Obligation,
+    ObligationFunding,
+    Attestation,
+    VerificationArtifact,
+    VirtualCardAuthorization,
+    OBLIGATION_SOURCE_TYPES,
+    OBLIGATION_CATEGORIES,
+    OBLIGATION_STATUSES,
+    CARD_STATUSES,
+    ARTIFACT_TYPES,
+    CREDIT_SOURCES,
+)
 from app.models.legal import LegalAccess, CourtExport
 from app.models.audit import AuditLog, EventLog
 from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
@@ -62,6 +75,18 @@ __all__ = [
     "EventLog",
     "CustodyExchange",
     "CustodyExchangeInstance",
+    # ClearFund
+    "Obligation",
+    "ObligationFunding",
+    "Attestation",
+    "VerificationArtifact",
+    "VirtualCardAuthorization",
+    "OBLIGATION_SOURCE_TYPES",
+    "OBLIGATION_CATEGORIES",
+    "OBLIGATION_STATUSES",
+    "CARD_STATUSES",
+    "ARTIFACT_TYPES",
+    "CREDIT_SOURCES",
     # Court Access Mode
     "CourtProfessional",
     "CourtAccessGrant",

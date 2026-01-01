@@ -177,6 +177,7 @@ export default function CaseDetailPage() {
         <NavButton href={`/court-portal/cases/${params.id}/settings`}>Court Settings</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/events`}>Court Events</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/messages`}>Court Messages</NavButton>
+        <NavButton href={`/court-portal/cases/${params.id}/payments`}>Payments</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/reports`}>Reports</NavButton>
       </div>
 

@@ -16,6 +16,7 @@ const navItems: NavItem[] = [
   { name: 'Messages', path: '/messages' },
   { name: 'Agreements', path: '/agreements' },
   { name: 'Schedule', path: '/schedule' },
+  { name: 'Payments', path: '/payments' },
 ];
 
 export function Navigation() {
