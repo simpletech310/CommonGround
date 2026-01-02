@@ -2,13 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { DollarSign, ArrowLeft, Plus, Clock, CheckCircle, AlertTriangle, FileText } from 'lucide-react';
+import { DollarSign, Plus, Clock, CheckCircle, AlertTriangle, FileText } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { casesAPI, clearfundAPI, Case, Obligation, BalanceSummary, ObligationMetrics } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectOption } from '@/components/ui/select';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
+import { PageContainer, EmptyState } from '@/components/layout';
 import ObligationCard from '@/components/clearfund/obligation-card';
 import BalanceSummaryCard from '@/components/clearfund/balance-summary';
 import MetricsCards from '@/components/clearfund/metrics-cards';
@@ -110,28 +114,39 @@ function PaymentsContent() {
 
   if (isLoading && !selectedCase) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-gray-500">Loading payments...</div>
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <PageContainer>
+          <div className="flex items-center justify-center py-12">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent mx-auto" />
+              <p className="mt-4 text-muted-foreground">Loading payments...</p>
+            </div>
+          </div>
+        </PageContainer>
       </div>
     );
   }
 
   if (!selectedCase) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-background">
         <Navigation />
-        <div className="max-w-4xl mx-auto p-8">
-          <Card className="p-8 text-center">
-            <DollarSign className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">No Cases Found</h2>
-            <p className="text-gray-600 mb-4">
-              You need to create or join a case to access ClearFund payments.
-            </p>
-            <Button onClick={() => router.push('/cases')}>
-              Go to Cases
-            </Button>
+        <PageContainer>
+          <Card>
+            <CardContent className="py-12">
+              <EmptyState
+                icon={DollarSign}
+                title="No Cases Found"
+                description="You need to create or join a case to access ClearFund payments."
+                action={{
+                  label: 'Go to Cases',
+                  onClick: () => router.push('/cases'),
+                }}
+              />
+            </CardContent>
           </Card>
-        </div>
+        </PageContainer>
       </div>
     );
   }
@@ -139,26 +154,19 @@ function PaymentsContent() {
   const filteredObligations = getFilteredObligations();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       <Navigation />
 
       {/* Header */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      <div className="border-b border-border bg-card">
+        <PageContainer className="py-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="flex items-center text-gray-600 hover:text-gray-900 mb-2"
-              >
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                Back to Dashboard
-              </button>
-              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-2">
-                <DollarSign className="h-8 w-8 text-green-600" />
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground flex items-center gap-2">
+                <DollarSign className="h-8 w-8 text-cg-success" />
                 ClearFund
               </h1>
-              <p className="text-gray-600 mt-1">Purpose-locked financial obligations for {selectedCase.case_name}</p>
+              <p className="text-muted-foreground mt-1">Purpose-locked financial obligations for {selectedCase.case_name}</p>
             </div>
             <Button
               onClick={() => router.push('/payments/new')}
@@ -170,29 +178,29 @@ function PaymentsContent() {
           </div>
 
           {cases.length > 1 && (
-            <div className="mt-4">
-              <select
+            <div className="mt-4 max-w-xs">
+              <Select
                 value={selectedCase.id}
                 onChange={(e) => {
                   const case_ = cases.find(c => c.id === e.target.value);
                   if (case_) setSelectedCase(case_);
                 }}
-                className="px-3 py-2 border border-gray-300 rounded-md"
               >
                 {cases.map(case_ => (
-                  <option key={case_.id} value={case_.id}>{case_.case_name}</option>
+                  <SelectOption key={case_.id} value={case_.id}>{case_.case_name}</SelectOption>
                 ))}
-              </select>
+              </Select>
             </div>
           )}
-        </div>
+        </PageContainer>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <PageContainer className="py-8">
         {error && (
-          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-            {error}
-          </div>
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
 
         {/* Metrics Cards */}
@@ -208,46 +216,42 @@ function PaymentsContent() {
         )}
 
         {/* Tabs */}
-        <div className="mt-8 mb-6 border-b border-gray-200 overflow-x-auto">
+        <div className="mt-8 mb-6 border-b border-border overflow-x-auto">
           <nav className="-mb-px flex space-x-4 sm:space-x-8 min-w-max">
             <button
               onClick={() => setActiveTab('pending')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-smooth ${
                 activeTab === 'pending'
-                  ? 'border-amber-500 text-amber-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-cg-warning text-cg-warning'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               <Clock className="h-5 w-5" />
               Pending
               {metrics && metrics.total_pending_funding > 0 && (
-                <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full text-xs">
-                  {metrics.total_pending_funding}
-                </span>
+                <Badge variant="warning" size="sm">{metrics.total_pending_funding}</Badge>
               )}
             </button>
             <button
               onClick={() => setActiveTab('active')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-smooth ${
                 activeTab === 'active'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-cg-primary text-cg-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               <DollarSign className="h-5 w-5" />
               Active
               {metrics && metrics.total_funded > 0 && (
-                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">
-                  {metrics.total_funded}
-                </span>
+                <Badge variant="default" size="sm">{metrics.total_funded}</Badge>
               )}
             </button>
             <button
               onClick={() => setActiveTab('completed')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-smooth ${
                 activeTab === 'completed'
-                  ? 'border-green-500 text-green-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-cg-success text-cg-success'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               <CheckCircle className="h-5 w-5" />
@@ -255,10 +259,10 @@ function PaymentsContent() {
             </button>
             <button
               onClick={() => setActiveTab('ledger')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-smooth ${
                 activeTab === 'ledger'
-                  ? 'border-purple-500 text-purple-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
+                  ? 'border-purple-600 text-purple-600'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               <FileText className="h-5 w-5" />
@@ -271,26 +275,29 @@ function PaymentsContent() {
         {activeTab !== 'ledger' ? (
           <div className="space-y-4">
             {isLoading ? (
-              <div className="text-center py-12 text-gray-500">Loading obligations...</div>
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent mx-auto" />
+                <p className="mt-4 text-muted-foreground">Loading obligations...</p>
+              </div>
             ) : filteredObligations.length === 0 ? (
-              <Card className="p-8 text-center">
-                <DollarSign className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  No {activeTab} obligations
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  {activeTab === 'pending'
-                    ? 'Create a new expense to get started.'
-                    : activeTab === 'active'
-                    ? 'No obligations are currently being processed.'
-                    : 'No completed obligations yet.'}
-                </p>
-                {activeTab === 'pending' && (
-                  <Button onClick={() => router.push('/payments/new')}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Expense
-                  </Button>
-                )}
+              <Card>
+                <CardContent className="py-12">
+                  <EmptyState
+                    icon={DollarSign}
+                    title={`No ${activeTab} obligations`}
+                    description={
+                      activeTab === 'pending'
+                        ? 'Create a new expense to get started.'
+                        : activeTab === 'active'
+                        ? 'No obligations are currently being processed.'
+                        : 'No completed obligations yet.'
+                    }
+                    action={activeTab === 'pending' ? {
+                      label: 'Create Expense',
+                      onClick: () => router.push('/payments/new'),
+                    } : undefined}
+                  />
+                </CardContent>
               </Card>
             ) : (
               filteredObligations.map(obligation => (
@@ -304,37 +311,36 @@ function PaymentsContent() {
           </div>
         ) : (
           /* Ledger Tab */
-          <Card className="p-8 text-center">
-            <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              Transaction Ledger
-            </h3>
-            <p className="text-gray-600 mb-4">
-              View the complete financial history for this case.
-            </p>
-            <Button onClick={() => router.push(`/payments/ledger?case_id=${selectedCase.id}`)}>
-              View Full Ledger
-            </Button>
+          <Card>
+            <CardContent className="py-12">
+              <EmptyState
+                icon={FileText}
+                title="Transaction Ledger"
+                description="View the complete financial history for this case."
+                action={{
+                  label: 'View Full Ledger',
+                  onClick: () => router.push(`/payments/ledger?case_id=${selectedCase.id}`),
+                }}
+              />
+            </CardContent>
           </Card>
         )}
 
         {/* Overdue Warning */}
         {metrics && metrics.total_overdue > 0 && (
-          <Card className="mt-6 p-4 bg-red-50 border-red-200">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
-              <div>
-                <h4 className="font-medium text-red-800">
-                  {metrics.total_overdue} Overdue Obligation{metrics.total_overdue > 1 ? 's' : ''}
-                </h4>
-                <p className="text-sm text-red-600 mt-1">
-                  Please address overdue obligations to maintain compliance.
-                </p>
-              </div>
-            </div>
-          </Card>
+          <Alert variant="destructive" className="mt-6">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <span className="font-medium">
+                {metrics.total_overdue} Overdue Obligation{metrics.total_overdue > 1 ? 's' : ''}
+              </span>
+              <span className="block text-sm mt-1">
+                Please address overdue obligations to maintain compliance.
+              </span>
+            </AlertDescription>
+          </Alert>
         )}
-      </div>
+      </PageContainer>
     </div>
   );
 }

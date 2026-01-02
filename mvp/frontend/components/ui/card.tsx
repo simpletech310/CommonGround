@@ -1,6 +1,13 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 
+/**
+ * CommonGround Card Component
+ *
+ * Design: Solid backgrounds, clear boundaries, soft shadows (never harsh).
+ * Philosophy: "If it doesn't serve clarity, it doesn't belong"
+ */
+
 const Card = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
@@ -8,7 +15,8 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-xl border bg-card text-card-foreground shadow",
+      // Using cg-card utility for consistent soft shadow
+      "cg-card text-card-foreground",
       className
     )}
     {...props}
@@ -16,13 +24,30 @@ const Card = React.forwardRef<
 ))
 Card.displayName = "Card"
 
+// Elevated variant for modals, popovers
+const CardElevated = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn(
+      "cg-card-elevated text-card-foreground",
+      className
+    )}
+    {...props}
+  />
+))
+CardElevated.displayName = "CardElevated"
+
 const CardHeader = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex flex-col space-y-1.5 p-6", className)}
+    // More generous padding (p-6 → p-7 on larger screens)
+    className={cn("flex flex-col space-y-2 p-6 lg:p-7", className)}
     {...props}
   />
 ))
@@ -34,7 +59,11 @@ const CardTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("font-semibold leading-none tracking-tight", className)}
+    // Larger, clearer titles
+    className={cn(
+      "text-lg font-semibold leading-tight tracking-tight lg:text-xl",
+      className
+    )}
     {...props}
   />
 ))
@@ -46,7 +75,8 @@ const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("text-sm text-muted-foreground", className)}
+    // Slightly larger muted text for readability
+    className={cn("text-sm text-muted-foreground lg:text-base", className)}
     {...props}
   />
 ))
@@ -56,7 +86,11 @@ const CardContent = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />
+  <div
+    ref={ref}
+    className={cn("p-6 pt-0 lg:p-7 lg:pt-0", className)}
+    {...props}
+  />
 ))
 CardContent.displayName = "CardContent"
 
@@ -66,10 +100,18 @@ const CardFooter = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex items-center p-6 pt-0", className)}
+    className={cn("flex items-center p-6 pt-0 lg:p-7 lg:pt-0", className)}
     {...props}
   />
 ))
 CardFooter.displayName = "CardFooter"
 
-export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent }
+export {
+  Card,
+  CardElevated,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+  CardDescription,
+  CardContent,
+}

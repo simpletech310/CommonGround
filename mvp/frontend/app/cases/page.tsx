@@ -7,7 +7,12 @@ import { useAuth } from '@/lib/auth-context';
 import { casesAPI, Case } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ProtectedRoute } from '@/components/protected-route';
+import { Navigation } from '@/components/navigation';
+import { PageContainer, EmptyState } from '@/components/layout';
+import { Plus, MapPin, AlertCircle, Briefcase, Clock, CheckCircle, Mail, Send } from 'lucide-react';
 
 function CasesListContent() {
   const { user } = useAuth();
@@ -75,18 +80,18 @@ function CasesListContent() {
     return participant?.role as 'petitioner' | 'respondent' | null;
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusVariant = (status: string): 'success' | 'warning' | 'error' | 'secondary' => {
     switch (status) {
       case 'active':
-        return 'text-green-600 bg-green-100';
+        return 'success';
       case 'pending':
-        return 'text-yellow-600 bg-yellow-100';
+        return 'warning';
       case 'suspended':
-        return 'text-orange-600 bg-orange-100';
+        return 'error';
       case 'closed':
-        return 'text-gray-600 bg-gray-100';
+        return 'secondary';
       default:
-        return 'text-gray-600 bg-gray-100';
+        return 'secondary';
     }
   };
 
@@ -110,112 +115,89 @@ function CasesListContent() {
   const activeCases = cases.filter(c => c.status === 'active');
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-8">
-              <Link href="/dashboard" className="text-2xl font-bold text-gray-900">
-                CommonGround
-              </Link>
-              <nav className="flex gap-4">
-                <Link href="/cases" className="text-sm font-medium text-blue-600 border-b-2 border-blue-600 pb-1">
-                  Cases
-                </Link>
-                <Link href="/messages" className="text-sm font-medium text-gray-600 hover:text-gray-900">
-                  Messages
-                </Link>
-                <Link href="/agreements" className="text-sm font-medium text-gray-600 hover:text-gray-900">
-                  Agreements
-                </Link>
-              </nav>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">
-                  {user?.first_name} {user?.last_name}
-                </p>
-                <p className="text-xs text-gray-500">{user?.email}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-background">
+      <Navigation />
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Page Header */}
-        <div className="mb-8 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">My Cases</h1>
-            <p className="mt-2 text-gray-600">
-              Manage your co-parenting cases and invitations
-            </p>
+      {/* Page Header */}
+      <div className="border-b border-border bg-card">
+        <PageContainer className="py-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground flex items-center gap-2">
+                <Briefcase className="h-8 w-8 text-cg-primary" />
+                My Cases
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                Manage your co-parenting cases and invitations
+              </p>
+            </div>
+            <Link href="/cases/new">
+              <Button className="flex items-center gap-2">
+                <Plus className="h-5 w-5" />
+                Create New Case
+              </Button>
+            </Link>
           </div>
-          <Link href="/cases/new">
-            <Button size="lg">
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Create New Case
-            </Button>
-          </Link>
-        </div>
+        </PageContainer>
+      </div>
 
+      <PageContainer className="py-8">
         {/* Loading State */}
         {isLoading && (
           <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading cases...</p>
+            <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent mx-auto" />
+            <p className="mt-4 text-muted-foreground">Loading cases...</p>
           </div>
         )}
 
         {/* Error State */}
         {error && (
-          <Card className="border-red-200 bg-red-50">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div>
-                  <p className="font-medium text-red-900">Failed to load cases</p>
-                  <p className="text-sm text-red-700">{error}</p>
-                </div>
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              <div className="flex items-center justify-between">
+                <span>{error}</span>
+                <Button variant="outline" size="sm" onClick={loadCases}>
+                  Try Again
+                </Button>
               </div>
-              <Button variant="outline" className="mt-4" onClick={loadCases}>
-                Try Again
-              </Button>
-            </CardContent>
-          </Card>
+            </AlertDescription>
+          </Alert>
         )}
 
         {/* Invitations Section - Side by Side */}
         {!isLoading && !error && (sentInvitations.length > 0 || receivedInvitations.length > 0) && (
           <div className="mb-8">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-6">Pending Invitations</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-6">Pending Invitations</h2>
             <div className="grid gap-6 md:grid-cols-2">
               {/* Left: Sent Invitations */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">📤 Invitations Sent</h3>
-                <p className="text-sm text-gray-600 mb-4">Cases you created</p>
+                <div className="flex items-center gap-2 mb-3">
+                  <Send className="h-5 w-5 text-cg-primary" />
+                  <h3 className="text-lg font-semibold text-foreground">Invitations Sent</h3>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">Cases you created</p>
                 {sentInvitations.length > 0 ? (
                   <div className="space-y-3">
                     {sentInvitations.map((caseItem) => (
-                      <Card key={caseItem.id} className="border-blue-200 bg-blue-50">
-                        <CardContent className="pt-4 pb-4">
+                      <Card key={caseItem.id} className="border-cg-primary/20 bg-cg-primary-subtle">
+                        <CardContent className="py-4">
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <h4 className="font-semibold text-blue-900 mb-1">{caseItem.case_name}</h4>
-                              <p className="text-xs text-blue-700">State: {caseItem.state}</p>
-                              <p className="text-xs text-blue-600 mt-1">Waiting for other parent</p>
+                              <h4 className="font-semibold text-foreground mb-1">{caseItem.case_name}</h4>
+                              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {caseItem.state}
+                              </p>
+                              <p className="text-xs text-cg-primary mt-1 flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                Waiting for other parent
+                              </p>
                             </div>
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => router.push(`/cases/${caseItem.id}`)}
-                              className="border-blue-600 text-blue-600 hover:bg-blue-100 text-xs px-3 py-1"
                             >
                               View
                             </Button>
@@ -225,9 +207,9 @@ function CasesListContent() {
                     ))}
                   </div>
                 ) : (
-                  <Card className="border-gray-200">
+                  <Card>
                     <CardContent className="py-8 text-center">
-                      <p className="text-sm text-gray-500">No sent invitations</p>
+                      <p className="text-sm text-muted-foreground">No sent invitations</p>
                     </CardContent>
                   </Card>
                 )}
@@ -235,18 +217,24 @@ function CasesListContent() {
 
               {/* Right: Received Invitations */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-3">📥 Invitations Received</h3>
-                <p className="text-sm text-gray-600 mb-4">Enter code to join</p>
+                <div className="flex items-center gap-2 mb-3">
+                  <Mail className="h-5 w-5 text-cg-warning" />
+                  <h3 className="text-lg font-semibold text-foreground">Invitations Received</h3>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">Enter code to join</p>
                 {receivedInvitations.length > 0 ? (
                   <div className="space-y-3">
                     {receivedInvitations.map((caseItem) => (
-                      <Card key={caseItem.id} className="border-yellow-200 bg-yellow-50">
-                        <CardContent className="pt-4 pb-4">
+                      <Card key={caseItem.id} className="border-cg-warning/20 bg-cg-warning-subtle">
+                        <CardContent className="py-4">
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <h4 className="font-semibold text-yellow-900 mb-1">{caseItem.case_name}</h4>
-                              <p className="text-xs text-yellow-700">State: {caseItem.state}</p>
-                              <p className="text-xs text-yellow-600 mt-1">Need invitation code</p>
+                              <h4 className="font-semibold text-foreground mb-1">{caseItem.case_name}</h4>
+                              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {caseItem.state}
+                              </p>
+                              <p className="text-xs text-cg-warning mt-1">Need invitation code</p>
                             </div>
                             <Button
                               size="sm"
@@ -255,7 +243,6 @@ function CasesListContent() {
                                 setShowInvitationModal(true);
                                 setAcceptError(null);
                               }}
-                              className="bg-yellow-600 hover:bg-yellow-700 text-xs px-3 py-1"
                             >
                               Accept
                             </Button>
@@ -265,9 +252,9 @@ function CasesListContent() {
                     ))}
                   </div>
                 ) : (
-                  <Card className="border-gray-200">
+                  <Card>
                     <CardContent className="py-8 text-center">
-                      <p className="text-sm text-gray-500">No received invitations</p>
+                      <p className="text-sm text-muted-foreground">No received invitations</p>
                     </CardContent>
                   </Card>
                 )}
@@ -280,22 +267,15 @@ function CasesListContent() {
         {!isLoading && !error && cases.length === 0 && (
           <Card>
             <CardContent className="py-12">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  No cases yet
-                </h3>
-                <p className="text-gray-600 mb-6 max-w-sm mx-auto">
-                  Create your first case to start managing your co-parenting arrangement
-                </p>
-                <Link href="/cases/new">
-                  <Button>Create Your First Case</Button>
-                </Link>
-              </div>
+              <EmptyState
+                icon={Briefcase}
+                title="No cases yet"
+                description="Create your first case to start managing your co-parenting arrangement"
+                action={{
+                  label: "Create Your First Case",
+                  onClick: () => router.push('/cases/new')
+                }}
+              />
             </CardContent>
           </Card>
         )}
@@ -303,43 +283,43 @@ function CasesListContent() {
         {/* Active Cases */}
         {!isLoading && !error && activeCases.length > 0 && (
           <div className="mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">✅ Active Cases</h2>
-            <p className="text-sm text-gray-600 mb-4">Cases where both parents have joined</p>
+            <div className="flex items-center gap-2 mb-3">
+              <CheckCircle className="h-5 w-5 text-cg-success" />
+              <h2 className="text-xl font-semibold text-foreground">Active Cases</h2>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">Cases where both parents have joined</p>
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {activeCases.map((caseItem) => (
-                <Card key={caseItem.id} className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push(`/cases/${caseItem.id}`)}>
+                <Card key={caseItem.id} className="hover:shadow-lg transition-smooth cursor-pointer group" onClick={() => router.push(`/cases/${caseItem.id}`)}>
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <CardTitle className="text-xl">{caseItem.case_name}</CardTitle>
                         {caseItem.case_number && (
-                          <p className="text-sm text-gray-500 mt-1">
+                          <p className="text-sm text-muted-foreground mt-1">
                             Case #{caseItem.case_number}
                           </p>
                         )}
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(caseItem.status)}`}>
+                      <Badge variant={getStatusVariant(caseItem.status)}>
                         {caseItem.status}
-                      </span>
+                      </Badge>
                     </div>
                     <CardDescription className="mt-2">
                       <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
+                        <MapPin className="h-4 w-4 text-muted-foreground" />
                         <span className="text-sm">{caseItem.state}</span>
                       </div>
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-muted-foreground">
                       <p>Created: {new Date(caseItem.created_at).toLocaleDateString()}</p>
                       {caseItem.updated_at !== caseItem.created_at && (
                         <p>Updated: {new Date(caseItem.updated_at).toLocaleDateString()}</p>
                       )}
                     </div>
-                    <div className="mt-4 pt-4 border-t">
+                    <div className="mt-4 pt-4 border-t border-border">
                       <Button variant="outline" className="w-full" onClick={(e) => {
                         e.stopPropagation();
                         router.push(`/cases/${caseItem.id}`);
@@ -358,39 +338,36 @@ function CasesListContent() {
         {!isLoading && !error && cases.length > 0 && sentInvitations.length === 0 && receivedInvitations.length === 0 && activeCases.length === 0 && (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {cases.map((caseItem) => (
-              <Card key={caseItem.id} className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => router.push(`/cases/${caseItem.id}`)}>
+              <Card key={caseItem.id} className="hover:shadow-lg transition-smooth cursor-pointer group" onClick={() => router.push(`/cases/${caseItem.id}`)}>
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <CardTitle className="text-xl">{caseItem.case_name}</CardTitle>
                       {caseItem.case_number && (
-                        <p className="text-sm text-gray-500 mt-1">
+                        <p className="text-sm text-muted-foreground mt-1">
                           Case #{caseItem.case_number}
                         </p>
                       )}
                     </div>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(caseItem.status)}`}>
+                    <Badge variant={getStatusVariant(caseItem.status)}>
                       {caseItem.status}
-                    </span>
+                    </Badge>
                   </div>
                   <CardDescription className="mt-2">
                     <div className="flex items-center gap-2">
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm">{caseItem.state}</span>
                     </div>
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-sm text-gray-500">
+                  <div className="text-sm text-muted-foreground">
                     <p>Created: {new Date(caseItem.created_at).toLocaleDateString()}</p>
                     {caseItem.updated_at !== caseItem.created_at && (
                       <p>Updated: {new Date(caseItem.updated_at).toLocaleDateString()}</p>
                     )}
                   </div>
-                  <div className="mt-4 pt-4 border-t">
+                  <div className="mt-4 pt-4 border-t border-border">
                     <Button variant="outline" className="w-full" onClick={(e) => {
                       e.stopPropagation();
                       router.push(`/cases/${caseItem.id}`);
@@ -406,7 +383,7 @@ function CasesListContent() {
 
         {/* Invitation Modal */}
         {showInvitationModal && selectedCaseForInvitation && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <Card className="w-full max-w-md">
               <CardHeader>
                 <CardTitle>Accept Case Invitation</CardTitle>
@@ -417,7 +394,7 @@ function CasesListContent() {
               <CardContent>
                 <div className="space-y-4">
                   <div>
-                    <label htmlFor="invitation-code" className="block text-sm font-medium text-gray-700 mb-2">
+                    <label htmlFor="invitation-code" className="block text-sm font-medium text-foreground mb-2">
                       Invitation Code
                     </label>
                     <input
@@ -431,24 +408,20 @@ function CasesListContent() {
                         }
                       }}
                       placeholder="Paste your invitation code here"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-border rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cg-primary"
                       disabled={isAccepting}
                       autoFocus
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       The invitation code was sent to you by the other parent
                     </p>
                   </div>
 
                   {acceptError && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                      <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-sm text-red-700">{acceptError}</p>
-                      </div>
-                    </div>
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{acceptError}</AlertDescription>
+                    </Alert>
                   )}
 
                   <div className="flex gap-3">
@@ -472,7 +445,7 @@ function CasesListContent() {
                     >
                       {isAccepting ? (
                         <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
                           Accepting...
                         </>
                       ) : (
@@ -485,7 +458,7 @@ function CasesListContent() {
             </Card>
           </div>
         )}
-      </main>
+      </PageContainer>
     </div>
   );
 }

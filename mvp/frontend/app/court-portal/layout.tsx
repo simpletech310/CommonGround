@@ -3,6 +3,9 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Scale, LayoutDashboard, FolderOpen, Bot, LogOut, Shield, Clock, FileCheck } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -39,13 +42,13 @@ export function useCourtAuth() {
 }
 
 // Role display info
-const ROLE_INFO: Record<string, { icon: string; label: string; color: string }> = {
-  court_clerk: { icon: "📋", label: "Court Clerk", color: "bg-blue-100 text-blue-800" },
-  gal: { icon: "👤", label: "Guardian ad Litem", color: "bg-purple-100 text-purple-800" },
-  attorney_petitioner: { icon: "⚖️", label: "Attorney (Petitioner)", color: "bg-green-100 text-green-800" },
-  attorney_respondent: { icon: "⚖️", label: "Attorney (Respondent)", color: "bg-teal-100 text-teal-800" },
-  mediator: { icon: "🤝", label: "Mediator", color: "bg-orange-100 text-orange-800" },
-  judge: { icon: "🏛️", label: "Judge", color: "bg-gray-100 text-gray-800" },
+const ROLE_INFO: Record<string, { icon: React.ReactNode; label: string; variant: 'default' | 'secondary' | 'success' | 'warning' }> = {
+  court_clerk: { icon: <FileCheck className="h-3.5 w-3.5" />, label: "Court Clerk", variant: "default" },
+  gal: { icon: <Shield className="h-3.5 w-3.5" />, label: "Guardian ad Litem", variant: "secondary" },
+  attorney_petitioner: { icon: <Scale className="h-3.5 w-3.5" />, label: "Attorney (Petitioner)", variant: "success" },
+  attorney_respondent: { icon: <Scale className="h-3.5 w-3.5" />, label: "Attorney (Respondent)", variant: "success" },
+  mediator: { icon: <Bot className="h-3.5 w-3.5" />, label: "Mediator", variant: "warning" },
+  judge: { icon: <Scale className="h-3.5 w-3.5" />, label: "Judge", variant: "default" },
 };
 
 export default function CourtPortalLayout({
@@ -123,35 +126,43 @@ export default function CourtPortalLayout({
     <CourtAuthContext.Provider
       value={{ professional, activeGrant, isLoading, token, login, logout, setActiveGrant }}
     >
-      <div className="min-h-screen bg-slate-50">
-        {/* Header */}
-        <header className="bg-slate-800 text-white shadow-lg">
-          <div className="max-w-7xl mx-auto px-4 py-3">
+      <div className="min-h-screen bg-background">
+        {/* Header - Professional indigo for court context */}
+        <header className="bg-indigo-950 text-white shadow-lg">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <Link href="/court-portal" className="flex items-center space-x-2">
-                  <span className="text-xl font-bold">CommonGround</span>
-                  <span className="text-sm bg-slate-700 px-2 py-0.5 rounded">
-                    Court Portal
-                  </span>
+              <div className="flex items-center gap-4">
+                <Link href="/court-portal" className="flex items-center gap-3">
+                  <div className="p-1.5 bg-indigo-800 rounded-lg">
+                    <Scale className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <span className="text-lg font-bold tracking-tight">CommonGround</span>
+                    <Badge variant="secondary" className="ml-2 text-xs bg-indigo-800 text-indigo-100 border-0">
+                      Court Portal
+                    </Badge>
+                  </div>
                 </Link>
               </div>
 
               {professional && !isLoginPage && (
-                <div className="flex items-center space-x-4">
-                  <div className="text-right">
-                    <div className="font-medium">{professional.full_name}</div>
-                    <div className="flex items-center space-x-2 text-sm text-slate-300">
-                      <span>{roleInfo?.icon}</span>
+                <div className="flex items-center gap-4">
+                  <div className="text-right hidden sm:block">
+                    <div className="font-medium text-sm">{professional.full_name}</div>
+                    <div className="flex items-center justify-end gap-1.5 text-xs text-indigo-200">
+                      {roleInfo?.icon}
                       <span>{roleInfo?.label}</span>
                     </div>
                   </div>
-                  <button
+                  <Button
                     onClick={logout}
-                    className="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded transition"
+                    variant="ghost"
+                    size="sm"
+                    className="text-indigo-200 hover:text-white hover:bg-indigo-800"
                   >
-                    Sign Out
-                  </button>
+                    <LogOut className="h-4 w-4 sm:mr-2" />
+                    <span className="hidden sm:inline">Sign Out</span>
+                  </Button>
                 </div>
               )}
             </div>
@@ -160,16 +171,16 @@ export default function CourtPortalLayout({
 
         {/* Navigation */}
         {professional && !isLoginPage && (
-          <nav className="bg-white border-b shadow-sm">
-            <div className="max-w-7xl mx-auto px-4">
-              <div className="flex space-x-1">
-                <NavLink href="/court-portal/dashboard" current={pathname}>
+          <nav className="bg-card border-b border-border shadow-sm">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6">
+              <div className="flex gap-1 overflow-x-auto">
+                <NavLink href="/court-portal/dashboard" current={pathname} icon={<LayoutDashboard className="h-4 w-4" />}>
                   Dashboard
                 </NavLink>
-                <NavLink href="/court-portal/cases" current={pathname}>
+                <NavLink href="/court-portal/cases" current={pathname} icon={<FolderOpen className="h-4 w-4" />}>
                   Cases
                 </NavLink>
-                <NavLink href="/court-portal/aria" current={pathname}>
+                <NavLink href="/court-portal/aria" current={pathname} icon={<Bot className="h-4 w-4" />}>
                   ARIA Assistant
                 </NavLink>
               </div>
@@ -179,19 +190,23 @@ export default function CourtPortalLayout({
 
         {/* Active Grant Banner */}
         {activeGrant && !isLoginPage && (
-          <div className="bg-blue-50 border-b border-blue-200">
-            <div className="max-w-7xl mx-auto px-4 py-2">
+          <div className="bg-indigo-50 border-b border-indigo-100">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">
               <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center space-x-3">
-                  <span className="font-medium text-blue-800">
+                <div className="flex items-center gap-3">
+                  <FolderOpen className="h-4 w-4 text-indigo-600" />
+                  <span className="font-medium text-indigo-900">
                     Active Case: {activeGrant.case_name || activeGrant.case_id}
                   </span>
-                  <span className={`px-2 py-0.5 rounded text-xs ${roleInfo?.color}`}>
-                    {roleInfo?.label}
-                  </span>
+                  {roleInfo && (
+                    <Badge variant={roleInfo.variant} size="sm">
+                      {roleInfo.label}
+                    </Badge>
+                  )}
                 </div>
-                <div className="text-blue-600">
-                  {activeGrant.days_remaining} days remaining
+                <div className="flex items-center gap-1.5 text-indigo-600">
+                  <Clock className="h-3.5 w-3.5" />
+                  <span>{activeGrant.days_remaining} days remaining</span>
                 </div>
               </div>
             </div>
@@ -199,21 +214,31 @@ export default function CourtPortalLayout({
         )}
 
         {/* Main Content */}
-        <main className="max-w-7xl mx-auto px-4 py-6">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
           {children}
         </main>
 
         {/* Footer */}
-        <footer className="bg-slate-100 border-t mt-auto">
-          <div className="max-w-7xl mx-auto px-4 py-4">
-            <div className="flex items-center justify-between text-sm text-slate-500">
-              <div>
-                CommonGround Court Access Mode
+        <footer className="bg-secondary/50 border-t border-border mt-auto">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                <span>CommonGround Court Access Mode</span>
               </div>
-              <div className="flex items-center space-x-4">
-                <span>Read-only access</span>
-                <span>All actions logged</span>
-                <span>SHA-256 verified</span>
+              <div className="flex items-center gap-4 text-xs">
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cg-success" />
+                  Read-only access
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cg-primary" />
+                  All actions logged
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                  SHA-256 verified
+                </span>
               </div>
             </div>
           </div>
@@ -226,10 +251,12 @@ export default function CourtPortalLayout({
 function NavLink({
   href,
   current,
+  icon,
   children,
 }: {
   href: string;
   current: string;
+  icon: React.ReactNode;
   children: React.ReactNode;
 }) {
   const isActive = current.startsWith(href);
@@ -237,12 +264,13 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`px-4 py-3 text-sm font-medium border-b-2 transition ${
+      className={`px-4 py-3 text-sm font-medium border-b-2 flex items-center gap-2 transition-smooth whitespace-nowrap ${
         isActive
-          ? "border-blue-600 text-blue-600"
-          : "border-transparent text-slate-600 hover:text-slate-900 hover:border-slate-300"
+          ? "border-indigo-600 text-indigo-600"
+          : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
       }`}
     >
+      {icon}
       {children}
     </Link>
   );
