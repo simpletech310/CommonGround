@@ -90,6 +90,9 @@ class Case(Base, UUIDMixin, TimestampMixin):
     custody_exchanges: Mapped[list["CustodyExchange"]] = relationship(
         "CustodyExchange", back_populates="case", cascade="all, delete-orphan"
     )
+    obligations: Mapped[list["Obligation"]] = relationship(
+        "Obligation", back_populates="case", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Case {self.case_name}>"

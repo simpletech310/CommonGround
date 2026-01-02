@@ -3,9 +3,12 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { FileText, Settings, Calendar, MessageSquare, DollarSign, FileBarChart, Info, MapPin, Shield, MessageCircle, Bot, ChevronRight, Eye, AlertTriangle, Lock, Smartphone, Edit, Search, Package } from "lucide-react";
 import { useCourtAuth } from "../../layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -107,7 +110,10 @@ export default function CaseDetailPage() {
   if (isLoading || !professional) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-slate-500">Loading...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-indigo-600 border-t-transparent mx-auto" />
+          <p className="mt-4 text-muted-foreground">Loading...</p>
+        </div>
       </div>
     );
   }
@@ -115,7 +121,10 @@ export default function CaseDetailPage() {
   if (isLoadingData) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-slate-500">Loading case data...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-indigo-600 border-t-transparent mx-auto" />
+          <p className="mt-4 text-muted-foreground">Loading case data...</p>
+        </div>
       </div>
     );
   }
@@ -138,145 +147,140 @@ export default function CaseDetailPage() {
     require_read_receipts: false,
   };
 
+  const activeControlsCount = [
+    courtSettings.gps_checkins_required,
+    courtSettings.supervised_exchange_required,
+    courtSettings.in_app_communication_only,
+    courtSettings.aria_enforcement_locked,
+    courtSettings.agreement_edits_locked,
+  ].filter(Boolean).length;
+
   return (
     <div className="space-y-6">
       {/* Error Display */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* Case Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-3">
-            <h1 className="text-2xl font-bold text-slate-900">{displayName}</h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-bold text-foreground">{displayName}</h1>
             {displayNumber && (
-              <span className="px-2 py-1 bg-blue-100 text-blue-800 text-sm rounded">
+              <Badge variant="default" className="bg-indigo-100 text-indigo-800 border-0">
                 Case #{displayNumber}
-              </span>
+              </Badge>
             )}
           </div>
-          <p className="text-slate-600 mt-1">
+          <p className="text-muted-foreground mt-1 flex items-center gap-1.5">
+            <MapPin className="h-4 w-4" />
             {displayCounty && `${displayCounty} County, `}{displayState}
           </p>
         </div>
-        <div className="flex space-x-2">
-          <Button variant="outline" asChild>
-            <Link href={`/court-portal/cases/${params.id}/reports`}>
-              Generate Report
-            </Link>
-          </Button>
-        </div>
+        <Button variant="outline" asChild className="border-indigo-200 text-indigo-700 hover:bg-indigo-50">
+          <Link href={`/court-portal/cases/${params.id}/reports`}>
+            <FileText className="h-4 w-4 mr-2" />
+            Generate Report
+          </Link>
+        </Button>
       </div>
 
       {/* Quick Nav */}
-      <div className="flex space-x-2 border-b pb-4">
-        <NavButton href={`/court-portal/cases/${params.id}`} active>Overview</NavButton>
-        <NavButton href={`/court-portal/cases/${params.id}/settings`}>Court Settings</NavButton>
-        <NavButton href={`/court-portal/cases/${params.id}/events`}>Court Events</NavButton>
-        <NavButton href={`/court-portal/cases/${params.id}/messages`}>Court Messages</NavButton>
-        <NavButton href={`/court-portal/cases/${params.id}/reports`}>Reports</NavButton>
+      <div className="flex gap-2 overflow-x-auto pb-2 border-b border-border">
+        <NavButton href={`/court-portal/cases/${params.id}`} active icon={<Eye className="h-4 w-4" />}>Overview</NavButton>
+        <NavButton href={`/court-portal/cases/${params.id}/settings`} icon={<Settings className="h-4 w-4" />}>Settings</NavButton>
+        <NavButton href={`/court-portal/cases/${params.id}/events`} icon={<Calendar className="h-4 w-4" />}>Events</NavButton>
+        <NavButton href={`/court-portal/cases/${params.id}/messages`} icon={<MessageSquare className="h-4 w-4" />}>Messages</NavButton>
+        <NavButton href={`/court-portal/cases/${params.id}/payments`} icon={<DollarSign className="h-4 w-4" />}>Payments</NavButton>
+        <NavButton href={`/court-portal/cases/${params.id}/items`} icon={<Package className="h-4 w-4" />}>Items</NavButton>
+        <NavButton href={`/court-portal/cases/${params.id}/reports`} icon={<FileBarChart className="h-4 w-4" />}>Reports</NavButton>
       </div>
 
       {/* Quick Info Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
+        <Card className={courtSettings.investigation_mode ? "border-cg-warning/30 bg-cg-warning/5" : ""}>
           <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-slate-900">
+            <div className={`text-2xl font-bold ${courtSettings.investigation_mode ? "text-cg-warning" : "text-foreground"}`}>
               {courtSettings.investigation_mode ? "Active" : "Normal"}
             </div>
-            <div className="text-xs text-slate-500">Monitoring Mode</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <div className="text-2xl font-bold text-slate-900">
-              {[
-                courtSettings.gps_checkins_required,
-                courtSettings.supervised_exchange_required,
-                courtSettings.in_app_communication_only,
-                courtSettings.aria_enforcement_locked,
-                courtSettings.agreement_edits_locked,
-              ].filter(Boolean).length}
+            <div className="text-xs text-muted-foreground flex items-center justify-center gap-1 mt-1">
+              <Search className="h-3.5 w-3.5" />
+              Monitoring Mode
             </div>
-            <div className="text-xs text-slate-500">Active Controls</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
-            <div className={`text-2xl font-bold ${courtSettings.aria_enforcement_locked ? "text-green-600" : "text-slate-900"}`}>
+            <div className="text-2xl font-bold text-foreground">{activeControlsCount}</div>
+            <div className="text-xs text-muted-foreground flex items-center justify-center gap-1 mt-1">
+              <Shield className="h-3.5 w-3.5" />
+              Active Controls
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className={`text-2xl font-bold ${courtSettings.aria_enforcement_locked ? "text-cg-success" : "text-foreground"}`}>
               {courtSettings.aria_enforcement_locked ? "Locked" : "Optional"}
             </div>
-            <div className="text-xs text-slate-500">ARIA Status</div>
+            <div className="text-xs text-muted-foreground flex items-center justify-center gap-1 mt-1">
+              <Bot className="h-3.5 w-3.5" />
+              ARIA Status
+            </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
-            <div className={`text-2xl font-bold ${courtSettings.in_app_communication_only ? "text-blue-600" : "text-slate-900"}`}>
+            <div className={`text-2xl font-bold ${courtSettings.in_app_communication_only ? "text-indigo-600" : "text-foreground"}`}>
               {courtSettings.in_app_communication_only ? "Required" : "Optional"}
             </div>
-            <div className="text-xs text-slate-500">In-App Messaging</div>
+            <div className="text-xs text-muted-foreground flex items-center justify-center gap-1 mt-1">
+              <Smartphone className="h-3.5 w-3.5" />
+              In-App Messaging
+            </div>
           </CardContent>
         </Card>
       </div>
 
       {/* Data Access Notice */}
-      <Card className="bg-blue-50 border-blue-200">
-        <CardContent className="p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-xl">ℹ️</span>
-            <div>
-              <p className="font-medium text-blue-900">Detailed Metrics Available</p>
-              <p className="text-sm text-blue-700 mt-1">
-                View detailed compliance metrics, message history, and ARIA analytics by navigating to the specific sections above.
-                Generate a comprehensive report for full statistics.
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Alert className="bg-indigo-50 border-indigo-200">
+        <Info className="h-4 w-4 text-indigo-600" />
+        <AlertDescription className="text-indigo-900">
+          <span className="font-medium">Detailed Metrics Available:</span>{" "}
+          <span className="text-indigo-700">
+            View detailed compliance metrics, message history, and ARIA analytics by navigating to the specific sections above.
+            Generate a comprehensive report for full statistics.
+          </span>
+        </AlertDescription>
+      </Alert>
 
       {/* Court Controls */}
       <Card>
         <CardHeader>
-          <CardTitle>Court-Controlled Settings</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-indigo-600" />
+            Court-Controlled Settings
+          </CardTitle>
           <CardDescription>
             Settings that cannot be overridden by parents
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid md:grid-cols-2 gap-4">
-            <SettingRow
-              label="GPS Check-ins Required"
-              enabled={courtSettings.gps_checkins_required}
-            />
-            <SettingRow
-              label="Supervised Exchanges"
-              enabled={courtSettings.supervised_exchange_required}
-            />
-            <SettingRow
-              label="ARIA Enforcement Locked"
-              enabled={courtSettings.aria_enforcement_locked}
-            />
-            <SettingRow
-              label="In-App Communication Only"
-              enabled={courtSettings.in_app_communication_only}
-            />
-            <SettingRow
-              label="Agreement Edits Locked"
-              enabled={courtSettings.agreement_edits_locked}
-            />
-            <SettingRow
-              label="Investigation Mode"
-              enabled={courtSettings.investigation_mode}
-              highlight
-            />
+          <div className="grid md:grid-cols-2 gap-3">
+            <SettingRow label="GPS Check-ins Required" enabled={courtSettings.gps_checkins_required} icon={<MapPin className="h-4 w-4" />} />
+            <SettingRow label="Supervised Exchanges" enabled={courtSettings.supervised_exchange_required} icon={<Eye className="h-4 w-4" />} />
+            <SettingRow label="ARIA Enforcement Locked" enabled={courtSettings.aria_enforcement_locked} icon={<Bot className="h-4 w-4" />} />
+            <SettingRow label="In-App Communication Only" enabled={courtSettings.in_app_communication_only} icon={<Smartphone className="h-4 w-4" />} />
+            <SettingRow label="Agreement Edits Locked" enabled={courtSettings.agreement_edits_locked} icon={<Lock className="h-4 w-4" />} />
+            <SettingRow label="Investigation Mode" enabled={courtSettings.investigation_mode} icon={<Search className="h-4 w-4" />} highlight />
           </div>
           <div className="mt-4">
             <Button variant="outline" asChild>
               <Link href={`/court-portal/cases/${params.id}/settings`}>
+                <Settings className="h-4 w-4 mr-2" />
                 Manage Settings
               </Link>
             </Button>
@@ -285,24 +289,30 @@ export default function CaseDetailPage() {
       </Card>
 
       {/* Quick Actions */}
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-4 gap-4">
         <ActionCard
           title="View Communication Log"
           description="Review all messages between parents"
           href={`/court-portal/cases/${params.id}/messages`}
-          icon="💬"
+          icon={<MessageCircle className="h-6 w-6" />}
+        />
+        <ActionCard
+          title="KidsCubbie Items"
+          description="Track high-value item transfers"
+          href={`/court-portal/cases/${params.id}/items`}
+          icon={<Package className="h-6 w-6" />}
         />
         <ActionCard
           title="Generate Court Packet"
           description="Create court-ready evidence package"
           href={`/court-portal/cases/${params.id}/reports`}
-          icon="📄"
+          icon={<FileText className="h-6 w-6" />}
         />
         <ActionCard
           title="Ask ARIA"
           description="Query case facts and statistics"
           href="/court-portal/aria"
-          icon="🤖"
+          icon={<Bot className="h-6 w-6" />}
         />
       </div>
     </div>
@@ -312,21 +322,24 @@ export default function CaseDetailPage() {
 function NavButton({
   href,
   active,
+  icon,
   children,
 }: {
   href: string;
   active?: boolean;
+  icon: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
-      className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-smooth ${
         active
-          ? "bg-slate-900 text-white"
-          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+          ? "bg-indigo-600 text-white"
+          : "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
       }`}
     >
+      {icon}
       {children}
     </Link>
   );
@@ -335,26 +348,28 @@ function NavButton({
 function SettingRow({
   label,
   enabled,
+  icon,
   highlight,
 }: {
   label: string;
   enabled: boolean;
+  icon: React.ReactNode;
   highlight?: boolean;
 }) {
   return (
-    <div className={`flex items-center justify-between p-3 rounded-lg ${
-      highlight ? "bg-orange-50 border border-orange-200" : "bg-slate-50"
+    <div className={`flex items-center justify-between p-3 rounded-xl ${
+      highlight ? "bg-cg-warning/10 border border-cg-warning/20" : "bg-secondary/50"
     }`}>
-      <span className="text-sm text-slate-700">{label}</span>
-      <span className={`px-2 py-1 rounded text-xs font-medium ${
-        enabled
-          ? highlight
-            ? "bg-orange-500 text-white"
-            : "bg-green-500 text-white"
-          : "bg-slate-300 text-slate-600"
-      }`}>
-        {enabled ? "ACTIVE" : "OFF"}
+      <span className="text-sm text-foreground flex items-center gap-2">
+        <span className={highlight ? "text-cg-warning" : "text-muted-foreground"}>{icon}</span>
+        {label}
       </span>
+      <Badge
+        variant={enabled ? (highlight ? "warning" : "success") : "secondary"}
+        size="sm"
+      >
+        {enabled ? "ACTIVE" : "OFF"}
+      </Badge>
     </div>
   );
 }
@@ -368,18 +383,21 @@ function ActionCard({
   title: string;
   description: string;
   href: string;
-  icon: string;
+  icon: React.ReactNode;
 }) {
   return (
     <Link href={href}>
-      <Card className="hover:bg-slate-50 transition cursor-pointer h-full">
+      <Card className="hover:bg-secondary/50 transition-smooth cursor-pointer h-full group">
         <CardContent className="p-4">
-          <div className="flex items-start space-x-3">
-            <span className="text-2xl">{icon}</span>
-            <div>
-              <h3 className="font-medium text-slate-900">{title}</h3>
-              <p className="text-sm text-slate-500">{description}</p>
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg group-hover:bg-indigo-200 transition-colors">
+              {icon}
             </div>
+            <div className="flex-1">
+              <h3 className="font-medium text-foreground">{title}</h3>
+              <p className="text-sm text-muted-foreground">{description}</p>
+            </div>
+            <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
         </CardContent>
       </Card>

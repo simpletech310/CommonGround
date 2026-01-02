@@ -20,7 +20,7 @@ from sqlalchemy.orm import selectinload
 from app.models.cubbie import CubbieItem, CubbieExchangeItem, ChildPhoto
 from app.models.child import Child
 from app.models.case import Case, CaseParticipant
-from app.models.custody_exchange import CustodyExchangeInstance
+from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
 from app.models.user import User
 from app.schemas.cubbie import (
     CubbieItemCreate,
@@ -341,7 +341,7 @@ class CubbieService:
         user: User,
     ) -> CubbieExchangeItem:
         """Acknowledge receipt of an item in an exchange."""
-        # Find the exchange item
+        # Find the exchange item with its cubbie item
         result = await self.db.execute(
             select(CubbieExchangeItem)
             .options(selectinload(CubbieExchangeItem.cubbie_item))
@@ -372,17 +372,46 @@ class CubbieService:
         exchange_item.condition_received = ack_data.condition_received.value if ack_data.condition_received else None
         exchange_item.condition_notes = ack_data.condition_notes
 
-        # Update the cubbie item's location
-        # Determine which parent is receiving based on who sent
+        # Update the cubbie item's location based on receiving parent
         cubbie_item = exchange_item.cubbie_item
-        if cubbie_item.current_location == "child_traveling":
-            # Switch location based on sender
-            if exchange_item.sent_by != user.id:
-                # User is receiving, so they now have the item
-                # We need to determine parent_a or parent_b
-                # For now, use a simple toggle
-                cubbie_item.current_location = "parent_a" if cubbie_item.current_location != "parent_a" else "parent_b"
-                cubbie_item.last_location_update = datetime.utcnow()
+
+        # Get the exchange instance and its parent to find case_id
+        instance_result = await self.db.execute(
+            select(CustodyExchangeInstance)
+            .options(selectinload(CustodyExchangeInstance.exchange))
+            .where(CustodyExchangeInstance.id == exchange_id)
+        )
+        instance = instance_result.scalar_one_or_none()
+
+        if instance and instance.exchange:
+            case_id = instance.exchange.case_id
+
+            # Get the case participants to determine parent_a vs parent_b
+            participants_result = await self.db.execute(
+                select(CaseParticipant)
+                .where(CaseParticipant.case_id == case_id)
+                .order_by(CaseParticipant.joined_at)  # First to join is parent_a
+            )
+            participants = participants_result.scalars().all()
+
+            if len(participants) >= 2:
+                # First participant is parent_a, second is parent_b
+                parent_a_id = participants[0].user_id
+                parent_b_id = participants[1].user_id
+
+                # Determine which parent is receiving
+                if user.id == parent_a_id:
+                    cubbie_item.current_location = "parent_a"
+                elif user.id == parent_b_id:
+                    cubbie_item.current_location = "parent_b"
+                else:
+                    # Fallback - shouldn't happen
+                    cubbie_item.current_location = "parent_a"
+            else:
+                # Only one participant - use parent_a
+                cubbie_item.current_location = "parent_a"
+
+            cubbie_item.last_location_update = datetime.utcnow()
 
         await self.db.commit()
         await self.db.refresh(exchange_item)

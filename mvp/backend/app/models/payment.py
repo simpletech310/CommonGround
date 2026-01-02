@@ -158,6 +158,7 @@ class PaymentLedger(Base, UUIDMixin, TimestampMixin):
     FIFO ledger entry for payment tracking.
 
     Tracks obligations and credits to maintain accurate balances.
+    All credits are applied FIFO (first-in, first-out) to oldest obligations.
     """
 
     __tablename__ = "payment_ledger"
@@ -182,6 +183,21 @@ class PaymentLedger(Base, UUIDMixin, TimestampMixin):
     payment_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     expense_request_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
 
+    # ClearFund integration - obligation tracking
+    obligation_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("obligations.id"), index=True, nullable=True
+    )
+
+    # FIFO tracking - which obligation consumed this credit
+    fifo_applied_to: Mapped[Optional[str]] = mapped_column(
+        String(36), nullable=True
+    )  # obligation_id that consumed this credit
+
+    # Credit source for tracking payment origins
+    credit_source: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True
+    )  # payment, prepayment, refund, adjustment
+
     # Details
     description: Mapped[str] = mapped_column(String(300))
     period_start: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -193,6 +209,12 @@ class PaymentLedger(Base, UUIDMixin, TimestampMixin):
     # Status
     is_reconciled: Mapped[bool] = mapped_column(Boolean, default=False)
     reconciled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # FIFO application tracking
+    fifo_applied_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    fifo_remaining: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )  # Amount not yet applied to obligations
 
     def __repr__(self) -> str:
         return f"<PaymentLedger {self.entry_type} ${self.amount}>"

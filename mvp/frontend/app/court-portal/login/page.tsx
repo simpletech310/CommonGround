@@ -2,11 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Scale, Lock, Clock, FileText, CheckCircle, Mail, KeyRound, Shield } from "lucide-react";
 import { useCourtAuth } from "../layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function CourtLoginPage() {
   const router = useRouter();
@@ -72,11 +75,11 @@ export default function CourtLoginPage() {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center">
+    <div className="min-h-[80vh] flex items-center justify-center px-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-            <span className="text-3xl">⚖️</span>
+        <CardHeader className="text-center pb-2">
+          <div className="mx-auto w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-4">
+            <Scale className="h-8 w-8 text-indigo-600" />
           </div>
           <CardTitle className="text-2xl">Court Access Portal</CardTitle>
           <CardDescription>
@@ -84,20 +87,20 @@ export default function CourtLoginPage() {
           </CardDescription>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="pt-4">
           {/* Step indicator */}
           <div className="flex items-center justify-center mb-6">
-            <StepIndicator step={1} current={step === "email"} complete={step !== "email"} label="Email" />
-            <div className="w-8 h-0.5 bg-slate-200" />
-            <StepIndicator step={2} current={step === "verify"} complete={step === "mfa"} label="Verify" />
-            <div className="w-8 h-0.5 bg-slate-200" />
-            <StepIndicator step={3} current={step === "mfa"} complete={false} label="MFA" />
+            <StepIndicator step={1} current={step === "email"} complete={step !== "email"} label="Email" icon={<Mail className="h-3.5 w-3.5" />} />
+            <div className="w-8 h-0.5 bg-border" />
+            <StepIndicator step={2} current={step === "verify"} complete={step === "mfa"} label="Verify" icon={<KeyRound className="h-3.5 w-3.5" />} />
+            <div className="w-8 h-0.5 bg-border" />
+            <StepIndicator step={3} current={step === "mfa"} complete={false} label="MFA" icon={<Shield className="h-3.5 w-3.5" />} />
           </div>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded">
-              {error}
-            </div>
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
 
           {step === "email" && (
@@ -112,11 +115,11 @@ export default function CourtLoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                 />
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-muted-foreground">
                   Use your verified court or law firm email
                 </p>
               </div>
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700" disabled={isLoading}>
                 {isLoading ? "Verifying..." : "Continue"}
               </Button>
             </form>
@@ -124,7 +127,7 @@ export default function CourtLoginPage() {
 
           {step === "verify" && (
             <form onSubmit={handleVerifySubmit} className="space-y-4">
-              <div className="text-center text-sm text-slate-600 mb-4">
+              <div className="text-center text-sm text-muted-foreground mb-4">
                 Enter the access code from your invitation link or email
               </div>
               <div className="space-y-2">
@@ -139,7 +142,7 @@ export default function CourtLoginPage() {
                   required
                 />
               </div>
-              <div className="flex space-x-3">
+              <div className="flex gap-3">
                 <Button
                   type="button"
                   variant="outline"
@@ -148,7 +151,7 @@ export default function CourtLoginPage() {
                 >
                   Back
                 </Button>
-                <Button type="submit" className="flex-1" disabled={isLoading}>
+                <Button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700" disabled={isLoading}>
                   {isLoading ? "Verifying..." : "Verify"}
                 </Button>
               </div>
@@ -157,7 +160,7 @@ export default function CourtLoginPage() {
 
           {step === "mfa" && (
             <form onSubmit={handleMfaSubmit} className="space-y-4">
-              <div className="text-center text-sm text-slate-600 mb-4">
+              <div className="text-center text-sm text-muted-foreground mb-4">
                 Enter the 6-digit code from your authenticator app
               </div>
               <div className="space-y-2">
@@ -172,11 +175,11 @@ export default function CourtLoginPage() {
                   maxLength={6}
                   required
                 />
-                <p className="text-xs text-slate-500 text-center">
+                <p className="text-xs text-muted-foreground text-center">
                   For demo: enter any 6 digits
                 </p>
               </div>
-              <div className="flex space-x-3">
+              <div className="flex gap-3">
                 <Button
                   type="button"
                   variant="outline"
@@ -185,25 +188,35 @@ export default function CourtLoginPage() {
                 >
                   Back
                 </Button>
-                <Button type="submit" className="flex-1" disabled={isLoading}>
+                <Button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700" disabled={isLoading}>
                   {isLoading ? "Verifying..." : "Sign In"}
                 </Button>
               </div>
             </form>
           )}
 
-          <div className="mt-6 pt-6 border-t">
-            <div className="text-xs text-slate-500 space-y-1">
-              <p className="flex items-center">
-                <span className="mr-2">🔒</span>
+          {/* Registration link */}
+          <div className="mt-6 pt-6 border-t border-border text-center">
+            <p className="text-sm text-muted-foreground">
+              Don't have an account?{" "}
+              <Link href="/court-portal/register" className="text-indigo-600 hover:underline font-medium">
+                Register as a Professional
+              </Link>
+            </p>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="text-xs text-muted-foreground space-y-2">
+              <p className="flex items-center gap-2">
+                <Lock className="h-3.5 w-3.5 text-indigo-500" />
                 All access is logged and audited
               </p>
-              <p className="flex items-center">
-                <span className="mr-2">⏱️</span>
+              <p className="flex items-center gap-2">
+                <Clock className="h-3.5 w-3.5 text-indigo-500" />
                 Access is time-limited based on your role
               </p>
-              <p className="flex items-center">
-                <span className="mr-2">📋</span>
+              <p className="flex items-center gap-2">
+                <FileText className="h-3.5 w-3.5 text-indigo-500" />
                 Read-only access to case materials
               </p>
             </div>
@@ -219,26 +232,28 @@ function StepIndicator({
   current,
   complete,
   label,
+  icon,
 }: {
   step: number;
   current: boolean;
   complete: boolean;
   label: string;
+  icon: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center">
       <div
-        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
           complete
-            ? "bg-green-500 text-white"
+            ? "bg-cg-success text-white"
             : current
-            ? "bg-blue-600 text-white"
-            : "bg-slate-200 text-slate-500"
+            ? "bg-indigo-600 text-white"
+            : "bg-secondary text-muted-foreground"
         }`}
       >
-        {complete ? "✓" : step}
+        {complete ? <CheckCircle className="h-4 w-4" /> : icon}
       </div>
-      <span className="text-xs mt-1 text-slate-500">{label}</span>
+      <span className="text-xs mt-1 text-muted-foreground">{label}</span>
     </div>
   );
 }

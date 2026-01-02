@@ -802,52 +802,8 @@ The financial nervous system of CommonGround. Separates money from emotion by an
 
 ---
 
-## 5.6 ChildCore™ and ChildVault™
 
-### ChildCore™: Unified Child Profile
 
-**Purpose:** Shared knowledge base for the child that prevents information hoarding.
-
-**Contents:**
-- Basic info (full name, DOB, SSN storage option)
-- Medical (pediatrician, specialists, allergies, medications, insurance)
-- Education (school, teacher, grade, IEP/504 if applicable)
-- Activities (teams, lessons, schedules)
-- Emergency contacts (both sides)
-- Important notes (one-way acknowledgments, no arguments)
-
-**Access Control:**
-- Both parents see everything
-- Neither can delete (only archive)
-- Changes logged with timestamps
-- Third-party access requires both parent approval
-
-### ChildVault™: Digital Cubbie
-
-**Purpose:** Track items that travel between homes.
-
-**Contents:**
-- Clothing inventories (optional)
-- Electronics (phones, tablets, gaming devices)
-- Sports equipment
-- School supplies
-- Sentimental items
-
-**For Each Item:**
-- Description
-- Photo (optional)
-- Purchase date and cost (optional)
-- Who purchased
-- Current location (Mom's / Dad's / School / Other)
-- Transition notes
-
-**Why It Exists:**
-- Prevents "you never send back their stuff"
-- Clarifies who bought what
-- Reduces duplicate purchases
-- Teaches children responsibility (age-appropriate visibility)
-
----
 
 ## 5.7 CircleAccess™
 

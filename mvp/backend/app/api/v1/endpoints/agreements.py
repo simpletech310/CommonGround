@@ -439,3 +439,30 @@ async def finalize_aria_agreement(
     # Return updated agreement with sections
     agreement_service = AgreementService(db)
     return await agreement_service.get_agreement(agreement_id, current_user)
+
+
+class QuickSummaryResponse(BaseModel):
+    """Response model for quick agreement summary."""
+    summary: str
+    key_points: List[str]
+    completion_percentage: int
+    status: str
+
+
+@router.get("/{agreement_id}/quick-summary", response_model=QuickSummaryResponse)
+async def get_agreement_quick_summary(
+    agreement_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get a quick, plain-English summary of an agreement for dashboard display.
+
+    This generates a brief summary without requiring the full ARIA conversation.
+    Uses AI to create a parent-readable summary from the agreement sections.
+
+    Returns:
+        Quick summary with key points and completion percentage
+    """
+    agreement_service = AgreementService(db)
+    return await agreement_service.generate_quick_summary(agreement_id, current_user)

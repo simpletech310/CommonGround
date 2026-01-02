@@ -178,36 +178,36 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
       {/* Compose Form */}
       {!analysis?.is_flagged && (
         <Card>
-          <CardContent className="pt-6 space-y-4">
+          <CardContent className="pt-4 sm:pt-6 space-y-3 sm:space-y-4">
             {/* Message Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
                 Your Message
               </label>
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Type your message here..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                rows={6}
+                className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-background text-foreground resize-none"
+                rows={4}
                 disabled={isSending}
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {message.length} / 10000 characters
               </p>
             </div>
 
             {/* Analysis Result (Green) */}
             {analysis && !analysis.is_flagged && (
-              <Card className="border-green-200 bg-green-50">
-                <CardContent className="pt-4">
+              <Card className="border-cg-success/30 bg-cg-success/10">
+                <CardContent className="pt-4 pb-4">
                   <div className="flex items-center gap-3">
-                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 sm:w-6 sm:h-6 text-cg-success flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div>
-                      <p className="font-medium text-green-900">Message looks good!</p>
-                      <p className="text-sm text-green-700">No conflict detected. Safe to send.</p>
+                      <p className="font-medium text-cg-success">Message looks good!</p>
+                      <p className="text-sm text-cg-success/80 hidden sm:block">No conflict detected. Safe to send.</p>
                     </div>
                   </div>
                 </CardContent>
@@ -215,15 +215,16 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
             )}
 
             {/* Action Buttons */}
-            <div className="flex gap-3">
+            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
               <Button
                 onClick={handleAnalyze}
                 variant="outline"
                 disabled={!message.trim() || isAnalyzing || isSending}
+                className="w-full sm:w-auto"
               >
                 {isAnalyzing ? (
                   <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-foreground mr-2"></div>
                     Analyzing...
                   </>
                 ) : (
@@ -231,7 +232,8 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                     </svg>
-                    Preview with ARIA
+                    <span className="hidden sm:inline">Preview with ARIA</span>
+                    <span className="sm:hidden">Preview</span>
                   </>
                 )}
               </Button>
@@ -239,12 +241,12 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
               <Button
                 onClick={handleQuickSend}
                 disabled={!message.trim() || isAnalyzing || isSending}
-                className="flex-1"
+                className="w-full sm:flex-1"
               >
                 {isAnalyzing ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    {ariaEnabled ? 'Checking with ARIA...' : 'Processing...'}
+                    {ariaEnabled ? 'Checking...' : 'Processing...'}
                   </>
                 ) : isSending ? (
                   <>
@@ -262,18 +264,17 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
               </Button>
             </div>
 
-            {/* Help Text */}
-            <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
-              <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {/* Help Text - Hidden on mobile for cleaner UI */}
+            <div className="hidden sm:flex items-start gap-2 p-3 bg-cg-primary-subtle border border-cg-primary/20 rounded-md">
+              <svg className="w-5 h-5 text-cg-primary flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <div className="text-xs text-blue-900">
+              <div className="text-xs text-foreground/80">
                 <p className="font-medium">ARIA helps you communicate effectively</p>
                 <p className="mt-1">
                   {ariaEnabled
-                    ? "When ARIA is enabled, all messages are automatically analyzed before sending. Use 'Preview with ARIA' to see suggestions before clicking send."
-                    : "ARIA is currently disabled for this case. Click 'Preview with ARIA' to analyze your message, or enable ARIA using the toggle above."
-                  }
+                    ? "Messages are automatically analyzed before sending."
+                    : "ARIA is disabled. Click 'Preview' to analyze your message."}
                 </p>
               </div>
             </div>

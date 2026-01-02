@@ -134,9 +134,9 @@ function AgreementsListContent() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex gap-6">
+        <div className="flex flex-col lg:flex-row gap-6">
           {/* Sidebar - Case Selection */}
-          <div className="w-80 flex-shrink-0">
+          <div className="w-full lg:w-80 lg:flex-shrink-0">
             <Card>
               <CardHeader>
                 <CardTitle>Cases</CardTitle>
@@ -227,12 +227,13 @@ function AgreementsListContent() {
                 {/* Case Header */}
                 <Card>
                   <CardHeader>
-                    <div className="flex justify-between items-start">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                       <div>
-                        <CardTitle>{selectedCase.case_name} - Agreements</CardTitle>
+                        <CardTitle className="text-lg sm:text-xl">{selectedCase.case_name} - Agreements</CardTitle>
                         <CardDescription>Custody and parenting agreements</CardDescription>
                       </div>
                       <Button
+                        className="w-full sm:w-auto"
                         onClick={() => setShowBuilderChoice(true)}
                         disabled={isCreatingAgreement || courtSettings?.agreement_edits_locked}
                         title={courtSettings?.agreement_edits_locked ? 'Agreement edits are locked by court order' : ''}
@@ -316,17 +317,17 @@ function AgreementsListContent() {
 
                 {/* Agreements List */}
                 {!isLoadingAgreements && !error && agreements.length > 0 && (
-                  <div className="grid gap-6 md:grid-cols-2">
+                  <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
                     {agreements.map((agreement) => (
                       <Card
                         key={agreement.id}
                         className="hover:shadow-lg transition-shadow cursor-pointer"
                         onClick={() => router.push(`/agreements/${agreement.id}`)}
                       >
-                        <CardHeader>
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <CardTitle className="text-lg">{agreement.title}</CardTitle>
+                        <CardHeader className="p-4 sm:p-6">
+                          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <CardTitle className="text-base sm:text-lg truncate">{agreement.title}</CardTitle>
                               <CardDescription className="mt-1">
                                 Version {agreement.version}
                               </CardDescription>
@@ -336,7 +337,7 @@ function AgreementsListContent() {
                             </span>
                           </div>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0">
                           <div className="space-y-2 text-sm text-gray-600">
                             <p>Created: {new Date(agreement.created_at).toLocaleDateString()}</p>
 
@@ -381,42 +382,42 @@ function AgreementsListContent() {
 
         {/* Builder Choice Modal */}
         {showBuilderChoice && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-3 sm:mb-4">
                 Choose How to Build Your Agreement
               </h2>
-              <p className="text-gray-600 mb-6">
+              <p className="text-gray-600 mb-4 sm:mb-6 text-sm sm:text-base">
                 Select the approach that works best for you
               </p>
 
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 {/* ARIA Option */}
                 <button
                   onClick={() => createAgreementWithBuilder(true)}
                   disabled={isCreatingAgreement}
-                  className="w-full text-left p-6 border-2 border-purple-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full text-left p-4 sm:p-6 border-2 border-purple-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-600 rounded-full flex items-center justify-center text-white text-lg sm:text-xl font-bold flex-shrink-0">
                       A
                     </div>
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1 sm:mb-2">
                         Talk to ARIA (Recommended)
                       </h3>
-                      <p className="text-sm text-gray-600 mb-3">
+                      <p className="text-xs sm:text-sm text-gray-600 mb-2 sm:mb-3">
                         Have a natural conversation about your custody arrangement. ARIA will ask
-                        questions, understand casual language, and create your agreement for you.
+                        questions and create your agreement for you.
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                        <span className="px-2 py-0.5 sm:py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
                           Conversational
                         </span>
-                        <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                        <span className="px-2 py-0.5 sm:py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
                           Faster
                         </span>
-                        <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                        <span className="px-2 py-0.5 sm:py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
                           AI-Powered
                         </span>
                       </div>
@@ -428,30 +429,30 @@ function AgreementsListContent() {
                 <button
                   onClick={() => createAgreementWithBuilder(false)}
                   disabled={isCreatingAgreement}
-                  className="w-full text-left p-6 border-2 border-blue-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full text-left p-4 sm:p-6 border-2 border-blue-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                     </div>
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-1 sm:mb-2">
                         Step-by-Step Wizard
                       </h3>
-                      <p className="text-sm text-gray-600 mb-3">
+                      <p className="text-xs sm:text-sm text-gray-600 mb-2 sm:mb-3">
                         Fill out structured forms with clear sections for custody schedules,
-                        holidays, decision-making, and more.
+                        holidays, and more.
                       </p>
-                      <div className="flex flex-wrap gap-2">
-                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                        <span className="px-2 py-0.5 sm:py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
                           Structured
                         </span>
-                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                        <span className="px-2 py-0.5 sm:py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
                           Traditional
                         </span>
-                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                        <span className="px-2 py-0.5 sm:py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
                           Detailed
                         </span>
                       </div>
@@ -460,11 +461,12 @@ function AgreementsListContent() {
                 </button>
               </div>
 
-              <div className="mt-6 flex justify-end">
+              <div className="mt-4 sm:mt-6 flex justify-end">
                 <Button
                   variant="outline"
                   onClick={() => setShowBuilderChoice(false)}
                   disabled={isCreatingAgreement}
+                  className="w-full sm:w-auto"
                 >
                   Cancel
                 </Button>

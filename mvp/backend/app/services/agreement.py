@@ -18,6 +18,9 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 import io
 
+from anthropic import Anthropic
+from openai import OpenAI
+
 from app.models.agreement import Agreement, AgreementSection, AgreementVersion
 from app.models.case import Case, CaseParticipant
 from app.models.user import User
@@ -863,3 +866,136 @@ class AgreementService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to delete agreement: {str(e)}"
             ) from e
+
+    async def generate_quick_summary(
+        self,
+        agreement_id: str,
+        user: User
+    ) -> Dict[str, Any]:
+        """
+        Generate a quick, plain-English summary of an agreement for dashboard display.
+
+        Uses Claude API to create a parent-friendly summary from the agreement sections.
+
+        Args:
+            agreement_id: ID of the agreement
+            user: Current user
+
+        Returns:
+            Dict with summary, key_points, completion_percentage, status
+        """
+        agreement = await self.get_agreement(agreement_id, user)
+
+        # Get all sections with content
+        result = await self.db.execute(
+            select(AgreementSection)
+            .where(AgreementSection.agreement_id == agreement_id)
+            .order_by(AgreementSection.display_order)
+        )
+        sections = result.scalars().all()
+
+        # Calculate completion percentage
+        completed_sections = sum(1 for s in sections if s.is_completed)
+        total_sections = len(sections)
+        completion_percentage = int((completed_sections / total_sections * 100)) if total_sections > 0 else 0
+
+        # If no sections are completed, return placeholder summary
+        if completed_sections == 0:
+            return {
+                "summary": "This agreement is still being drafted. Complete the sections to see a summary.",
+                "key_points": [
+                    "Agreement not yet started",
+                    "Use the builder to add custody details"
+                ],
+                "completion_percentage": 0,
+                "status": agreement.status
+            }
+
+        # Build section content for AI
+        section_content = []
+        for section in sections:
+            if section.is_completed and section.content:
+                section_content.append(f"## {section.section_title}\n{section.content}")
+
+        sections_text = "\n\n".join(section_content)
+
+        # Call OpenAI API for summary
+        try:
+            client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                max_tokens=500,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""Generate a brief, parent-friendly summary of this custody agreement.
+
+The summary should be:
+- 2-3 sentences maximum
+- Written in plain English (no legal jargon)
+- Focus on the practical arrangement (who has the kids when)
+- Warm but professional tone
+
+Also provide 3-4 key points as bullet points (very short, 5-8 words each).
+
+Agreement sections:
+{sections_text}
+
+Return your response in this exact format:
+SUMMARY: [Your 2-3 sentence summary here]
+KEY_POINTS:
+- [Point 1]
+- [Point 2]
+- [Point 3]"""
+                    }
+                ]
+            )
+
+            # Parse response
+            response_text = response.choices[0].message.content
+
+            # Extract summary and key points
+            summary = ""
+            key_points = []
+
+            if "SUMMARY:" in response_text:
+                parts = response_text.split("KEY_POINTS:")
+                summary = parts[0].replace("SUMMARY:", "").strip()
+
+                if len(parts) > 1:
+                    points_text = parts[1].strip()
+                    for line in points_text.split("\n"):
+                        line = line.strip()
+                        if line.startswith("-"):
+                            key_points.append(line[1:].strip())
+
+            # Fallback if parsing fails
+            if not summary:
+                summary = f"A {agreement.status} custody agreement covering {completed_sections} of {total_sections} sections."
+
+            if not key_points:
+                key_points = [
+                    f"{completed_sections} sections completed",
+                    f"Status: {agreement.status}"
+                ]
+
+            return {
+                "summary": summary,
+                "key_points": key_points[:4],  # Max 4 points
+                "completion_percentage": completion_percentage,
+                "status": agreement.status
+            }
+
+        except Exception as e:
+            # Fallback summary if AI fails
+            return {
+                "summary": f"A {agreement.status} parenting agreement with {completed_sections} of {total_sections} sections completed.",
+                "key_points": [
+                    f"{completed_sections} sections completed",
+                    f"Agreement status: {agreement.status}",
+                    "Review sections for details"
+                ],
+                "completion_percentage": completion_percentage,
+                "status": agreement.status
+            }

@@ -7,8 +7,25 @@ import { useAuth } from '@/lib/auth-context';
 import { casesAPI, messagesAPI, courtSettingsAPI, Case, Message, CourtSettingsPublic } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
 import { ProtectedRoute } from '@/components/protected-route';
+import { Navigation } from '@/components/navigation';
+import { PageContainer, EmptyState } from '@/components/layout';
 import { MessageCompose } from '@/components/messages/message-compose';
+import {
+  MessageSquare,
+  Plus,
+  X,
+  Sparkles,
+  Lock,
+  AlertTriangle,
+  Send,
+  Clock,
+  CheckCircle,
+  Lightbulb,
+} from 'lucide-react';
 
 function MessagesContent() {
   const { user } = useAuth();
@@ -179,59 +196,67 @@ function MessagesContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-8">
-              <Link href="/dashboard" className="text-2xl font-bold text-gray-900">
-                CommonGround
-              </Link>
-              <nav className="flex gap-4">
-                <Link href="/cases" className="text-sm font-medium text-gray-600 hover:text-gray-900">
-                  Cases
-                </Link>
-                <Link href="/messages" className="text-sm font-medium text-blue-600 border-b-2 border-blue-600 pb-1">
-                  Messages
-                </Link>
-                <Link href="/agreements" className="text-sm font-medium text-gray-600 hover:text-gray-900">
-                  Agreements
-                </Link>
-              </nav>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">
-                  {user?.first_name} {user?.last_name}
-                </p>
-                <p className="text-xs text-gray-500">{user?.email}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-background">
+      <Navigation />
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex gap-6">
-          {/* Sidebar - Case List */}
-          <div className="w-80 flex-shrink-0">
-            <Card>
+      <PageContainer className="max-w-7xl">
+        {/* Mobile Case Selector */}
+        <div className="lg:hidden mb-4">
+          <Card>
+            <CardContent className="py-3">
+              <label className="text-sm font-medium text-muted-foreground block mb-2">
+                Select Case
+              </label>
+              {isLoadingCases ? (
+                <div className="flex items-center justify-center py-2">
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary border-t-transparent" />
+                </div>
+              ) : cases.length === 0 ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">No active cases</span>
+                  <Link href="/cases/new">
+                    <Button size="sm">Create Case</Button>
+                  </Link>
+                </div>
+              ) : (
+                <select
+                  value={selectedCase?.id || ''}
+                  onChange={(e) => {
+                    const caseItem = cases.find((c) => c.id === e.target.value);
+                    if (caseItem) handleSelectCase(caseItem);
+                  }}
+                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                >
+                  <option value="">Select a case...</option>
+                  {cases.map((caseItem) => (
+                    <option key={caseItem.id} value={caseItem.id}>
+                      {caseItem.case_name} {caseItem.status === 'pending' ? '(Pending)' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Sidebar - Case List (Desktop only) */}
+          <div className="hidden lg:block w-80 flex-shrink-0">
+            <Card className="sticky top-24">
               <CardHeader>
                 <CardTitle>Cases</CardTitle>
                 <CardDescription>Select a case to view messages</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2">
+              <CardContent className="space-y-2 max-h-[calc(100vh-200px)] overflow-y-auto">
                 {isLoadingCases && (
                   <div className="text-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent mx-auto" />
                   </div>
                 )}
 
                 {!isLoadingCases && cases.length === 0 && (
                   <div className="text-center py-8">
-                    <p className="text-sm text-gray-500 mb-4">No active cases</p>
+                    <p className="text-sm text-muted-foreground mb-4">No active cases</p>
                     <Link href="/cases/new">
                       <Button size="sm">Create Case</Button>
                     </Link>
@@ -242,21 +267,19 @@ function MessagesContent() {
                   <button
                     key={caseItem.id}
                     onClick={() => handleSelectCase(caseItem)}
-                    className={`w-full text-left p-3 rounded-lg transition-colors ${
+                    className={`w-full text-left p-3 rounded-lg transition-smooth ${
                       selectedCase?.id === caseItem.id
-                        ? 'bg-blue-50 border-2 border-blue-300'
-                        : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
+                        ? 'bg-cg-primary-subtle border-2 border-cg-primary/30'
+                        : 'bg-secondary/50 border-2 border-transparent hover:bg-secondary'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <p className="font-medium text-gray-900">{caseItem.case_name}</p>
+                      <p className="font-medium text-foreground">{caseItem.case_name}</p>
                       {caseItem.status === 'pending' && (
-                        <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full">
-                          Pending
-                        </span>
+                        <Badge variant="warning" size="sm">Pending</Badge>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">{caseItem.state}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{caseItem.state}</p>
                   </button>
                 ))}
               </CardContent>
@@ -264,23 +287,15 @@ function MessagesContent() {
           </div>
 
           {/* Main Area - Messages */}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             {!selectedCase && (
               <Card>
                 <CardContent className="py-12">
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
-                      Select a case to view messages
-                    </h3>
-                    <p className="text-gray-600">
-                      Choose a case from the sidebar to start communicating
-                    </p>
-                  </div>
+                  <EmptyState
+                    icon={MessageSquare}
+                    title="Select a case to view messages"
+                    description="Choose a case from the sidebar to start communicating"
+                  />
                 </CardContent>
               </Card>
             )}
@@ -289,90 +304,69 @@ function MessagesContent() {
               <div className="space-y-6">
                 {/* Court Controls Notice */}
                 {courtSettings && (courtSettings.in_app_communication_only || courtSettings.aria_enforcement_locked) && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                    <div className="flex items-start gap-3">
-                      <span className="text-xl">⚖️</span>
-                      <div>
-                        <div className="font-medium text-amber-900">Court-Ordered Controls Active</div>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {courtSettings.in_app_communication_only && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">
-                              <span>💬</span> In-App Communication Only
-                            </span>
-                          )}
-                          {courtSettings.aria_enforcement_locked && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-amber-100 text-amber-800 border border-amber-300">
-                              <span>🤖</span> ARIA Moderation Required
-                            </span>
-                          )}
-                        </div>
+                  <Alert variant="default" className="bg-cg-warning-subtle border-cg-warning/30">
+                    <AlertTriangle className="h-4 w-4 text-cg-warning" />
+                    <AlertDescription>
+                      <div className="font-medium text-foreground mb-2">Court-Ordered Controls Active</div>
+                      <div className="flex flex-wrap gap-2">
                         {courtSettings.in_app_communication_only && (
-                          <p className="text-xs text-amber-700 mt-2">
-                            You are required to use this platform for all communication with the other parent.
-                            Communications outside this platform may not be considered by the court.
-                          </p>
+                          <Badge variant="warning" size="sm">In-App Communication Only</Badge>
+                        )}
+                        {courtSettings.aria_enforcement_locked && (
+                          <Badge variant="warning" size="sm">ARIA Moderation Required</Badge>
                         )}
                       </div>
-                    </div>
-                  </div>
+                      {courtSettings.in_app_communication_only && (
+                        <p className="text-sm text-muted-foreground mt-2">
+                          You are required to use this platform for all communication with the other parent.
+                        </p>
+                      )}
+                    </AlertDescription>
+                  </Alert>
                 )}
 
                 {/* Case Header */}
                 <Card>
                   <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <CardTitle>{selectedCase.case_name}</CardTitle>
-                        <CardDescription>AI-powered communication with conflict prevention</CardDescription>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="truncate">{selectedCase.case_name}</CardTitle>
+                        <CardDescription className="hidden sm:block">AI-powered communication with conflict prevention</CardDescription>
 
                         {/* ARIA Toggle */}
                         {ariaSettings && (
-                          <div className="flex items-center gap-3 mt-4 pt-4 border-t">
-                            {/* Toggle - disabled if court locked */}
-                            <button
-                              onClick={courtSettings?.aria_enforcement_locked ? undefined : toggleAriaEnabled}
+                          <div className="flex items-center gap-3 sm:gap-4 mt-4 pt-4 border-t border-border">
+                            <Switch
+                              checked={ariaSettings.aria_enabled}
+                              onCheckedChange={courtSettings?.aria_enforcement_locked ? undefined : toggleAriaEnabled}
                               disabled={isUpdatingAria || courtSettings?.aria_enforcement_locked}
-                              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                                ariaSettings.aria_enabled ? 'bg-blue-600' : 'bg-gray-200'
-                              } ${(isUpdatingAria || courtSettings?.aria_enforcement_locked) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                              title={courtSettings?.aria_enforcement_locked ? 'ARIA is locked by court order' : ''}
-                            >
-                              <span
-                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                  ariaSettings.aria_enabled ? 'translate-x-6' : 'translate-x-1'
-                                }`}
-                              />
-                            </button>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-gray-900">
-                                  ARIA Protection
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Sparkles className="h-4 w-4 text-cg-primary flex-shrink-0" />
+                                <span className="text-sm font-medium text-foreground">
+                                  ARIA
                                 </span>
-                                <span className={`px-2 py-0.5 text-xs rounded-full ${
-                                  ariaSettings.aria_enabled
-                                    ? 'bg-green-100 text-green-700'
-                                    : 'bg-gray-100 text-gray-700'
-                                }`}>
+                                <Badge
+                                  variant={ariaSettings.aria_enabled ? 'success' : 'secondary'}
+                                  size="sm"
+                                >
                                   {ariaSettings.aria_enabled ? 'ON' : 'OFF'}
-                                </span>
+                                </Badge>
                                 {courtSettings?.aria_enforcement_locked && (
-                                  <span className="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-700">
-                                    🔒 Court Locked
-                                  </span>
+                                  <Badge variant="warning" size="sm">
+                                    <Lock className="h-3 w-3 mr-1" />
+                                    Locked
+                                  </Badge>
                                 )}
                               </div>
-                              <p className="text-xs text-gray-500 mt-0.5">
+                              <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">
                                 {courtSettings?.aria_enforcement_locked
-                                  ? 'ARIA moderation is required by court order and cannot be disabled.'
+                                  ? 'ARIA moderation is required by court order.'
                                   : ariaSettings.aria_enabled
-                                    ? `AI monitoring with ${ariaSettings.aria_provider === 'claude' ? 'Claude' : ariaSettings.aria_provider === 'openai' ? 'OpenAI' : 'Pattern matching'} • All messages are analyzed for court documentation`
-                                    : 'ARIA is disabled • Messages will not be analyzed'}
+                                    ? `AI monitoring active`
+                                    : 'ARIA is disabled'}
                               </p>
-                              {ariaSettings.aria_disabled_at && !ariaSettings.aria_enabled && !courtSettings?.aria_enforcement_locked && (
-                                <p className="text-xs text-amber-600 mt-1">
-                                  ⚠️ Disabled on {new Date(ariaSettings.aria_disabled_at).toLocaleDateString()} • This action is tracked for court records
-                                </p>
-                              )}
                             </div>
                           </div>
                         )}
@@ -381,20 +375,16 @@ function MessagesContent() {
                         onClick={() => setShowCompose(!showCompose)}
                         disabled={!getOtherParentId()}
                         title={!getOtherParentId() ? "Waiting for other parent to join case" : ""}
-                        className="ml-4"
+                        className="w-full sm:w-auto flex-shrink-0"
                       >
                         {showCompose ? (
                           <>
-                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
+                            <X className="h-4 w-4 mr-2" />
                             Cancel
                           </>
                         ) : (
                           <>
-                            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
+                            <Plus className="h-4 w-4 mr-2" />
                             New Message
                           </>
                         )}
@@ -414,26 +404,20 @@ function MessagesContent() {
                         ariaEnabled={ariaSettings?.aria_enabled ?? true}
                       />
                     ) : (
-                      <Card className="border-yellow-200 bg-yellow-50">
-                        <CardContent className="pt-6">
-                          <div className="flex items-center gap-3">
-                            <svg className="w-5 h-5 text-yellow-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            </svg>
-                            <div>
-                              <p className="font-medium text-yellow-900">Can't send messages yet</p>
-                              <p className="text-sm text-yellow-700 mt-1">
-                                The other parent needs to accept your case invitation before you can exchange messages.
-                                {selectedCase.status === 'pending' && (
-                                  <span className="block mt-2">
-                                    Case status: <span className="font-semibold">Pending</span> - Waiting for other parent to join
-                                  </span>
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
+                      <Alert variant="default" className="bg-cg-warning-subtle border-cg-warning/30">
+                        <AlertTriangle className="h-4 w-4 text-cg-warning" />
+                        <AlertDescription>
+                          <p className="font-medium text-foreground">Can't send messages yet</p>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            The other parent needs to accept your case invitation before you can exchange messages.
+                            {selectedCase.status === 'pending' && (
+                              <span className="block mt-2">
+                                Case status: <Badge variant="warning" size="sm">Pending</Badge> - Waiting for other parent to join
+                              </span>
+                            )}
+                          </p>
+                        </AlertDescription>
+                      </Alert>
                     )}
                   </>
                 )}
@@ -446,32 +430,25 @@ function MessagesContent() {
                   <CardContent>
                     {isLoadingMessages && (
                       <div className="text-center py-12">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                        <p className="mt-4 text-gray-600">Loading messages...</p>
+                        <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent mx-auto" />
+                        <p className="mt-4 text-muted-foreground">Loading messages...</p>
                       </div>
                     )}
 
                     {!isLoadingMessages && messages.length === 0 && (
-                      <div className="text-center py-12">
-                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                          <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                          </svg>
-                        </div>
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">
-                          No messages yet
-                        </h3>
-                        <p className="text-gray-600 mb-4">
-                          Start the conversation by sending a message
-                        </p>
-                        <Button onClick={() => setShowCompose(true)}>
-                          Send First Message
-                        </Button>
-                      </div>
+                      <EmptyState
+                        icon={MessageSquare}
+                        title="No messages yet"
+                        description="Start the conversation by sending a message"
+                        action={{
+                          label: 'Send First Message',
+                          onClick: () => setShowCompose(true),
+                        }}
+                      />
                     )}
 
                     {!isLoadingMessages && messages.length > 0 && (
-                      <div className="space-y-4">
+                      <div className="space-y-3 sm:space-y-4">
                         {messages.map((message) => {
                           const isSent = message.sender_id === user?.id;
 
@@ -480,40 +457,42 @@ function MessagesContent() {
                               key={message.id}
                               className={`flex ${isSent ? 'justify-end' : 'justify-start'}`}
                             >
-                              <div className={`max-w-md ${isSent ? 'ml-12' : 'mr-12'}`}>
+                              <div className={`max-w-[85%] sm:max-w-md ${isSent ? 'ml-4 sm:ml-12' : 'mr-4 sm:mr-12'}`}>
                                 <div
-                                  className={`rounded-lg p-4 ${
+                                  className={`rounded-2xl px-3 sm:px-4 py-2 sm:py-3 ${
                                     isSent
-                                      ? 'bg-blue-600 text-white'
-                                      : 'bg-gray-100 text-gray-900'
+                                      ? 'bg-cg-primary text-white rounded-br-md'
+                                      : 'bg-secondary text-foreground rounded-bl-md'
                                   }`}
                                 >
                                   {message.was_flagged && (
-                                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-opacity-20">
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                                      </svg>
+                                    <div className={`flex items-center gap-2 mb-2 pb-2 border-b ${isSent ? 'border-white/20' : 'border-border'}`}>
+                                      <Lightbulb className="h-3 w-3" />
                                       <span className="text-xs opacity-75">ARIA reviewed</span>
                                     </div>
                                   )}
 
-                                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                                  <p className="text-sm whitespace-pre-wrap leading-relaxed break-words">{message.content}</p>
 
                                   {message.original_content && (
-                                    <details className="mt-2 pt-2 border-t border-opacity-20">
+                                    <details className={`mt-2 pt-2 border-t ${isSent ? 'border-white/20' : 'border-border'}`}>
                                       <summary className="text-xs opacity-75 cursor-pointer">
-                                        View original message
+                                        View original
                                       </summary>
-                                      <p className="text-xs opacity-75 mt-1 italic">
+                                      <p className="text-xs opacity-75 mt-1 italic break-words">
                                         "{message.original_content}"
                                       </p>
                                     </details>
                                   )}
                                 </div>
 
-                                <p className={`text-xs text-gray-500 mt-1 ${isSent ? 'text-right' : 'text-left'}`}>
-                                  {formatTime(message.sent_at)}
-                                </p>
+                                <div className={`flex items-center gap-1.5 sm:gap-2 mt-1 text-xs text-muted-foreground ${isSent ? 'justify-end' : 'justify-start'}`}>
+                                  <Clock className="h-3 w-3" />
+                                  <span>{formatTime(message.sent_at)}</span>
+                                  {isSent && (
+                                    <CheckCircle className="h-3 w-3 text-cg-success" />
+                                  )}
+                                </div>
                               </div>
                             </div>
                           );
@@ -526,7 +505,7 @@ function MessagesContent() {
             )}
           </div>
         </div>
-      </main>
+      </PageContainer>
     </div>
   );
 }

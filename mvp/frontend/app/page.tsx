@@ -5,6 +5,26 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  MessageSquare,
+  FileText,
+  Calendar,
+  Shield,
+  Users,
+  Wallet,
+  Gavel,
+  CheckCircle,
+  ArrowRight,
+} from 'lucide-react';
+
+/**
+ * CommonGround Landing Page
+ *
+ * Design: Clean, professional, court-credible.
+ * Philosophy: "Quietly modern. Emotionally safe. Court-credible."
+ */
 
 export default function HomePage() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -18,113 +38,301 @@ export default function HomePage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent mx-auto" />
+          <p className="mt-4 text-muted-foreground">Loading...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen bg-background">
+      {/* Navigation */}
+      <header className="border-b border-border bg-card sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <div>
+              <h1 className="text-xl font-bold text-foreground">CommonGround</h1>
+            </div>
+            <div className="flex items-center gap-3">
+              <Link href="/login">
+                <Button variant="ghost" size="sm">
+                  Sign in
+                </Button>
+              </Link>
+              <Link href="/register">
+                <Button size="sm">Get started</Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </header>
+
       {/* Hero Section */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="text-center">
-          <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-6">
-            CommonGround
-          </h1>
-          <p className="text-xl md:text-2xl text-gray-700 mb-4">
-            Where co-parents find common ground
-          </p>
-          <p className="text-lg text-gray-600 mb-12 max-w-2xl mx-auto">
-            AI-powered co-parenting platform that reduces conflict and helps families communicate effectively
-          </p>
+      <section className="py-16 lg:py-24">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl mx-auto text-center">
+            <Badge variant="default" className="mb-6">
+              AI-Powered Co-Parenting Platform
+            </Badge>
+            <h1 className="text-4xl font-bold text-foreground sm:text-5xl lg:text-6xl">
+              Where co-parents find{' '}
+              <span className="text-primary">common ground</span>
+            </h1>
+            <p className="mt-6 text-lg text-muted-foreground sm:text-xl max-w-2xl mx-auto">
+              Reduce conflict, communicate effectively, and focus on what matters most:
+              your children. Built with AI to help families navigate co-parenting with care.
+            </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="mt-10 flex flex-col sm:flex-row gap-4 justify-center">
+              <Link href="/register">
+                <Button size="lg" className="w-full sm:w-auto">
+                  Start for free
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </Link>
+              <Link href="/court-portal">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto">
+                  <Gavel className="mr-2 h-4 w-4" />
+                  Court Portal
+                </Button>
+              </Link>
+            </div>
+
+            {/* Trust indicators */}
+            <div className="mt-12 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-cg-success" />
+                Court-ready documentation
+              </span>
+              <span className="flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-cg-success" />
+                Secure & private
+              </span>
+              <span className="flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-cg-success" />
+                Free to start
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Features Grid */}
+      <section className="py-16 bg-secondary/30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-2xl font-semibold text-foreground sm:text-3xl">
+              Everything you need for peaceful co-parenting
+            </h2>
+            <p className="mt-3 text-muted-foreground max-w-2xl mx-auto">
+              One platform to manage communication, schedules, finances, and agreements
+            </p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <FeatureCard
+              icon={MessageSquare}
+              title="ARIA Messaging"
+              description="AI-powered communication that analyzes messages in real-time, reducing conflict and suggesting healthier ways to communicate."
+              highlight
+            />
+            <FeatureCard
+              icon={FileText}
+              title="Agreement Builder"
+              description="Create comprehensive custody agreements with guided interviews. Generate court-ready PDFs that both parents can approve."
+            />
+            <FeatureCard
+              icon={Calendar}
+              title="Schedule Management"
+              description="Track parenting time, custody exchanges, and special events. Automatic compliance tracking and check-in verification."
+            />
+            <FeatureCard
+              icon={Wallet}
+              title="ClearFund Payments"
+              description="Track child-related expenses, manage reimbursements, and maintain transparent financial records for court."
+            />
+            <FeatureCard
+              icon={Shield}
+              title="Court Documentation"
+              description="Export verified evidence packages with hash-verified integrity. Timeline reports, communication logs, and compliance summaries."
+            />
+            <FeatureCard
+              icon={Gavel}
+              title="Court Portal"
+              description="Separate access for judges, GALs, and attorneys. View-only dashboards with case summaries and compliance metrics."
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section className="py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 className="text-2xl font-semibold text-foreground sm:text-3xl">
+              Get started in minutes
+            </h2>
+            <p className="mt-3 text-muted-foreground">
+              Simple setup, powerful results
+            </p>
+          </div>
+
+          <div className="grid gap-8 md:grid-cols-3 max-w-4xl mx-auto">
+            <StepCard
+              number={1}
+              title="Create your case"
+              description="Set up your co-parenting case and invite the other parent to join."
+            />
+            <StepCard
+              number={2}
+              title="Build your agreement"
+              description="Use our guided interview to create a comprehensive custody agreement."
+            />
+            <StepCard
+              number={3}
+              title="Start communicating"
+              description="Send messages with AI assistance to maintain healthy communication."
+            />
+          </div>
+
+          <div className="mt-12 text-center">
             <Link href="/register">
-              <Button size="lg" className="w-full sm:w-auto text-lg px-8 py-6">
-                Get Started
-              </Button>
-            </Link>
-            <Link href="/login">
-              <Button size="lg" variant="outline" className="w-full sm:w-auto text-lg px-8 py-6">
-                Sign In
+              <Button size="lg">
+                Create your free account
+                <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
           </div>
         </div>
+      </section>
 
-        {/* Features Grid */}
-        <div className="mt-24 grid md:grid-cols-3 gap-8">
-          <div className="bg-white rounded-lg p-8 shadow-md">
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              AI-Powered Messaging
-            </h3>
-            <p className="text-gray-600">
-              ARIA™ analyzes messages in real-time to reduce conflict and suggest healthier communication
-            </p>
-          </div>
-
-          <div className="bg-white rounded-lg p-8 shadow-md">
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Agreement Builder
-            </h3>
-            <p className="text-gray-600">
-              Create comprehensive custody agreements with guided interviews and generate court-ready PDFs
-            </p>
-          </div>
-
-          <div className="bg-white rounded-lg p-8 shadow-md">
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              Schedule Management
-            </h3>
-            <p className="text-gray-600">
-              Track parenting time, exchanges, and compliance with automated calendar and notifications
+      {/* Mission Statement */}
+      <section className="py-16 bg-cg-primary-subtle">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-3xl mx-auto text-center">
+            <Users className="h-12 w-12 text-cg-primary mx-auto mb-6" />
+            <h2 className="text-2xl font-semibold text-foreground sm:text-3xl mb-4">
+              Our Mission
+            </h2>
+            <p className="text-lg text-muted-foreground leading-relaxed">
+              Every child deserves parents who can communicate effectively, even when they can't
+              be together. CommonGround uses technology and AI to reduce conflict in separated
+              families, making co-parenting easier, more transparent, and focused on what
+              matters most: the children.
             </p>
           </div>
         </div>
-
-        {/* Mission Statement */}
-        <div className="mt-24 bg-white rounded-lg p-12 shadow-md text-center">
-          <h2 className="text-3xl font-bold text-gray-900 mb-4">
-            Our Mission
-          </h2>
-          <p className="text-lg text-gray-600 max-w-3xl mx-auto">
-            Every child deserves parents who can communicate effectively, even when they can't be together.
-            CommonGround uses technology and AI to reduce conflict in separated families, making co-parenting
-            easier, more transparent, and focused on what matters most: the children.
-          </p>
-        </div>
-      </div>
+      </section>
 
       {/* Footer */}
-      <footer className="border-t bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="text-center text-gray-600">
-            <p>&copy; 2025 CommonGround. All rights reserved.</p>
-            <p className="mt-2 text-sm">
-              Reducing conflict in separated families through technology and transparency
-            </p>
+      <footer className="border-t border-border bg-card py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-8 md:grid-cols-4">
+            {/* Brand */}
+            <div className="md:col-span-2">
+              <h3 className="text-lg font-semibold text-foreground mb-2">CommonGround</h3>
+              <p className="text-sm text-muted-foreground mb-4 max-w-sm">
+                Reducing conflict in separated families through technology, transparency,
+                and AI-powered communication.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                &copy; 2025 CommonGround. All rights reserved.
+              </p>
+            </div>
+
+            {/* Links */}
+            <div>
+              <h4 className="font-medium text-foreground mb-3">Platform</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>
+                  <Link href="/register" className="hover:text-foreground transition-smooth">
+                    Get Started
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/login" className="hover:text-foreground transition-smooth">
+                    Sign In
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/court-portal" className="hover:text-foreground transition-smooth">
+                    Court Portal
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className="font-medium text-foreground mb-3">Legal</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>
+                  <Link href="#" className="hover:text-foreground transition-smooth">
+                    Privacy Policy
+                  </Link>
+                </li>
+                <li>
+                  <Link href="#" className="hover:text-foreground transition-smooth">
+                    Terms of Service
+                  </Link>
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </footer>
+    </div>
+  );
+}
+
+// Feature Card Component
+function FeatureCard({
+  icon: Icon,
+  title,
+  description,
+  highlight = false,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  highlight?: boolean;
+}) {
+  return (
+    <Card className={highlight ? 'border-primary/30 bg-accent/30' : ''}>
+      <CardContent className="p-6">
+        <div
+          className={`h-12 w-12 rounded-lg flex items-center justify-center mb-4 ${
+            highlight ? 'bg-cg-primary-subtle' : 'bg-secondary'
+          }`}
+        >
+          <Icon className={`h-6 w-6 ${highlight ? 'text-cg-primary' : 'text-muted-foreground'}`} />
+        </div>
+        <h3 className="text-lg font-semibold text-foreground mb-2">{title}</h3>
+        <p className="text-sm text-muted-foreground leading-relaxed">{description}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Step Card Component
+function StepCard({
+  number,
+  title,
+  description,
+}: {
+  number: number;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="text-center">
+      <div className="h-12 w-12 rounded-full bg-cg-primary-subtle text-cg-primary flex items-center justify-center mx-auto mb-4 text-lg font-semibold">
+        {number}
+      </div>
+      <h3 className="font-semibold text-foreground mb-2">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
 }
