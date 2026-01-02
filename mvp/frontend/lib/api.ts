@@ -1,0 +1,2992 @@
+/**
+ * API Client for CommonGround Backend
+ *
+ * Handles all communication with the FastAPI backend including:
+ * - Authentication (login, register, token management)
+ * - Cases, Messages, Agreements, etc.
+ */
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+
+export class APIError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public data?: any
+  ) {
+    super(message);
+    this.name = 'APIError';
+  }
+}
+
+/**
+ * Base fetch wrapper with error handling
+ */
+async function fetchAPI<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const url = `${API_URL}${endpoint}`;
+
+  const defaultHeaders: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+
+  // Add auth token if available
+  const token = getAuthToken();
+  if (token) {
+    defaultHeaders['Authorization'] = `Bearer ${token}`;
+  }
+
+  const config: RequestInit = {
+    ...options,
+    headers: {
+      ...defaultHeaders,
+      ...options.headers,
+    },
+  };
+
+  try {
+    const response = await fetch(url, config);
+
+    // Handle non-JSON responses
+    const contentType = response.headers.get('content-type');
+    const isJSON = contentType?.includes('application/json');
+
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = isJSON ? await response.json() : await response.text();
+      } catch {
+        errorData = 'Unknown error';
+      }
+
+      // Log detailed error for debugging
+      console.error('API Error:', {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        errorData
+      });
+
+      // Handle 401 Unauthorized - try to refresh token
+      if (response.status === 401 && !endpoint.includes('/auth/')) {
+        try {
+          // Try to refresh the token
+          await authAPI.refresh();
+
+          // Retry the original request with new token
+          const newToken = getAuthToken();
+          if (newToken) {
+            const retryConfig = {
+              ...config,
+              headers: {
+                ...config.headers,
+                'Authorization': `Bearer ${newToken}`,
+              },
+            };
+
+            const retryResponse = await fetch(url, retryConfig);
+            if (retryResponse.ok) {
+              const retryContentType = retryResponse.headers.get('content-type');
+              const retryIsJSON = retryContentType?.includes('application/json');
+
+              if (retryResponse.status === 204) {
+                return {} as T;
+              }
+
+              return (retryIsJSON ? await retryResponse.json() : await retryResponse.text()) as T;
+            }
+          }
+        } catch (refreshError) {
+          // Refresh failed - user needs to log in again
+          console.error('Token refresh failed:', refreshError);
+          // Clear tokens and redirect to login
+          clearAuthTokens();
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login';
+          }
+        }
+      }
+
+      throw new APIError(
+        errorData?.detail || `HTTP ${response.status}: ${response.statusText}`,
+        response.status,
+        errorData
+      );
+    }
+
+    // Return empty object for 204 No Content
+    if (response.status === 204) {
+      return {} as T;
+    }
+
+    return (isJSON ? await response.json() : await response.text()) as T;
+  } catch (error) {
+    if (error instanceof APIError) {
+      throw error;
+    }
+
+    // Network or other errors
+    console.error('Network Error:', error);
+    throw new APIError(
+      error instanceof Error ? error.message : 'Network error',
+      0
+    );
+  }
+}
+
+/**
+ * Get auth token from localStorage
+ */
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('access_token');
+}
+
+/**
+ * Set auth tokens in localStorage
+ */
+function setAuthTokens(accessToken: string, refreshToken?: string) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('access_token', accessToken);
+  if (refreshToken) {
+    localStorage.setItem('refresh_token', refreshToken);
+  }
+}
+
+/**
+ * Clear auth tokens from localStorage
+ */
+function clearAuthTokens() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  localStorage.removeItem('user');
+}
+
+// ============================================================================
+// Authentication API
+// ============================================================================
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  first_name: string;
+  last_name: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  user: User;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export const authAPI = {
+  /**
+   * Register a new user
+   */
+  async register(data: RegisterRequest): Promise<AuthResponse> {
+    const response = await fetchAPI<AuthResponse>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    setAuthTokens(response.access_token, response.refresh_token);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('user', JSON.stringify(response.user));
+    }
+
+    return response;
+  },
+
+  /**
+   * Login existing user
+   */
+  async login(data: LoginRequest): Promise<AuthResponse> {
+    const response = await fetchAPI<AuthResponse>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    setAuthTokens(response.access_token, response.refresh_token);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('user', JSON.stringify(response.user));
+    }
+
+    return response;
+  },
+
+  /**
+   * Logout user
+   */
+  async logout(): Promise<void> {
+    try {
+      await fetchAPI('/auth/logout', {
+        method: 'POST',
+      });
+    } finally {
+      clearAuthTokens();
+    }
+  },
+
+  /**
+   * Get current user
+   */
+  async me(): Promise<User> {
+    return fetchAPI<User>('/auth/me');
+  },
+
+  /**
+   * Refresh access token
+   */
+  async refresh(): Promise<{ access_token: string; token_type: string }> {
+    const refreshToken = typeof window !== 'undefined'
+      ? localStorage.getItem('refresh_token')
+      : null;
+
+    if (!refreshToken) {
+      throw new APIError('No refresh token available', 401);
+    }
+
+    const response = await fetchAPI<{ access_token: string; token_type: string }>(
+      '/auth/refresh',
+      {
+        method: 'POST',
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      }
+    );
+
+    setAuthTokens(response.access_token);
+    return response;
+  },
+
+  /**
+   * Check if user is authenticated
+   */
+  isAuthenticated(): boolean {
+    return !!getAuthToken();
+  },
+
+  /**
+   * Get current user from localStorage
+   */
+  getCurrentUser(): User | null {
+    if (typeof window === 'undefined') return null;
+    const userStr = localStorage.getItem('user');
+    return userStr ? JSON.parse(userStr) : null;
+  },
+};
+
+// ============================================================================
+// Cases API
+// ============================================================================
+
+export interface Child {
+  id: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
+  gender: string;
+}
+
+export interface CreateChildRequest {
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
+  gender: string;
+}
+
+export interface CreateCaseRequest {
+  case_name: string;
+  other_parent_email: string;
+  state: string;
+  children?: CreateChildRequest[];
+}
+
+export interface CaseParticipant {
+  id: string;
+  role: string;
+  parent_type: string;
+  user_id: string;
+  is_active?: boolean;
+}
+
+export interface Case {
+  id: string;
+  case_number?: string;
+  case_name: string;
+  state: string;
+  status: string;
+  invitation_token?: string;
+  created_at: string;
+  updated_at: string;
+  participants?: CaseParticipant[];
+  children?: Child[];
+}
+
+export const casesAPI = {
+  /**
+   * Create a new case
+   */
+  async create(data: CreateCaseRequest): Promise<Case> {
+    return fetchAPI<Case>('/cases/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get all user's cases
+   */
+  async list(): Promise<Case[]> {
+    return fetchAPI<Case[]>('/cases/');
+  },
+
+  /**
+   * Get a specific case
+   */
+  async get(caseId: string): Promise<Case> {
+    return fetchAPI<Case>(`/cases/${caseId}`);
+  },
+
+  /**
+   * Accept case invitation
+   */
+  async acceptInvitation(caseId: string, invitationToken: string): Promise<Case> {
+    return fetchAPI<Case>(`/cases/${caseId}/accept`, {
+      method: 'POST',
+      body: JSON.stringify({ invitation_token: invitationToken }),
+    });
+  },
+};
+
+// ============================================================================
+// Messages API
+// ============================================================================
+
+export interface SendMessageRequest {
+  case_id: string;
+  recipient_id: string;
+  content: string;
+  thread_id?: string;
+  message_type?: string;
+}
+
+export interface Message {
+  id: string;
+  case_id: string;
+  sender_id: string;
+  recipient_id: string;
+  content: string;
+  message_type: string;
+  sent_at: string;
+  was_flagged: boolean;
+  original_content?: string;
+  thread_id?: string;
+}
+
+export interface ARIAAnalysisResponse {
+  toxicity_level: 'green' | 'yellow' | 'orange' | 'red';
+  toxicity_score: number;
+  categories: string[];
+  triggers: string[];
+  explanation: string;
+  suggestion: string | null;
+  is_flagged: boolean;
+}
+
+export const messagesAPI = {
+  /**
+   * Send a message
+   */
+  async send(data: SendMessageRequest): Promise<Message> {
+    return fetchAPI<Message>('/messages/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get messages for a case
+   */
+  async list(caseId: string, limit = 50, offset = 0): Promise<Message[]> {
+    return fetchAPI<Message[]>(
+      `/messages/case/${caseId}?limit=${limit}&offset=${offset}`
+    );
+  },
+
+  /**
+   * Analyze message before sending
+   * Uses case-level ARIA settings (backend reads from case automatically)
+   */
+  async analyze(
+    caseId: string,
+    content: string
+  ): Promise<ARIAAnalysisResponse> {
+    return fetchAPI<ARIAAnalysisResponse>(
+      `/messages/analyze?case_id=${caseId}&content=${encodeURIComponent(content)}`,
+      {
+        method: 'POST',
+      }
+    );
+  },
+};
+
+// ============================================================================
+// Agreements API
+// ============================================================================
+
+export interface Agreement {
+  id: string;
+  case_id: string;
+  title: string;
+  version: number;
+  status: 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'expired' | 'active';
+  petitioner_approved: boolean;
+  respondent_approved: boolean;
+  approved_by_a?: string | null;
+  approved_by_b?: string | null;
+  approved_at_a?: string | null;
+  approved_at_b?: string | null;
+  effective_date?: string | null;
+  pdf_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgreementSection {
+  id: string;
+  agreement_id: string;
+  section_number: string;
+  section_title: string;
+  section_type: string;
+  content: string;
+  structured_data?: any;
+  display_order: number;
+  is_required: boolean;
+  is_completed: boolean;
+}
+
+export interface CreateAgreementRequest {
+  case_id: string;
+  title: string;
+  agreement_type?: string;
+}
+
+export interface UpdateSectionRequest {
+  content?: any;
+  section_number?: number | string;
+  section_title?: string;
+  structured_data?: Record<string, any>;
+}
+
+export const agreementsAPI = {
+  /**
+   * Create a new agreement for a case
+   */
+  async create(data: CreateAgreementRequest): Promise<Agreement> {
+    const { case_id, ...agreementData } = data;
+    return fetchAPI<Agreement>(`/cases/${case_id}/agreement`, {
+      method: 'POST',
+      body: JSON.stringify(agreementData),
+    });
+  },
+
+  /**
+   * Get all agreements for a case
+   */
+  async list(caseId: string): Promise<Agreement[]> {
+    try {
+      // New endpoint returns all agreements as an array
+      return await fetchAPI<Agreement[]>(`/cases/${caseId}/agreements`);
+    } catch (error: any) {
+      // If 404 (no agreements yet), return empty array
+      if (error.status === 404) {
+        return [];
+      }
+      throw error;
+    }
+  },
+
+  /**
+   * Get a specific agreement with sections
+   */
+  async get(agreementId: string): Promise<{ agreement: Agreement; sections: AgreementSection[]; completion_percentage: number }> {
+    return fetchAPI<{ agreement: Agreement; sections: AgreementSection[]; completion_percentage: number }>(`/agreements/${agreementId}`);
+  },
+
+  /**
+   * Get sections for an agreement (returns from agreement endpoint)
+   */
+  async getSections(agreementId: string): Promise<AgreementSection[]> {
+    const data = await this.get(agreementId);
+    return data.sections;
+  },
+
+  /**
+   * Update a section
+   */
+  async updateSection(
+    agreementId: string,
+    sectionId: string,
+    data: UpdateSectionRequest
+  ): Promise<AgreementSection> {
+    return fetchAPI<AgreementSection>(
+      `/agreements/sections/${sectionId}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  /**
+   * Create a new section
+   */
+  async createSection(
+    agreementId: string,
+    sectionType: string,
+    content: any
+  ): Promise<AgreementSection> {
+    return fetchAPI<AgreementSection>(
+      `/agreements/sections`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          agreement_id: agreementId,
+          section_type: sectionType,
+          content: content,
+        }),
+      }
+    );
+  },
+
+  /**
+   * Submit agreement for approval
+   */
+  async submit(agreementId: string): Promise<{ agreement: Agreement; sections: AgreementSection[]; completion_percentage: number }> {
+    const result = await fetchAPI<Agreement>(`/agreements/${agreementId}/submit`, {
+      method: 'POST',
+    });
+    // Get full data after submit
+    return this.get(agreementId);
+  },
+
+  /**
+   * Approve agreement
+   */
+  async approve(agreementId: string, notes?: string): Promise<{ agreement: Agreement; sections: AgreementSection[]; completion_percentage: number }> {
+    const result = await fetchAPI<Agreement>(`/agreements/${agreementId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ notes: notes || null }),
+    });
+    // Approve returns just the agreement, so fetch full data
+    return this.get(agreementId);
+  },
+
+  /**
+   * Activate approved agreement
+   */
+  async activate(agreementId: string): Promise<{ agreement: Agreement; sections: AgreementSection[]; completion_percentage: number }> {
+    const result = await fetchAPI<Agreement>(`/agreements/${agreementId}/activate`, {
+      method: 'POST',
+    });
+    // Fetch full data after activation
+    return this.get(agreementId);
+  },
+
+  /**
+   * Deactivate active agreement
+   */
+  async deactivate(agreementId: string): Promise<{ agreement: Agreement; sections: AgreementSection[]; completion_percentage: number }> {
+    const result = await fetchAPI<Agreement>(`/agreements/${agreementId}/deactivate`, {
+      method: 'POST',
+    });
+    // Fetch full data after deactivation
+    return this.get(agreementId);
+  },
+
+  /**
+   * Delete agreement (only if draft)
+   */
+  async delete(agreementId: string): Promise<void> {
+    await fetchAPI<void>(`/agreements/${agreementId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Generate PDF
+   */
+  async generatePDF(agreementId: string): Promise<Blob> {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/agreements/${agreementId}/pdf`,
+      {
+        headers: {
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new APIError('Failed to generate PDF', response.status);
+    }
+
+    return response.blob();
+  },
+
+  // ============================================================================
+  // ARIA Conversational Agreement Building
+  // ============================================================================
+
+  /**
+   * Send message to ARIA
+   */
+  async sendAriaMessage(agreementId: string, message: string): Promise<{
+    response: string;
+    conversation_id: string;
+    message_count: number;
+    is_finalized: boolean;
+  }> {
+    return fetchAPI(`/agreements/${agreementId}/aria/message`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  },
+
+  /**
+   * Get ARIA conversation history
+   */
+  async getAriaConversation(agreementId: string): Promise<{
+    conversation_id: string;
+    messages: Array<{ role: string; content: string; timestamp: string }>;
+    summary: string | null;
+    extracted_data: any;
+    is_finalized: boolean;
+    message_count: number;
+  }> {
+    return fetchAPI(`/agreements/${agreementId}/aria/conversation`);
+  },
+
+  /**
+   * Generate summary from ARIA conversation
+   */
+  async generateAriaSummary(agreementId: string): Promise<{
+    summary: string;
+    conversation_id: string;
+  }> {
+    return fetchAPI(`/agreements/${agreementId}/aria/summary`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Extract structured data from ARIA conversation
+   */
+  async extractAriaData(agreementId: string): Promise<{
+    extracted_data: any;
+    conversation_id: string;
+  }> {
+    return fetchAPI(`/agreements/${agreementId}/aria/extract`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Finalize ARIA conversation and create agreement sections
+   */
+  async finalizeAriaAgreement(agreementId: string): Promise<{ agreement: Agreement; sections: AgreementSection[]; completion_percentage: number }> {
+    return fetchAPI(`/agreements/${agreementId}/aria/finalize`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Get a quick AI-generated summary of an agreement for dashboard display
+   */
+  async getQuickSummary(agreementId: string): Promise<AgreementQuickSummary> {
+    return fetchAPI<AgreementQuickSummary>(`/agreements/${agreementId}/quick-summary`);
+  },
+};
+
+export interface AgreementQuickSummary {
+  summary: string;
+  key_points: string[];
+  completion_percentage: number;
+  status: string;
+}
+
+// ============================================================================
+// Schedule API
+// ============================================================================
+
+export interface ScheduleEvent {
+  id: string;
+  case_id: string;
+  event_type: string;
+  start_time: string;
+  end_time: string;
+  all_day: boolean;
+  custodial_parent_id: string;
+  transition_from_id?: string;
+  transition_to_id?: string;
+  child_ids: string[];
+  title: string;
+  description?: string;
+  location?: string;
+  is_exchange: boolean;
+  exchange_location?: string;
+  grace_period_minutes: number;
+  status: string;
+  is_agreement_derived: boolean;
+  is_modification: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  all_day: boolean;
+  event_type: string;
+  custodial_parent: string;
+  is_exchange: boolean;
+  location?: string;
+  status: string;
+  child_names: string[];
+}
+
+export interface CalendarResponse {
+  case_id: string;
+  events: CalendarEvent[];
+  start_date: string;
+  end_date: string;
+}
+
+export interface ExchangeCheckIn {
+  id: string;
+  event_id: string;
+  user_id: string;
+  parent_role: string;
+  checked_in_at: string;
+  scheduled_time: string;
+  check_in_method: string;
+  location_lat?: number;
+  location_lng?: number;
+  minutes_early_late: number;
+  is_on_time: boolean;
+  is_within_grace: boolean;
+  notes?: string;
+  children_present: string[];
+  verified_by_other_parent: boolean;
+  created_at: string;
+}
+
+export interface ComplianceMetrics {
+  case_id: string;
+  user_id?: string;
+  period_days: number;
+  total_exchanges: number;
+  on_time_count: number;
+  within_grace_count: number;
+  late_count: number;
+  no_show_count: number;
+  on_time_percentage: number;
+  compliance_score: number;
+  average_minutes_late: number;
+  trend: string;
+}
+
+export interface CreateCheckInRequest {
+  event_id: string;
+  parent_role: 'dropping_off' | 'picking_up';
+  check_in_method: 'gps' | 'manual';
+  location_lat?: number;
+  location_lng?: number;
+  notes?: string;
+  children_present: string[];
+}
+
+// ============================================================================
+// Schedule V2.0 - My Time Collections, Time Blocks, Events with Attendance
+// ============================================================================
+
+// My Time Collection Types
+export interface MyTimeCollection {
+  id: string;
+  case_id: string;
+  owner_id: string;
+  name: string; // Privacy filtered for non-owners
+  color: string; // Privacy filtered for non-owners
+  is_default: boolean;
+  is_active: boolean;
+  display_order: number;
+  is_owner: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCollectionRequest {
+  case_id: string;
+  name: string;
+  color?: string;
+  is_default?: boolean;
+}
+
+export interface UpdateCollectionRequest {
+  name?: string;
+  color?: string;
+  is_default?: boolean;
+}
+
+// Time Block Types (PRIVATE - never shown to other parent)
+export interface TimeBlock {
+  id: string;
+  collection_id: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  all_day: boolean;
+  is_recurring: boolean;
+  recurrence_pattern?: 'daily' | 'weekly';
+  recurrence_days?: number[]; // 0=Mon, 6=Sun
+  recurrence_end_date?: string;
+  notes?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateTimeBlockRequest {
+  collection_id: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  all_day?: boolean;
+  is_recurring?: boolean;
+  recurrence_pattern?: 'daily' | 'weekly';
+  recurrence_days?: number[];
+  recurrence_end_date?: string;
+  notes?: string;
+}
+
+export interface UpdateTimeBlockRequest {
+  title?: string;
+  start_time?: string;
+  end_time?: string;
+  notes?: string;
+}
+
+// Event Attendance Types
+export interface EventAttendance {
+  id: string;
+  event_id: string;
+  parent_id: string;
+  invited_role: 'required' | 'optional' | 'not_invited';
+  invited_at: string;
+  rsvp_status: 'going' | 'not_going' | 'maybe' | 'no_response';
+  rsvp_at?: string;
+  rsvp_note?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateRSVPRequest {
+  rsvp_status: 'going' | 'not_going' | 'maybe' | 'no_response';
+  rsvp_note?: string;
+}
+
+// Event category type for specialized forms
+export type EventCategory = 'general' | 'medical' | 'school' | 'sports' | 'exchange';
+
+// Category-specific data types
+export interface MedicalCategoryData {
+  provider_name?: string;
+  provider_specialty?: string;
+  appointment_reason?: string;
+  address?: string;
+  phone?: string;
+  follow_up_needed?: boolean;
+  notes?: string;
+}
+
+export interface SchoolCategoryData {
+  school_name?: string;
+  activity_type?: string;
+  teacher_name?: string;
+  teacher_contact?: string;
+  is_required?: boolean;
+  notes?: string;
+}
+
+export interface SportsCategoryData {
+  activity_name?: string;
+  organization?: string;
+  coach_name?: string;
+  coach_contact?: string;
+  venue?: string;
+  equipment_needed?: string;
+  cost?: number;
+  notes?: string;
+}
+
+export interface ExchangeCategoryData {
+  exchange_type?: string;
+  exchange_location?: string;
+  transition_from?: string;
+  transition_to?: string;
+  special_instructions?: string;
+  items_to_bring?: string;
+}
+
+export type CategoryData = MedicalCategoryData | SchoolCategoryData | SportsCategoryData | ExchangeCategoryData | Record<string, unknown>;
+
+// Updated Event Types (V2.0)
+export interface EventV2 {
+  id: string;
+  case_id: string;
+  collection_id?: string;
+  created_by?: string;
+  title: string; // Privacy filtered
+  description?: string; // Privacy filtered
+  start_time: string;
+  end_time: string;
+  all_day: boolean;
+  child_ids: string[];
+  location?: string; // Privacy filtered based on location_shared
+  visibility: 'private' | 'co_parent';
+  status: string;
+  is_owner: boolean;
+  event_category: EventCategory; // V2: category-specific forms
+  category_data?: CategoryData; // V2: category-specific fields
+  my_attendance?: {
+    invited_role: string;
+    rsvp_status: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateEventRequest {
+  collection_id: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  child_ids: string[];
+  description?: string;
+  location?: string;
+  location_shared?: boolean;
+  visibility?: 'private' | 'co_parent';
+  all_day?: boolean;
+  attendance_invites?: Array<{
+    parent_id: string;
+    invited_role: 'required' | 'optional';
+  }>;
+  event_category?: EventCategory; // V2: category-specific forms
+  category_data?: CategoryData; // V2: category-specific fields
+}
+
+export interface UpdateEventRequest {
+  title?: string;
+  description?: string;
+  start_time?: string;
+  end_time?: string;
+  location?: string;
+  location_shared?: boolean;
+  event_category?: EventCategory; // V2: category-specific forms
+  category_data?: CategoryData; // V2: category-specific fields
+}
+
+// Conflict Detection Types
+export interface ConflictWarning {
+  type: string;
+  severity: string;
+  message: string;
+  suggestion: string;
+  can_proceed: boolean;
+}
+
+export interface ConflictCheckResponse {
+  has_conflicts: boolean;
+  conflicts: ConflictWarning[];
+  can_proceed: boolean;
+}
+
+// Busy Period Type
+export interface BusyPeriod {
+  start_time: string;
+  end_time: string;
+  label: string;
+  color: string;
+  type: string;
+  details_hidden: boolean;
+}
+
+// Exchange instance for calendar display
+export interface ExchangeInstanceForCalendar {
+  id: string;
+  exchange_id: string;
+  exchange_type: 'pickup' | 'dropoff' | 'both';
+  title: string;
+  scheduled_time: string;
+  duration_minutes: number;
+  location?: string;
+  status: string;
+  is_owner: boolean;
+}
+
+// Court Event for Calendar
+export interface CourtEventForCalendar {
+  id: string;
+  event_type: string;
+  title: string;
+  description?: string;
+  event_date: string;
+  start_time?: string;
+  end_time?: string;
+  location?: string;
+  virtual_link?: string;
+  is_mandatory: boolean;
+  shared_notes?: string;
+  is_court_event: boolean;
+}
+
+// Calendar Data Response (V2.0)
+export interface CalendarDataV2 {
+  case_id: string;
+  events: EventV2[];
+  exchanges: ExchangeInstanceForCalendar[];
+  court_events: CourtEventForCalendar[];
+  busy_periods: BusyPeriod[];
+  my_collections: MyTimeCollection[];
+  start_date: string;
+  end_date: string;
+}
+
+// ============================================================================
+// Schedule V2.0 API Functions
+// ============================================================================
+
+export const collectionsAPI = {
+  /**
+   * Create a My Time collection
+   */
+  async create(data: CreateCollectionRequest): Promise<MyTimeCollection> {
+    return fetchAPI<MyTimeCollection>('/collections/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get a collection by ID (privacy filtered)
+   */
+  async get(collectionId: string): Promise<MyTimeCollection> {
+    return fetchAPI<MyTimeCollection>(`/collections/${collectionId}`);
+  },
+
+  /**
+   * List all collections for a case
+   */
+  async listForCase(caseId: string, includeOtherParent = true): Promise<MyTimeCollection[]> {
+    return fetchAPI<MyTimeCollection[]>(
+      `/collections/cases/${caseId}?include_other_parent=${includeOtherParent}`
+    );
+  },
+
+  /**
+   * Update a collection (owner only)
+   */
+  async update(collectionId: string, data: UpdateCollectionRequest): Promise<MyTimeCollection> {
+    return fetchAPI<MyTimeCollection>(`/collections/${collectionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Delete a collection (owner only)
+   */
+  async delete(collectionId: string): Promise<void> {
+    return fetchAPI<void>(`/collections/${collectionId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Get default collection for a case
+   */
+  async getDefault(caseId: string): Promise<MyTimeCollection> {
+    return fetchAPI<MyTimeCollection>(`/collections/cases/${caseId}/default`);
+  },
+};
+
+export const timeBlocksAPI = {
+  /**
+   * Create a time block
+   */
+  async create(data: CreateTimeBlockRequest): Promise<TimeBlock> {
+    return fetchAPI<TimeBlock>('/time-blocks/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get a time block by ID
+   */
+  async get(blockId: string): Promise<TimeBlock> {
+    return fetchAPI<TimeBlock>(`/time-blocks/${blockId}`);
+  },
+
+  /**
+   * List time blocks in a collection
+   */
+  async listForCollection(collectionId: string): Promise<TimeBlock[]> {
+    return fetchAPI<TimeBlock[]>(`/time-blocks/collections/${collectionId}`);
+  },
+
+  /**
+   * Update a time block
+   */
+  async update(blockId: string, data: UpdateTimeBlockRequest): Promise<TimeBlock> {
+    return fetchAPI<TimeBlock>(`/time-blocks/${blockId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Delete a time block
+   */
+  async delete(blockId: string): Promise<void> {
+    return fetchAPI<void>(`/time-blocks/${blockId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Check for scheduling conflicts (ARIA)
+   */
+  async checkConflicts(
+    caseId: string,
+    startTime: string,
+    endTime: string
+  ): Promise<ConflictCheckResponse> {
+    return fetchAPI<ConflictCheckResponse>('/time-blocks/check-conflicts', {
+      method: 'POST',
+      body: JSON.stringify({ case_id: caseId, start_time: startTime, end_time: endTime }),
+    });
+  },
+
+  /**
+   * Get busy periods for calendar display
+   */
+  async getBusyPeriods(
+    caseId: string,
+    otherParentId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<BusyPeriod[]> {
+    const params = new URLSearchParams({
+      other_parent_id: otherParentId,
+      start_date: startDate,
+      end_date: endDate,
+    });
+    return fetchAPI<BusyPeriod[]>(`/time-blocks/cases/${caseId}/busy-periods?${params.toString()}`);
+  },
+};
+
+export const eventsAPI = {
+  /**
+   * Create an event
+   */
+  async create(data: CreateEventRequest): Promise<EventV2> {
+    return fetchAPI<EventV2>('/events/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get an event by ID (privacy filtered)
+   */
+  async get(eventId: string): Promise<EventV2> {
+    return fetchAPI<EventV2>(`/events/${eventId}`);
+  },
+
+  /**
+   * List events for a case
+   */
+  async listForCase(caseId: string, startDate?: string, endDate?: string): Promise<EventV2[]> {
+    let url = `/events/cases/${caseId}`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+    return fetchAPI<EventV2[]>(url);
+  },
+
+  /**
+   * Update an event (creator only)
+   */
+  async update(eventId: string, data: UpdateEventRequest): Promise<EventV2> {
+    return fetchAPI<EventV2>(`/events/${eventId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Delete (cancel) an event
+   */
+  async delete(eventId: string): Promise<void> {
+    return fetchAPI<void>(`/events/${eventId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Update RSVP for an event
+   */
+  async updateRSVP(eventId: string, data: UpdateRSVPRequest): Promise<EventAttendance> {
+    return fetchAPI<EventAttendance>(`/events/${eventId}/rsvp`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get attendance for an event
+   */
+  async getAttendance(eventId: string): Promise<EventAttendance[]> {
+    return fetchAPI<EventAttendance[]>(`/events/${eventId}/attendance`);
+  },
+
+  /**
+   * Check for event conflicts
+   */
+  async checkConflicts(
+    caseId: string,
+    startTime: string,
+    endTime: string
+  ): Promise<ConflictCheckResponse> {
+    const params = new URLSearchParams({
+      case_id: caseId,
+      start_time: startTime,
+      end_time: endTime,
+    });
+    return fetchAPI<ConflictCheckResponse>(`/events/check-conflicts?${params.toString()}`, {
+      method: 'POST',
+    });
+  },
+};
+
+export const calendarAPI = {
+  /**
+   * Get calendar data for a case (V2.0 - includes events, busy periods, collections)
+   */
+  async getData(
+    caseId: string,
+    startDate: string,
+    endDate: string,
+    includeBusyPeriods = true
+  ): Promise<CalendarDataV2> {
+    const params = new URLSearchParams({
+      start_date: startDate,
+      end_date: endDate,
+      include_busy_periods: includeBusyPeriods.toString(),
+    });
+    return fetchAPI<CalendarDataV2>(`/calendar/cases/${caseId}?${params.toString()}`);
+  },
+};
+
+// ==================== COURT SETTINGS TYPES ====================
+
+export interface CourtSettingsPublic {
+  gps_checkins_required: boolean;
+  supervised_exchange_required: boolean;
+  aria_enforcement_locked: boolean;
+  in_app_communication_only: boolean;
+  agreement_edits_locked: boolean;
+  active_controls: string[];
+}
+
+export const courtSettingsAPI = {
+  /**
+   * Get court settings for a case (parent-facing, public view)
+   */
+  async getSettings(caseId: string): Promise<CourtSettingsPublic> {
+    return fetchAPI<CourtSettingsPublic>(`/court/settings/case/${caseId}/public`);
+  },
+};
+
+// ============================================================================
+// Case Exports API - Court-ready documentation packages
+// ============================================================================
+
+export type PackageType = 'investigation' | 'court';
+export type ClaimType = 'schedule_violation' | 'financial_non_compliance' | 'communication_concern' | 'safety_concern' | 'other';
+export type RedactionLevel = 'none' | 'standard' | 'enhanced';
+export type ExportStatus = 'generating' | 'completed' | 'failed' | 'downloaded';
+
+export interface CaseExport {
+  id: string;
+  case_id: string;
+  export_number: string;
+  package_type: PackageType;
+  claim_type?: ClaimType;
+  claim_description?: string;
+  date_range_start: string;
+  date_range_end: string;
+  sections_included: string[];
+  redaction_level: RedactionLevel;
+  message_content_redacted: boolean;
+  file_url?: string;
+  file_size_bytes?: number;
+  page_count?: number;
+  content_hash?: string;
+  chain_hash?: string;
+  watermark_text?: string;
+  verification_url?: string;
+  evidence_counts?: Record<string, number>;
+  status: ExportStatus;
+  error_message?: string;
+  download_count: number;
+  last_downloaded_at?: string;
+  generated_at?: string;
+  generation_time_seconds?: number;
+  expires_at?: string;
+  is_permanent: boolean;
+  created_at: string;
+  sections?: ExportSection[];
+}
+
+export interface ExportSection {
+  id: string;
+  section_type: string;
+  section_order: number;
+  section_title: string;
+  evidence_count: number;
+  page_start?: number;
+  page_end?: number;
+  generation_time_ms?: number;
+}
+
+export interface CreateExportRequest {
+  case_id: string;
+  package_type: PackageType;
+  date_start: string;
+  date_end: string;
+  claim_type?: ClaimType;
+  claim_description?: string;
+  redaction_level?: RedactionLevel;
+  sections?: string[];
+  message_content_redacted?: boolean;
+}
+
+export interface ExportListResponse {
+  exports: CaseExport[];
+  total: number;
+}
+
+export interface ExportVerification {
+  export_number: string;
+  is_valid: boolean;
+  is_expired: boolean;
+  content_hash?: string;
+  chain_hash?: string;
+  package_type: string;
+  date_range_start: string;
+  date_range_end: string;
+  page_count?: number;
+  generated_at?: string;
+  generator_type: string;
+  verification_timestamp: string;
+  message: string;
+}
+
+export const exportsAPI = {
+  /**
+   * Create a new case export package
+   */
+  async create(data: CreateExportRequest): Promise<CaseExport> {
+    return fetchAPI<CaseExport>('/exports/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * List exports for a case
+   */
+  async listForCase(
+    caseId: string,
+    options?: { limit?: number; offset?: number; status?: ExportStatus }
+  ): Promise<ExportListResponse> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.append('limit', String(options.limit));
+    if (options?.offset) params.append('offset', String(options.offset));
+    if (options?.status) params.append('status_filter', options.status);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return fetchAPI<ExportListResponse>(`/exports/case/${caseId}${query}`);
+  },
+
+  /**
+   * Get export details
+   */
+  async get(exportId: string, includeSections = false): Promise<CaseExport> {
+    const query = includeSections ? '?include_sections=true' : '';
+    return fetchAPI<CaseExport>(`/exports/${exportId}${query}`);
+  },
+
+  /**
+   * Download export PDF
+   */
+  async download(exportId: string): Promise<Blob> {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/exports/${exportId}/download`,
+      {
+        headers: {
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Download failed' }));
+      throw new APIError(error.detail || 'Failed to download export', response.status);
+    }
+
+    return response.blob();
+  },
+
+  /**
+   * Verify export authenticity (public - no auth required)
+   */
+  async verify(exportNumber: string): Promise<ExportVerification> {
+    return fetchAPI<ExportVerification>(`/exports/verify/${exportNumber}`);
+  },
+
+  /**
+   * Delete an export
+   */
+  async delete(exportId: string): Promise<void> {
+    return fetchAPI<void>(`/exports/${exportId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Get available section types
+   */
+  getSectionTypes(): Array<{ value: string; label: string; description: string }> {
+    return [
+      { value: 'agreement_overview', label: 'Agreement Overview', description: 'Case parties, children, and agreement terms' },
+      { value: 'compliance_summary', label: 'Compliance Summary', description: 'Side-by-side parent comparison' },
+      { value: 'parenting_time', label: 'Parenting Time Report', description: 'Exchange records and timeliness' },
+      { value: 'financial_compliance', label: 'Financial Compliance', description: 'Payment and expense tracking' },
+      { value: 'communication_compliance', label: 'Communication Compliance', description: 'Message statistics and patterns' },
+      { value: 'intervention_log', label: 'Intervention Log', description: 'ARIA interventions (redacted)' },
+      { value: 'parent_impact', label: 'Parent Impact Summary', description: '90-day behavior analysis' },
+      { value: 'chain_of_custody', label: 'Chain of Custody', description: 'Data integrity verification' },
+    ];
+  },
+
+  /**
+   * Get claim types for investigation packages
+   */
+  getClaimTypes(): Array<{ value: ClaimType; label: string }> {
+    return [
+      { value: 'schedule_violation', label: 'Schedule Violation' },
+      { value: 'financial_non_compliance', label: 'Financial Non-Compliance' },
+      { value: 'communication_concern', label: 'Communication Concern' },
+      { value: 'safety_concern', label: 'Safety Concern' },
+      { value: 'other', label: 'Other' },
+    ];
+  },
+};
+
+export const scheduleAPI = {
+  /**
+   * Get calendar data for a case
+   */
+  async getCalendar(
+    caseId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<CalendarResponse> {
+    return fetchAPI<CalendarResponse>(
+      `/schedule/cases/${caseId}/calendar?start_date=${startDate}&end_date=${endDate}`
+    );
+  },
+
+  /**
+   * Get events for a case
+   */
+  async getEvents(caseId: string, startDate?: string, endDate?: string): Promise<ScheduleEvent[]> {
+    let url = `/schedule/cases/${caseId}/events`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+    return fetchAPI<ScheduleEvent[]>(url);
+  },
+
+  /**
+   * Create exchange check-in
+   */
+  async checkIn(data: CreateCheckInRequest): Promise<ExchangeCheckIn> {
+    return fetchAPI<ExchangeCheckIn>('/schedule/check-ins', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get check-ins for an event
+   */
+  async getCheckIns(eventId: string): Promise<ExchangeCheckIn[]> {
+    return fetchAPI<ExchangeCheckIn[]>(`/schedule/events/${eventId}/check-ins`);
+  },
+
+  /**
+   * Get compliance metrics
+   */
+  async getCompliance(caseId: string, userId?: string, days = 30): Promise<ComplianceMetrics> {
+    let url = `/schedule/cases/${caseId}/compliance?days=${days}`;
+    if (userId) url += `&user_id=${userId}`;
+    return fetchAPI<ComplianceMetrics>(url);
+  },
+};
+
+// ==================== CUSTODY EXCHANGE TYPES ====================
+
+export type ExchangeType = 'pickup' | 'dropoff' | 'both';
+export type RecurrencePattern = 'weekly' | 'biweekly' | 'monthly' | 'custom';
+export type ExchangeStatus = 'active' | 'paused' | 'cancelled';
+export type InstanceStatus = 'scheduled' | 'completed' | 'missed' | 'cancelled' | 'rescheduled';
+
+export interface CustodyExchange {
+  id: string;
+  case_id: string;
+  created_by: string;
+  exchange_type: ExchangeType;
+  title?: string;
+  from_parent_id?: string;
+  to_parent_id?: string;
+  child_ids: string[];
+  location?: string;
+  location_notes?: string;
+  scheduled_time: string;
+  duration_minutes: number;
+  is_recurring: boolean;
+  recurrence_pattern?: RecurrencePattern;
+  recurrence_days?: number[];  // 0=Sun, 1=Mon, ..., 6=Sat
+  recurrence_end_date?: string;
+  items_to_bring?: string;
+  special_instructions?: string;
+  notes_visible_to_coparent: boolean;
+  status: ExchangeStatus;
+  is_owner: boolean;
+  next_occurrence?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustodyExchangeInstance {
+  id: string;
+  exchange_id: string;
+  scheduled_time: string;
+  status: InstanceStatus;
+  from_parent_checked_in: boolean;
+  from_parent_check_in_time?: string;
+  to_parent_checked_in: boolean;
+  to_parent_check_in_time?: string;
+  completed_at?: string;
+  notes?: string;
+  override_location?: string;
+  override_time?: string;
+  exchange?: CustodyExchange;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateCustodyExchangeRequest {
+  case_id: string;
+  exchange_type: ExchangeType;
+  title?: string;
+  from_parent_id?: string;
+  to_parent_id?: string;
+  child_ids?: string[];
+  location?: string;
+  location_notes?: string;
+  scheduled_time: string;
+  duration_minutes?: number;
+  is_recurring?: boolean;
+  recurrence_pattern?: RecurrencePattern;
+  recurrence_days?: number[];
+  recurrence_end_date?: string;
+  items_to_bring?: string;
+  special_instructions?: string;
+  notes_visible_to_coparent?: boolean;
+}
+
+export interface UpdateCustodyExchangeRequest {
+  exchange_type?: ExchangeType;
+  title?: string;
+  from_parent_id?: string;
+  to_parent_id?: string;
+  child_ids?: string[];
+  location?: string;
+  location_notes?: string;
+  scheduled_time?: string;
+  duration_minutes?: number;
+  is_recurring?: boolean;
+  recurrence_pattern?: RecurrencePattern;
+  recurrence_days?: number[];
+  recurrence_end_date?: string;
+  items_to_bring?: string;
+  special_instructions?: string;
+  notes_visible_to_coparent?: boolean;
+  status?: ExchangeStatus;
+}
+
+// ==================== CUSTODY EXCHANGE API ====================
+
+export const exchangesAPI = {
+  /**
+   * Create a new custody exchange (pickup/dropoff)
+   */
+  async create(data: CreateCustodyExchangeRequest): Promise<CustodyExchange> {
+    return fetchAPI<CustodyExchange>('/exchanges/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get a custody exchange by ID
+   */
+  async get(exchangeId: string): Promise<CustodyExchange> {
+    return fetchAPI<CustodyExchange>(`/exchanges/${exchangeId}`);
+  },
+
+  /**
+   * List all custody exchanges for a case
+   */
+  async listForCase(caseId: string, status?: ExchangeStatus): Promise<CustodyExchange[]> {
+    let url = `/exchanges/case/${caseId}`;
+    if (status) url += `?status=${status}`;
+    return fetchAPI<CustodyExchange[]>(url);
+  },
+
+  /**
+   * Get upcoming exchange instances for a case
+   */
+  async getUpcoming(
+    caseId: string,
+    startDate?: string,
+    endDate?: string,
+    limit = 20
+  ): Promise<CustodyExchangeInstance[]> {
+    let url = `/exchanges/case/${caseId}/upcoming?limit=${limit}`;
+    if (startDate) url += `&start_date=${startDate}`;
+    if (endDate) url += `&end_date=${endDate}`;
+    return fetchAPI<CustodyExchangeInstance[]>(url);
+  },
+
+  /**
+   * Update a custody exchange
+   */
+  async update(exchangeId: string, data: UpdateCustodyExchangeRequest): Promise<CustodyExchange> {
+    return fetchAPI<CustodyExchange>(`/exchanges/${exchangeId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Delete a custody exchange
+   */
+  async delete(exchangeId: string): Promise<void> {
+    return fetchAPI<void>(`/exchanges/${exchangeId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Check in for an exchange instance
+   */
+  async checkIn(instanceId: string, notes?: string): Promise<CustodyExchangeInstance> {
+    return fetchAPI<CustodyExchangeInstance>(`/exchanges/instances/${instanceId}/check-in`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  },
+
+  /**
+   * Cancel an exchange instance
+   */
+  async cancelInstance(instanceId: string, notes?: string): Promise<CustodyExchangeInstance> {
+    let url = `/exchanges/instances/${instanceId}/cancel`;
+    if (notes) url += `?notes=${encodeURIComponent(notes)}`;
+    return fetchAPI<CustodyExchangeInstance>(url, {
+      method: 'POST',
+    });
+  },
+};
+
+// ============================================================================
+// ClearFund API - Purpose-Locked Financial Obligations
+// ============================================================================
+
+// Obligation Types
+export type ObligationStatus = 'open' | 'partially_funded' | 'funded' | 'pending_verification' | 'verified' | 'completed' | 'expired' | 'cancelled';
+export type ObligationCategory = 'medical' | 'education' | 'sports' | 'device' | 'camp' | 'clothing' | 'transportation' | 'child_support' | 'extracurricular' | 'childcare' | 'other';
+
+export interface Obligation {
+  id: string;
+  case_id: string;
+  source_type: 'court_order' | 'agreement' | 'request';
+  source_id?: string;
+  purpose_category: ObligationCategory;
+  title: string;
+  description?: string;
+  child_ids: string[];
+  total_amount: string;
+  petitioner_share: string;
+  respondent_share: string;
+  petitioner_percentage: number;
+  due_date?: string;
+  status: ObligationStatus;
+  amount_funded: string;
+  amount_spent: string;
+  amount_verified: string;
+  verification_required: boolean;
+  receipt_required: boolean;
+  receipt_deadline_hours: number;
+  is_recurring: boolean;
+  created_by: string;
+  funded_at?: string;
+  verified_at?: string;
+  completed_at?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  is_fully_funded: boolean;
+  funding_percentage: number;
+  is_overdue: boolean;
+}
+
+export interface ObligationListResponse {
+  items: Obligation[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface CreateObligationRequest {
+  case_id: string;
+  source_type?: 'court_order' | 'agreement' | 'request';
+  source_id?: string;
+  purpose_category: ObligationCategory;
+  title: string;
+  description?: string;
+  child_ids?: string[];
+  total_amount: number | string;  // Can be number or string for Decimal compatibility
+  petitioner_percentage?: number;
+  due_date?: string;
+  verification_required?: boolean;
+  receipt_required?: boolean;
+  notes?: string;
+}
+
+export interface FundingRecord {
+  parent_id: string;
+  amount_required: string;
+  amount_funded: string;
+  is_fully_funded: boolean;
+  funded_at?: string;
+}
+
+export interface FundingStatus {
+  obligation_id: string;
+  total_amount: string;
+  amount_funded: string;
+  funding_percentage: number;
+  is_fully_funded: boolean;
+  petitioner_funding?: FundingRecord;
+  respondent_funding?: FundingRecord;
+}
+
+export interface RecordFundingRequest {
+  amount: number;
+  stripe_payment_intent_id?: string;
+  payment_method?: string;
+  notes?: string;
+}
+
+export interface AttestationRequest {
+  attestation_text: string;
+  purpose_declaration: string;
+  receipt_commitment?: boolean;
+  purpose_commitment?: boolean;
+  legal_acknowledgment: boolean;
+}
+
+export interface Attestation {
+  id: string;
+  obligation_id: string;
+  attesting_parent_id: string;
+  attestation_text: string;
+  purpose_declaration: string;
+  receipt_commitment: boolean;
+  purpose_commitment: boolean;
+  legal_acknowledgment: boolean;
+  attested_at: string;
+  created_at: string;
+}
+
+export interface VerificationArtifact {
+  id: string;
+  obligation_id: string;
+  artifact_type: 'transaction' | 'receipt' | 'vendor_confirmation' | 'manual';
+  stripe_transaction_id?: string;
+  vendor_name?: string;
+  vendor_mcc?: string;
+  transaction_date?: string;
+  amount_verified: string;
+  receipt_url?: string;
+  receipt_file_name?: string;
+  verified_by?: string;
+  verification_method?: string;
+  verification_notes?: string;
+  verified_at: string;
+  created_at: string;
+}
+
+export interface RecordVerificationRequest {
+  artifact_type: 'transaction' | 'receipt' | 'vendor_confirmation' | 'manual';
+  vendor_name?: string;
+  vendor_mcc?: string;
+  transaction_date?: string;
+  amount_verified: number;
+  stripe_transaction_id?: string;
+  verification_notes?: string;
+}
+
+export interface LedgerEntry {
+  id: string;
+  case_id: string;
+  entry_type: string;
+  obligor_id: string;
+  obligee_id: string;
+  amount: string;
+  running_balance: string;
+  obligation_id?: string;
+  description: string;
+  effective_date: string;
+  credit_source?: string;
+  fifo_applied_to?: string;
+  is_reconciled: boolean;
+  created_at: string;
+}
+
+export interface LedgerListResponse {
+  items: LedgerEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface BalanceSummary {
+  case_id: string;
+  petitioner_id: string;
+  respondent_id: string;
+  petitioner_balance: string;
+  respondent_balance: string;
+  petitioner_owes_respondent: string;
+  respondent_owes_petitioner: string;
+  net_balance: string;
+  total_obligations_open: number;
+  total_obligations_funded: number;
+  total_obligations_completed: number;
+  total_this_month: string;
+  total_overdue: string;
+}
+
+export interface ObligationMetrics {
+  total_open: number;
+  total_pending_funding: number;
+  total_funded: number;
+  total_verified: number;
+  total_completed: number;
+  total_overdue: number;
+  total_cancelled: number;
+}
+
+export interface ClearFundAnalytics {
+  case_id: string;
+  balance_summary: BalanceSummary;
+  obligation_metrics: ObligationMetrics;
+  monthly_totals: Array<{ month: string; total_amount: string; by_category: Record<string, string> }>;
+  recent_activity: Obligation[];
+}
+
+export const clearfundAPI = {
+  // Obligations
+
+  /**
+   * Create a new obligation
+   */
+  async createObligation(data: CreateObligationRequest): Promise<Obligation> {
+    return fetchAPI<Obligation>('/clearfund/obligations/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * List obligations for a case
+   */
+  async listObligations(
+    caseId: string,
+    options?: {
+      status?: string;
+      category?: string;
+      is_overdue?: boolean;
+      page?: number;
+      page_size?: number;
+    }
+  ): Promise<ObligationListResponse> {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (options?.status) params.append('status', options.status);
+    if (options?.category) params.append('category', options.category);
+    if (options?.is_overdue !== undefined) params.append('is_overdue', String(options.is_overdue));
+    if (options?.page) params.append('page', String(options.page));
+    if (options?.page_size) params.append('page_size', String(options.page_size));
+    return fetchAPI<ObligationListResponse>(`/clearfund/obligations/?${params.toString()}`);
+  },
+
+  /**
+   * Get obligation details
+   */
+  async getObligation(obligationId: string): Promise<Obligation> {
+    return fetchAPI<Obligation>(`/clearfund/obligations/${obligationId}`);
+  },
+
+  /**
+   * Cancel an obligation
+   */
+  async cancelObligation(obligationId: string, reason: string): Promise<Obligation> {
+    return fetchAPI<Obligation>(`/clearfund/obligations/${obligationId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  /**
+   * Complete an obligation
+   */
+  async completeObligation(obligationId: string): Promise<Obligation> {
+    return fetchAPI<Obligation>(`/clearfund/obligations/${obligationId}/complete`, {
+      method: 'POST',
+    });
+  },
+
+  // Funding
+
+  /**
+   * Record funding for an obligation
+   */
+  async recordFunding(obligationId: string, data: RecordFundingRequest): Promise<{
+    funding_id: string;
+    amount_funded: string;
+    amount_required: string;
+    is_fully_funded: boolean;
+    message: string;
+  }> {
+    return fetchAPI(`/clearfund/obligations/${obligationId}/fund`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get funding status for an obligation
+   */
+  async getFundingStatus(obligationId: string): Promise<FundingStatus> {
+    return fetchAPI<FundingStatus>(`/clearfund/obligations/${obligationId}/funding`);
+  },
+
+  // Attestation
+
+  /**
+   * Create attestation for an obligation
+   */
+  async createAttestation(obligationId: string, data: AttestationRequest): Promise<Attestation> {
+    return fetchAPI<Attestation>(`/clearfund/obligations/${obligationId}/attest`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get attestation for an obligation
+   */
+  async getAttestation(obligationId: string): Promise<Attestation | null> {
+    return fetchAPI<Attestation | null>(`/clearfund/obligations/${obligationId}/attestation`);
+  },
+
+  // Verification
+
+  /**
+   * Record verification artifact
+   */
+  async recordVerification(obligationId: string, data: RecordVerificationRequest): Promise<VerificationArtifact> {
+    return fetchAPI<VerificationArtifact>(`/clearfund/obligations/${obligationId}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Upload receipt for verification
+   */
+  async uploadReceipt(
+    obligationId: string,
+    receiptUrl: string,
+    fileName: string,
+    amount: number,
+    vendorName?: string
+  ): Promise<VerificationArtifact> {
+    const params = new URLSearchParams({
+      receipt_url: receiptUrl,
+      receipt_file_name: fileName,
+      receipt_file_type: 'image/jpeg',
+      amount: String(amount),
+    });
+    if (vendorName) params.append('vendor_name', vendorName);
+    return fetchAPI<VerificationArtifact>(`/clearfund/obligations/${obligationId}/receipt?${params.toString()}`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * List verification artifacts for an obligation
+   */
+  async listArtifacts(obligationId: string): Promise<VerificationArtifact[]> {
+    return fetchAPI<VerificationArtifact[]>(`/clearfund/obligations/${obligationId}/artifacts`);
+  },
+
+  // Ledger
+
+  /**
+   * Get ledger entries for a case
+   */
+  async getLedger(
+    caseId: string,
+    page = 1,
+    pageSize = 50
+  ): Promise<LedgerListResponse> {
+    return fetchAPI<LedgerListResponse>(
+      `/clearfund/ledger/?case_id=${caseId}&page=${page}&page_size=${pageSize}`
+    );
+  },
+
+  /**
+   * Get balance summary for a case
+   */
+  async getBalance(caseId: string): Promise<BalanceSummary> {
+    return fetchAPI<BalanceSummary>(`/clearfund/ledger/balance?case_id=${caseId}`);
+  },
+
+  /**
+   * Record a prepayment
+   */
+  async recordPrepayment(
+    caseId: string,
+    amount: number,
+    description: string,
+    stripePaymentIntentId?: string
+  ): Promise<{
+    ledger_id: string;
+    amount: string;
+    message: string;
+  }> {
+    return fetchAPI(`/clearfund/ledger/prepayment?case_id=${caseId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        amount,
+        description,
+        stripe_payment_intent_id: stripePaymentIntentId,
+      }),
+    });
+  },
+
+  // Analytics
+
+  /**
+   * Get ClearFund analytics for a case
+   */
+  async getAnalytics(caseId: string): Promise<ClearFundAnalytics> {
+    return fetchAPI<ClearFundAnalytics>(`/clearfund/analytics/?case_id=${caseId}`);
+  },
+
+  /**
+   * Get obligation metrics
+   */
+  async getMetrics(caseId: string): Promise<ObligationMetrics> {
+    return fetchAPI<ObligationMetrics>(`/clearfund/analytics/metrics?case_id=${caseId}`);
+  },
+};
+
+// =============================================================================
+// Court Access API - For managing court professional access to cases
+// =============================================================================
+
+export type CourtRole =
+  | 'court_clerk'
+  | 'gal'
+  | 'attorney_petitioner'
+  | 'attorney_respondent'
+  | 'mediator'
+  | 'judge';
+
+export type AccessScope =
+  | 'agreement'
+  | 'schedule'
+  | 'checkins'
+  | 'messages'
+  | 'financials'
+  | 'compliance'
+  | 'interventions';
+
+export type GrantStatus =
+  | 'pending_verification'
+  | 'pending_consent'
+  | 'active'
+  | 'expired'
+  | 'revoked';
+
+export interface CourtProfessional {
+  id: string;
+  email: string;
+  full_name: string;
+  phone?: string;
+  role: CourtRole;
+  organization?: string;
+  title?: string;
+  credentials?: Record<string, string>;
+  is_verified: boolean;
+  verified_at?: string;
+  mfa_enabled: boolean;
+  is_active: boolean;
+  last_login_at?: string;
+  created_at: string;
+}
+
+export interface CourtAccessGrant {
+  id: string;
+  case_id: string;
+  professional_id: string;
+  role: string;
+  access_scope: string[];
+  data_start_date?: string;
+  data_end_date?: string;
+  authorization_type: string;
+  authorization_reference?: string;
+  status: GrantStatus;
+  granted_at: string;
+  activated_at?: string;
+  expires_at: string;
+  days_remaining: number;
+  is_active: boolean;
+  petitioner_approved: boolean;
+  respondent_approved: boolean;
+  access_count: number;
+  last_accessed_at?: string;
+  created_at: string;
+}
+
+export interface CreateAccessGrantRequest {
+  case_id: string;
+  professional_email: string;
+  professional_name: string;
+  role: CourtRole;
+  access_scope?: AccessScope[];
+  data_start_date?: string;
+  data_end_date?: string;
+  authorization_type: 'court_order' | 'parental_consent' | 'appointment' | 'representation';
+  authorization_reference?: string;
+  duration_days?: number;
+  notes?: string;
+}
+
+export interface CreateProfessionalRequest {
+  email: string;
+  full_name: string;
+  phone?: string;
+  role: CourtRole;
+  organization?: string;
+  title?: string;
+  credentials?: Record<string, string>;
+}
+
+export interface CourtAccessSummary {
+  case_id: string;
+  has_court_settings: boolean;
+  active_controls: string[];
+  active_grants_count: number;
+  upcoming_court_events: number;
+  unread_court_messages: number;
+  investigation_mode: boolean;
+}
+
+export const courtAccessAPI = {
+  /**
+   * Create or get a court professional by email
+   */
+  async createProfessional(data: CreateProfessionalRequest): Promise<CourtProfessional> {
+    return fetchAPI<CourtProfessional>('/court/professionals', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get a court professional by ID
+   */
+  async getProfessional(professionalId: string): Promise<CourtProfessional> {
+    return fetchAPI<CourtProfessional>(`/court/professionals/${professionalId}`);
+  },
+
+  /**
+   * Invite a court professional to access a case (creates grant)
+   * Note: This first creates the professional if they don't exist, then creates the grant
+   */
+  async inviteProfessional(data: CreateAccessGrantRequest): Promise<CourtAccessGrant> {
+    // First, try to create the professional (will return existing if email exists)
+    let professional: CourtProfessional;
+    try {
+      professional = await fetchAPI<CourtProfessional>('/court/professionals', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: data.professional_email,
+          full_name: data.professional_name,
+          role: data.role,
+        }),
+      });
+    } catch {
+      // Professional may already exist, try to fetch by creating again (idempotent)
+      // For MVP, we'll just proceed
+      throw new Error('Could not create or find court professional');
+    }
+
+    // Then create the access grant
+    return fetchAPI<CourtAccessGrant>('/court/access/request', {
+      method: 'POST',
+      body: JSON.stringify({
+        case_id: data.case_id,
+        role: data.role,
+        access_scope: data.access_scope || ['agreement', 'schedule', 'compliance'],
+        data_start_date: data.data_start_date,
+        data_end_date: data.data_end_date,
+        authorization_type: data.authorization_type,
+        authorization_reference: data.authorization_reference,
+        duration_days: data.duration_days,
+        notes: data.notes,
+      }),
+    });
+  },
+
+  /**
+   * List access grants for a case
+   */
+  async listGrants(caseId: string, activeOnly = true): Promise<CourtAccessGrant[]> {
+    return fetchAPI<CourtAccessGrant[]>(
+      `/court/access/grants?case_id=${caseId}&active_only=${activeOnly}`
+    );
+  },
+
+  /**
+   * Get a specific access grant
+   */
+  async getGrant(grantId: string): Promise<CourtAccessGrant> {
+    return fetchAPI<CourtAccessGrant>(`/court/access/grants/${grantId}`);
+  },
+
+  /**
+   * Approve or reject an access grant (as parent)
+   */
+  async approveGrant(grantId: string, approved: boolean, notes?: string): Promise<CourtAccessGrant> {
+    return fetchAPI<CourtAccessGrant>(`/court/access/grants/${grantId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ approved, notes }),
+    });
+  },
+
+  /**
+   * Revoke an access grant
+   */
+  async revokeGrant(grantId: string, reason: string): Promise<CourtAccessGrant> {
+    return fetchAPI<CourtAccessGrant>(`/court/access/grants/${grantId}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  /**
+   * Get court access summary for a case
+   */
+  async getSummary(caseId: string): Promise<CourtAccessSummary> {
+    return fetchAPI<CourtAccessSummary>(`/court/summary/case/${caseId}`);
+  },
+};
+
+// ============================================================================
+// KidsCubbie API - High-Value Item Tracking
+// ============================================================================
+
+export type ItemCategory = 'electronics' | 'school' | 'sports' | 'medical' | 'musical' | 'other';
+export type ItemLocation = 'parent_a' | 'parent_b' | 'child_traveling';
+export type ItemCondition = 'excellent' | 'good' | 'minor_wear' | 'needs_repair';
+
+export interface CubbieItem {
+  id: string;
+  child_id: string;
+  case_id: string;
+  name: string;
+  description?: string;
+  category: ItemCategory;
+  estimated_value?: string;
+  purchase_date?: string;
+  serial_number?: string;
+  notes?: string;
+  photo_url?: string;
+  added_by: string;
+  is_active: boolean;
+  current_location: ItemLocation;
+  last_location_update?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CubbieItemListResponse {
+  child_id: string;
+  child_name: string;
+  items: CubbieItem[];
+  total_value: string;
+  active_count: number;
+}
+
+export interface CreateCubbieItemRequest {
+  child_id: string;
+  name: string;
+  description?: string;
+  category?: ItemCategory;
+  estimated_value?: number;
+  purchase_date?: string;
+  serial_number?: string;
+  notes?: string;
+  current_location?: ItemLocation;
+}
+
+export interface UpdateCubbieItemRequest {
+  name?: string;
+  description?: string;
+  category?: ItemCategory;
+  estimated_value?: number;
+  purchase_date?: string;
+  serial_number?: string;
+  notes?: string;
+  current_location?: ItemLocation;
+  is_active?: boolean;
+}
+
+export interface CubbieExchangeItem {
+  id: string;
+  exchange_id: string;
+  cubbie_item_id: string;
+  item_name: string;
+  item_photo_url?: string;
+  sent_by: string;
+  sent_at: string;
+  acknowledged_by?: string;
+  acknowledged_at?: string;
+  condition_sent?: ItemCondition;
+  condition_received?: ItemCondition;
+  condition_notes?: string;
+  photo_sent_url?: string;
+  photo_received_url?: string;
+  is_disputed: boolean;
+  dispute_notes?: string;
+  dispute_resolved: boolean;
+  dispute_resolved_at?: string;
+  created_at: string;
+}
+
+export interface ExchangeItemsResponse {
+  exchange_id: string;
+  items: CubbieExchangeItem[];
+  pending_acknowledgment: number;
+  disputed_count: number;
+}
+
+export interface AddItemsToExchangeRequest {
+  cubbie_item_ids: string[];
+  condition_sent?: ItemCondition;
+}
+
+export interface AcknowledgeItemRequest {
+  condition_received?: ItemCondition;
+  condition_notes?: string;
+}
+
+export interface DisputeItemRequest {
+  dispute_notes: string;
+}
+
+export interface ChildPhoto {
+  id: string;
+  child_id: string;
+  uploaded_by: string;
+  photo_url: string;
+  thumbnail_url?: string;
+  caption?: string;
+  is_profile_photo: boolean;
+  taken_at?: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface CreateChildPhotoRequest {
+  photo_url: string;
+  thumbnail_url?: string;
+  caption?: string;
+  is_profile_photo?: boolean;
+  taken_at?: string;
+}
+
+export const cubbieAPI = {
+  // === CUBBIE ITEMS ===
+
+  /**
+   * Create a new cubbie item
+   */
+  async createItem(data: CreateCubbieItemRequest): Promise<CubbieItem> {
+    return fetchAPI<CubbieItem>('/cubbie/items', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get a cubbie item by ID
+   */
+  async getItem(itemId: string): Promise<CubbieItem> {
+    return fetchAPI<CubbieItem>(`/cubbie/items/${itemId}`);
+  },
+
+  /**
+   * List all cubbie items for a child
+   */
+  async listForChild(childId: string, includeInactive = false): Promise<CubbieItemListResponse> {
+    return fetchAPI<CubbieItemListResponse>(
+      `/cubbie/items/child/${childId}?include_inactive=${includeInactive}`
+    );
+  },
+
+  /**
+   * List all cubbie items for a case (all children)
+   */
+  async listForCase(caseId: string, includeInactive = false): Promise<{
+    children: CubbieItemListResponse[];
+  }> {
+    return fetchAPI(`/cubbie/items/case/${caseId}?include_inactive=${includeInactive}`);
+  },
+
+  /**
+   * Update a cubbie item
+   */
+  async updateItem(itemId: string, data: UpdateCubbieItemRequest): Promise<CubbieItem> {
+    return fetchAPI<CubbieItem>(`/cubbie/items/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Delete (deactivate) a cubbie item
+   */
+  async deleteItem(itemId: string): Promise<void> {
+    return fetchAPI<void>(`/cubbie/items/${itemId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Update item photo URL
+   */
+  async updateItemPhoto(itemId: string, photoUrl: string): Promise<CubbieItem> {
+    return fetchAPI<CubbieItem>(`/cubbie/items/${itemId}/photo?photo_url=${encodeURIComponent(photoUrl)}`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Upload item photo file
+   */
+  async uploadItemPhoto(itemId: string, file: File): Promise<CubbieItem> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = localStorage.getItem('access_token');
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+    const response = await fetch(`${apiUrl}/cubbie/items/${itemId}/photo/upload`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(error.detail || 'Failed to upload photo');
+    }
+
+    return response.json();
+  },
+
+  // === EXCHANGE ITEMS ===
+
+  /**
+   * Add items to an exchange
+   */
+  async addItemsToExchange(exchangeId: string, data: AddItemsToExchangeRequest): Promise<CubbieExchangeItem[]> {
+    return fetchAPI<CubbieExchangeItem[]>(`/cubbie/exchange/${exchangeId}/items`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get items for an exchange
+   */
+  async getExchangeItems(exchangeId: string): Promise<ExchangeItemsResponse> {
+    return fetchAPI<ExchangeItemsResponse>(`/cubbie/exchange/${exchangeId}/items`);
+  },
+
+  /**
+   * Acknowledge receipt of an item
+   */
+  async acknowledgeItem(
+    exchangeId: string,
+    itemId: string,
+    data: AcknowledgeItemRequest
+  ): Promise<CubbieExchangeItem> {
+    return fetchAPI<CubbieExchangeItem>(`/cubbie/exchange/${exchangeId}/items/${itemId}/acknowledge`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Report condition of an item
+   */
+  async reportCondition(
+    exchangeId: string,
+    itemId: string,
+    data: AcknowledgeItemRequest
+  ): Promise<CubbieExchangeItem> {
+    return fetchAPI<CubbieExchangeItem>(`/cubbie/exchange/${exchangeId}/items/${itemId}/condition`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Dispute an item
+   */
+  async disputeItem(
+    exchangeId: string,
+    itemId: string,
+    data: DisputeItemRequest
+  ): Promise<CubbieExchangeItem> {
+    return fetchAPI<CubbieExchangeItem>(`/cubbie/exchange/${exchangeId}/items/${itemId}/dispute`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // === CHILD PHOTOS ===
+
+  /**
+   * Get photos for a child
+   */
+  async getChildPhotos(childId: string): Promise<ChildPhoto[]> {
+    return fetchAPI<ChildPhoto[]>(`/cubbie/children/${childId}/photos`);
+  },
+
+  /**
+   * Add a photo to a child's gallery
+   */
+  async addChildPhoto(childId: string, data: CreateChildPhotoRequest): Promise<ChildPhoto> {
+    return fetchAPI<ChildPhoto>(`/cubbie/children/${childId}/photos`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Set a photo as profile photo
+   */
+  async setProfilePhoto(childId: string, photoId: string): Promise<ChildPhoto> {
+    return fetchAPI<ChildPhoto>(`/cubbie/children/${childId}/photos/${photoId}/profile`, {
+      method: 'PUT',
+    });
+  },
+};
+
+// ============================================================================
+// Child Profiles API - Dual-Parent Approval Workflow
+// ============================================================================
+
+export type ChildProfileStatus = 'pending_approval' | 'active' | 'archived';
+
+export interface EmergencyContact {
+  name: string;
+  phone: string;
+  relationship: string;
+}
+
+export interface ChildProfileBasic {
+  id: string;
+  case_id: string;
+  first_name: string;
+  last_name: string;
+  preferred_name?: string;
+  date_of_birth: string;
+  age: number;
+  photo_url?: string;
+  status: ChildProfileStatus;
+  created_by?: string;
+  is_active: boolean;
+  created_at: string;
+  // Included for list display
+  school_name?: string;
+  grade_level?: string;
+}
+
+export interface ChildProfile extends ChildProfileBasic {
+  // Approval workflow
+  approved_by_a?: string;
+  approved_by_b?: string;
+  approved_at_a?: string;
+  approved_at_b?: string;
+
+  // Basic info
+  middle_name?: string;
+  birth_city?: string;
+  birth_state?: string;
+  gender?: string;
+  pronouns?: string;
+
+  // Special needs
+  has_special_needs: boolean;
+  special_needs_notes?: string;
+
+  // Medical
+  allergies?: string;
+  medications?: string;
+  medical_conditions?: string;
+  blood_type?: string;
+  pediatrician_name?: string;
+  pediatrician_phone?: string;
+  dentist_name?: string;
+  dentist_phone?: string;
+  therapist_name?: string;
+  therapist_phone?: string;
+  insurance_provider?: string;
+  insurance_policy_number?: string;
+
+  // Education
+  school_name?: string;
+  school_phone?: string;
+  school_address?: string;
+  grade_level?: string;
+  teacher_name?: string;
+  teacher_email?: string;
+  has_iep: boolean;
+  has_504: boolean;
+  has_504_plan: boolean;
+  education_notes?: string;
+
+  // Preferences
+  favorite_foods?: string;
+  food_dislikes?: string;
+  favorite_activities?: string;
+  comfort_items?: string;
+  bedtime_routine?: string;
+
+  // Sizes
+  clothing_size?: string;
+  shoe_size?: string;
+  sizes_updated_at?: string;
+
+  // Personality
+  temperament_notes?: string;
+  fears_anxieties?: string;
+  calming_strategies?: string;
+
+  // Emergency contacts
+  emergency_contacts?: EmergencyContact[];
+
+  // Attribution
+  field_contributors?: Record<string, string>;
+
+  // Court restrictions
+  court_restricted_fields?: string[];
+
+  // Computed
+  full_name: string;
+  display_name: string;
+  updated_at: string;
+}
+
+export interface ChildListResponse {
+  case_id: string;
+  children: ChildProfileBasic[];
+  pending_approval_count: number;
+  active_count: number;
+}
+
+export interface ChildApprovalResponse {
+  id: string;
+  status: ChildProfileStatus;
+  approved_by_a?: string;
+  approved_by_b?: string;
+  approved_at_a?: string;
+  approved_at_b?: string;
+  message: string;
+}
+
+export interface CreateChildProfileRequest {
+  case_id: string;
+  first_name: string;
+  middle_name?: string;
+  last_name: string;
+  date_of_birth: string;
+  gender?: string;
+  preferred_name?: string;
+}
+
+export interface UpdateChildBasicRequest {
+  first_name?: string;
+  middle_name?: string;
+  last_name?: string;
+  preferred_name?: string;
+  date_of_birth?: string;
+  gender?: string;
+  pronouns?: string;
+}
+
+export interface UpdateChildMedicalRequest {
+  allergies?: string;
+  medications?: string;
+  medical_conditions?: string;
+  blood_type?: string;
+  has_special_needs?: boolean;
+  special_needs_notes?: string;
+  pediatrician_name?: string;
+  pediatrician_phone?: string;
+  dentist_name?: string;
+  dentist_phone?: string;
+  therapist_name?: string;
+  therapist_phone?: string;
+  insurance_provider?: string;
+  insurance_policy_number?: string;
+}
+
+export interface UpdateChildEducationRequest {
+  school_name?: string;
+  school_phone?: string;
+  school_address?: string;
+  grade_level?: string;
+  teacher_name?: string;
+  teacher_email?: string;
+  has_iep?: boolean;
+  has_504?: boolean;
+  has_504_plan?: boolean;
+  education_notes?: string;
+}
+
+export interface UpdateChildPreferencesRequest {
+  favorite_foods?: string;
+  food_dislikes?: string;
+  favorite_activities?: string;
+  comfort_items?: string;
+  bedtime_routine?: string;
+  clothing_size?: string;
+  shoe_size?: string;
+  temperament_notes?: string;
+  fears_anxieties?: string;
+  calming_strategies?: string;
+}
+
+export interface UpdateChildEmergencyContactsRequest {
+  emergency_contacts: EmergencyContact[];
+}
+
+export const childrenAPI = {
+  /**
+   * Create a new child profile (starts pending approval)
+   */
+  async create(data: CreateChildProfileRequest): Promise<ChildProfile> {
+    return fetchAPI<ChildProfile>('/children/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get a child profile by ID
+   */
+  async get(childId: string): Promise<ChildProfile> {
+    return fetchAPI<ChildProfile>(`/children/${childId}`);
+  },
+
+  /**
+   * List all children for a case
+   */
+  async listForCase(
+    caseId: string,
+    includePending = true,
+    includeArchived = false
+  ): Promise<ChildListResponse> {
+    const params = new URLSearchParams({
+      include_pending: String(includePending),
+      include_archived: String(includeArchived),
+    });
+    return fetchAPI<ChildListResponse>(`/children/case/${caseId}?${params.toString()}`);
+  },
+
+  /**
+   * Approve a pending child profile
+   */
+  async approve(childId: string): Promise<ChildApprovalResponse> {
+    return fetchAPI<ChildApprovalResponse>(`/children/${childId}/approve`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Update basic information
+   */
+  async updateBasic(childId: string, data: UpdateChildBasicRequest): Promise<ChildProfile> {
+    return fetchAPI<ChildProfile>(`/children/${childId}/basic`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update medical information
+   */
+  async updateMedical(childId: string, data: UpdateChildMedicalRequest): Promise<ChildProfile> {
+    return fetchAPI<ChildProfile>(`/children/${childId}/medical`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update education information
+   */
+  async updateEducation(childId: string, data: UpdateChildEducationRequest): Promise<ChildProfile> {
+    return fetchAPI<ChildProfile>(`/children/${childId}/education`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update preferences
+   */
+  async updatePreferences(childId: string, data: UpdateChildPreferencesRequest): Promise<ChildProfile> {
+    return fetchAPI<ChildProfile>(`/children/${childId}/preferences`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update emergency contacts
+   */
+  async updateEmergencyContacts(
+    childId: string,
+    data: UpdateChildEmergencyContactsRequest
+  ): Promise<ChildProfile> {
+    return fetchAPI<ChildProfile>(`/children/${childId}/emergency-contacts`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update profile photo
+   */
+  async updatePhoto(childId: string, photoUrl: string): Promise<ChildProfile> {
+    return fetchAPI<ChildProfile>(`/children/${childId}/photo?photo_url=${encodeURIComponent(photoUrl)}`, {
+      method: 'PUT',
+    });
+  },
+
+  /**
+   * Archive a child profile
+   */
+  async archive(childId: string): Promise<ChildProfile> {
+    return fetchAPI<ChildProfile>(`/children/${childId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Get child counts for a case
+   */
+  async getCounts(caseId: string): Promise<{
+    pending_approval: number;
+    active: number;
+    archived: number;
+    total: number;
+  }> {
+    return fetchAPI(`/children/case/${caseId}/counts`);
+  },
+};
+
+// Export commonly used functions
+export { getAuthToken, clearAuthTokens };

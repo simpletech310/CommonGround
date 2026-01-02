@@ -185,6 +185,23 @@ function DashboardContent() {
   // Check if user has any setup to complete
   const needsSetup = activeCases.length === 0;
 
+  // Show loading state while data is being fetched
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <PageContainer>
+          <div className="flex items-center justify-center h-[60vh]">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-10 w-10 border-2 border-cg-primary border-t-transparent mx-auto" />
+              <p className="mt-4 text-muted-foreground">Loading your dashboard...</p>
+            </div>
+          </div>
+        </PageContainer>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <Navigation />

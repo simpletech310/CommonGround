@@ -18,6 +18,8 @@ from app.api.v1.endpoints import (
     calendar,
     exchanges,
     court,
+    cubbie,
+    children,
     clearfund,
     exports,
 )
@@ -42,6 +44,12 @@ api_router.include_router(exchanges.router, prefix="/exchanges", tags=["Custody 
 
 # Court Access Mode (MediatorMode)
 api_router.include_router(court.router, prefix="/court", tags=["Court Access Mode"])
+
+# KidsCubbie - High-value item tracking
+api_router.include_router(cubbie.router, prefix="/cubbie", tags=["KidsCubbie"])
+
+# Child Profiles - Dual-parent approval workflow
+api_router.include_router(children.router, prefix="/children", tags=["Child Profiles"])
 
 # ClearFund - Purpose-Locked Financial Obligations
 api_router.include_router(clearfund.router, prefix="/clearfund", tags=["ClearFund"])

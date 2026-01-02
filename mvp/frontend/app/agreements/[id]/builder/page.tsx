@@ -7,6 +7,7 @@ import { agreementsAPI, Agreement, AgreementSection } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProtectedRoute } from '@/components/protected-route';
+import { Navigation } from '@/components/navigation';
 
 // Import section components
 import { IntroSection } from '@/components/agreements/sections/intro';
@@ -350,10 +351,13 @@ function AgreementBuilderContent() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading agreement builder...</p>
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cg-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading agreement builder...</p>
+          </div>
         </div>
       </div>
     );
@@ -361,18 +365,21 @@ function AgreementBuilderContent() {
 
   if (error && !agreement) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card className="max-w-md">
-          <CardHeader>
-            <CardTitle className="text-red-600">Error</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-700 mb-4">{error}</p>
-            <Button onClick={() => router.push('/agreements')}>
-              Back to Agreements
-            </Button>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <Card className="max-w-md">
+            <CardHeader>
+              <CardTitle className="text-destructive">Error</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-foreground mb-4">{error}</p>
+              <Button onClick={() => router.push('/agreements')}>
+                Back to Agreements
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -381,14 +388,17 @@ function AgreementBuilderContent() {
   const SectionComponent = currentSection.component;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
+    <div className="min-h-screen bg-background">
+      {/* Main Navigation */}
+      <Navigation />
+
+      {/* Builder Header */}
+      <header className="bg-card border-b sticky top-16 z-10">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Agreement Builder</h1>
-              <p className="text-sm text-gray-500">{agreement?.title}</p>
+              <h1 className="text-xl font-bold text-foreground">Agreement Builder</h1>
+              <p className="text-sm text-muted-foreground">{agreement?.title}</p>
             </div>
             <Button
               variant="outline"
@@ -401,19 +411,19 @@ function AgreementBuilderContent() {
       </header>
 
       {/* Progress Bar */}
-      <div className="bg-white border-b">
+      <div className="bg-card border-b">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-700">
+            <span className="text-sm font-medium text-foreground">
               Section {currentSection.number + 1} of {SECTIONS.length}
             </span>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-muted-foreground">
               {getProgressPercentage()}% Complete
             </span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
+          <div className="w-full bg-secondary rounded-full h-2">
             <div
-              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              className="bg-cg-primary h-2 rounded-full transition-all duration-300"
               style={{ width: `${getProgressPercentage()}%` }}
             />
           </div>
@@ -421,7 +431,7 @@ function AgreementBuilderContent() {
       </div>
 
       {/* Section Navigation Breadcrumb */}
-      <div className="bg-white border-b">
+      <div className="bg-card border-b">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex items-center gap-2 text-sm overflow-x-auto">
             {SECTIONS.map((section, index) => (
@@ -430,10 +440,10 @@ function AgreementBuilderContent() {
                   onClick={() => setCurrentSectionIndex(index)}
                   className={`px-2 py-1 rounded transition-colors ${
                     index === currentSectionIndex
-                      ? 'bg-blue-100 text-blue-700 font-medium'
+                      ? 'bg-cg-primary/10 text-cg-primary font-medium'
                       : index < currentSectionIndex
-                      ? 'text-green-600 hover:bg-green-50'
-                      : 'text-gray-400'
+                      ? 'text-cg-success hover:bg-cg-success/10'
+                      : 'text-muted-foreground'
                   }`}
                   disabled={index > currentSectionIndex + 1}
                 >
@@ -442,7 +452,7 @@ function AgreementBuilderContent() {
                   {index < currentSectionIndex && ' ✓'}
                 </button>
                 {index < SECTIONS.length - 1 && (
-                  <span className="text-gray-300">→</span>
+                  <span className="text-border">→</span>
                 )}
               </div>
             ))}
@@ -453,8 +463,8 @@ function AgreementBuilderContent() {
       {/* Main Content */}
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-800">{error}</p>
+          <div className="mb-6 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+            <p className="text-sm text-destructive">{error}</p>
           </div>
         )}
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FileText, Settings, Calendar, MessageSquare, DollarSign, FileBarChart, Info, MapPin, Shield, MessageCircle, Bot, ChevronRight, Eye, AlertTriangle, Lock, Smartphone, Edit, Search } from "lucide-react";
+import { FileText, Settings, Calendar, MessageSquare, DollarSign, FileBarChart, Info, MapPin, Shield, MessageCircle, Bot, ChevronRight, Eye, AlertTriangle, Lock, Smartphone, Edit, Search, Package } from "lucide-react";
 import { useCourtAuth } from "../../layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -195,6 +195,7 @@ export default function CaseDetailPage() {
         <NavButton href={`/court-portal/cases/${params.id}/events`} icon={<Calendar className="h-4 w-4" />}>Events</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/messages`} icon={<MessageSquare className="h-4 w-4" />}>Messages</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/payments`} icon={<DollarSign className="h-4 w-4" />}>Payments</NavButton>
+        <NavButton href={`/court-portal/cases/${params.id}/items`} icon={<Package className="h-4 w-4" />}>Items</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/reports`} icon={<FileBarChart className="h-4 w-4" />}>Reports</NavButton>
       </div>
 
@@ -288,12 +289,18 @@ export default function CaseDetailPage() {
       </Card>
 
       {/* Quick Actions */}
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-4 gap-4">
         <ActionCard
           title="View Communication Log"
           description="Review all messages between parents"
           href={`/court-portal/cases/${params.id}/messages`}
           icon={<MessageCircle className="h-6 w-6" />}
+        />
+        <ActionCard
+          title="KidsCubbie Items"
+          description="Track high-value item transfers"
+          href={`/court-portal/cases/${params.id}/items`}
+          icon={<Package className="h-6 w-6" />}
         />
         <ActionCard
           title="Generate Court Packet"

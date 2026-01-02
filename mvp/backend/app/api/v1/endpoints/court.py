@@ -1563,3 +1563,360 @@ async def get_case_ledger(
         "page_size": page_size,
         "has_more": result["has_more"],
     }
+
+
+# =============================================================================
+# KidsCubbie Court Access Endpoints
+# =============================================================================
+
+@router.get(
+    "/cubbie/items/{case_id}",
+    summary="Get all cubbie items for case (court view)",
+)
+async def get_case_cubbie_items(
+    case_id: str,
+    include_inactive: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get all high-value items registered in KidsCubbie for court review.
+
+    Shows items being tracked for all children in the case.
+    """
+    from app.services.cubbie import CubbieService
+    from app.models.child import Child
+    from sqlalchemy import select
+
+    # Get all children in case
+    children_result = await db.execute(
+        select(Child).where(Child.case_id == case_id)
+    )
+    children = children_result.scalars().all()
+
+    if not children:
+        return {"children": [], "total_items": 0, "total_value": "0"}
+
+    items_by_child = []
+    total_items = 0
+    total_value = 0
+
+    service = CubbieService(db)
+
+    for child in children:
+        # Get items for each child (bypass user check for court access)
+        from app.models.cubbie import CubbieItem
+        from sqlalchemy import and_
+
+        query = select(CubbieItem).where(CubbieItem.child_id == child.id)
+        if not include_inactive:
+            query = query.where(CubbieItem.is_active == True)
+
+        items_result = await db.execute(query.order_by(CubbieItem.name))
+        items = items_result.scalars().all()
+
+        child_total = sum(
+            float(item.estimated_value or 0) for item in items
+        )
+
+        items_by_child.append({
+            "child_id": str(child.id),
+            "child_name": child.display_name,
+            "items": [
+                {
+                    "id": str(item.id),
+                    "name": item.name,
+                    "description": item.description,
+                    "category": item.category,
+                    "estimated_value": str(item.estimated_value) if item.estimated_value else None,
+                    "serial_number": item.serial_number,
+                    "current_location": item.current_location,
+                    "photo_url": item.photo_url,
+                    "is_active": item.is_active,
+                    "added_at": item.created_at.isoformat() if item.created_at else None,
+                    "last_location_update": item.last_location_update.isoformat() if item.last_location_update else None,
+                }
+                for item in items
+            ],
+            "item_count": len(items),
+            "total_value": str(child_total),
+        })
+
+        total_items += len(items)
+        total_value += child_total
+
+    return {
+        "children": items_by_child,
+        "total_items": total_items,
+        "total_value": str(total_value),
+    }
+
+
+@router.get(
+    "/cubbie/exchanges/{case_id}",
+    summary="Get item exchange history for case (court view)",
+)
+async def get_case_item_exchanges(
+    case_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    disputed_only: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get history of item transfers during custody exchanges.
+
+    Shows when items moved between parents, condition reports, and disputes.
+    """
+    from app.models.cubbie import CubbieExchangeItem, CubbieItem
+    from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
+    from sqlalchemy import select, and_
+    from sqlalchemy.orm import selectinload
+
+    # Get all exchanges for this case
+    exchanges_result = await db.execute(
+        select(CustodyExchange).where(CustodyExchange.case_id == case_id)
+    )
+    exchanges = exchanges_result.scalars().all()
+    exchange_ids = [e.id for e in exchanges]
+
+    if not exchange_ids:
+        return {"exchanges": [], "total_transfers": 0, "disputed_count": 0}
+
+    # Build query for instances
+    query = select(CustodyExchangeInstance).where(
+        CustodyExchangeInstance.exchange_id.in_(exchange_ids)
+    )
+
+    if start_date:
+        query = query.where(
+            CustodyExchangeInstance.scheduled_time >= datetime.fromisoformat(start_date)
+        )
+    if end_date:
+        query = query.where(
+            CustodyExchangeInstance.scheduled_time <= datetime.fromisoformat(end_date)
+        )
+
+    instances_result = await db.execute(query.order_by(CustodyExchangeInstance.scheduled_time.desc()))
+    instances = instances_result.scalars().all()
+    instance_ids = [i.id for i in instances]
+
+    if not instance_ids:
+        return {"exchanges": [], "total_transfers": 0, "disputed_count": 0}
+
+    # Get exchange items
+    items_query = select(CubbieExchangeItem).options(
+        selectinload(CubbieExchangeItem.cubbie_item)
+    ).where(CubbieExchangeItem.exchange_id.in_(instance_ids))
+
+    if disputed_only:
+        items_query = items_query.where(CubbieExchangeItem.is_disputed == True)
+
+    items_result = await db.execute(items_query)
+    exchange_items = items_result.scalars().all()
+
+    # Get user names
+    user_ids = set()
+    for ei in exchange_items:
+        user_ids.add(ei.sent_by)
+        if ei.acknowledged_by:
+            user_ids.add(ei.acknowledged_by)
+
+    from app.models.user import User
+    users_result = await db.execute(
+        select(User).where(User.id.in_(list(user_ids)))
+    )
+    users = {str(u.id): u.full_name for u in users_result.scalars().all()}
+
+    # Map instance to scheduled time
+    instance_times = {i.id: i.scheduled_time for i in instances}
+
+    # Build response
+    transfers = []
+    disputed_count = 0
+
+    for ei in exchange_items:
+        if ei.is_disputed:
+            disputed_count += 1
+
+        transfers.append({
+            "exchange_id": str(ei.exchange_id),
+            "exchange_date": instance_times.get(ei.exchange_id).isoformat() if instance_times.get(ei.exchange_id) else None,
+            "item_id": str(ei.cubbie_item_id),
+            "item_name": ei.cubbie_item.name if ei.cubbie_item else "Unknown",
+            "item_category": ei.cubbie_item.category if ei.cubbie_item else None,
+            "sent_by": users.get(str(ei.sent_by), "Unknown"),
+            "sent_at": ei.sent_at.isoformat() if ei.sent_at else None,
+            "acknowledged_by": users.get(str(ei.acknowledged_by)) if ei.acknowledged_by else None,
+            "acknowledged_at": ei.acknowledged_at.isoformat() if ei.acknowledged_at else None,
+            "condition_sent": ei.condition_sent,
+            "condition_received": ei.condition_received,
+            "condition_changed": (
+                ei.condition_sent != ei.condition_received
+                if ei.condition_sent and ei.condition_received
+                else False
+            ),
+            "condition_notes": ei.condition_notes,
+            "is_disputed": ei.is_disputed,
+            "dispute_notes": ei.dispute_notes,
+            "photo_sent_url": ei.photo_sent_url,
+            "photo_received_url": ei.photo_received_url,
+        })
+
+    return {
+        "exchanges": transfers,
+        "total_transfers": len(transfers),
+        "disputed_count": disputed_count,
+    }
+
+
+@router.get(
+    "/cubbie/disputes/{case_id}",
+    summary="Get disputed items for case (court view)",
+)
+async def get_case_item_disputes(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get all disputed item transfers for court review.
+
+    Shows condition disagreements and documented disputes with evidence.
+    """
+    # Use the exchanges endpoint with disputed_only=True
+    return await get_case_item_exchanges(
+        case_id=case_id,
+        disputed_only=True,
+        db=db,
+    )
+
+
+@router.get(
+    "/cubbie/summary/{case_id}",
+    summary="Get cubbie summary for case (court view)",
+)
+async def get_case_cubbie_summary(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get summary statistics for KidsCubbie items in a case.
+
+    Provides overview of items, transfers, and any issues for quick review.
+    """
+    from app.models.cubbie import CubbieItem, CubbieExchangeItem
+    from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
+    from app.models.child import Child
+    from sqlalchemy import select, func, and_
+
+    # Get children
+    children_result = await db.execute(
+        select(func.count(Child.id)).where(Child.case_id == case_id)
+    )
+    child_count = children_result.scalar() or 0
+
+    # Get all children IDs
+    children_ids_result = await db.execute(
+        select(Child.id).where(Child.case_id == case_id)
+    )
+    child_ids = [r[0] for r in children_ids_result.all()]
+
+    if not child_ids:
+        return {
+            "total_items": 0,
+            "active_items": 0,
+            "total_value": "0",
+            "by_category": {},
+            "by_location": {},
+            "total_transfers": 0,
+            "disputed_items": 0,
+            "condition_issues": 0,
+        }
+
+    # Get item counts
+    items_result = await db.execute(
+        select(
+            func.count(CubbieItem.id),
+            func.count(CubbieItem.id).filter(CubbieItem.is_active == True),
+            func.sum(CubbieItem.estimated_value),
+        ).where(CubbieItem.child_id.in_(child_ids))
+    )
+    item_stats = items_result.one()
+    total_items = item_stats[0] or 0
+    active_items = item_stats[1] or 0
+    total_value = float(item_stats[2] or 0)
+
+    # Category breakdown
+    category_result = await db.execute(
+        select(CubbieItem.category, func.count(CubbieItem.id))
+        .where(CubbieItem.child_id.in_(child_ids))
+        .group_by(CubbieItem.category)
+    )
+    by_category = dict(category_result.all())
+
+    # Location breakdown
+    location_result = await db.execute(
+        select(CubbieItem.current_location, func.count(CubbieItem.id))
+        .where(
+            and_(
+                CubbieItem.child_id.in_(child_ids),
+                CubbieItem.is_active == True,
+            )
+        )
+        .group_by(CubbieItem.current_location)
+    )
+    by_location = dict(location_result.all())
+
+    # Get exchanges for this case
+    exchanges_result = await db.execute(
+        select(CustodyExchange.id).where(CustodyExchange.case_id == case_id)
+    )
+    exchange_ids = [r[0] for r in exchanges_result.all()]
+
+    total_transfers = 0
+    disputed_items = 0
+    condition_issues = 0
+
+    if exchange_ids:
+        # Get all instances
+        instances_result = await db.execute(
+            select(CustodyExchangeInstance.id)
+            .where(CustodyExchangeInstance.exchange_id.in_(exchange_ids))
+        )
+        instance_ids = [r[0] for r in instances_result.all()]
+
+        if instance_ids:
+            # Count exchange items
+            transfers_result = await db.execute(
+                select(
+                    func.count(CubbieExchangeItem.id),
+                    func.count(CubbieExchangeItem.id).filter(CubbieExchangeItem.is_disputed == True),
+                ).where(CubbieExchangeItem.exchange_id.in_(instance_ids))
+            )
+            transfer_stats = transfers_result.one()
+            total_transfers = transfer_stats[0] or 0
+            disputed_items = transfer_stats[1] or 0
+
+            # Count condition issues (where sent != received)
+            condition_result = await db.execute(
+                select(func.count(CubbieExchangeItem.id))
+                .where(
+                    and_(
+                        CubbieExchangeItem.exchange_id.in_(instance_ids),
+                        CubbieExchangeItem.condition_sent.isnot(None),
+                        CubbieExchangeItem.condition_received.isnot(None),
+                        CubbieExchangeItem.condition_sent != CubbieExchangeItem.condition_received,
+                    )
+                )
+            )
+            condition_issues = condition_result.scalar() or 0
+
+    return {
+        "total_items": total_items,
+        "active_items": active_items,
+        "total_value": str(total_value),
+        "by_category": by_category,
+        "by_location": by_location,
+        "total_transfers": total_transfers,
+        "disputed_items": disputed_items,
+        "condition_issues": condition_issues,
+    }

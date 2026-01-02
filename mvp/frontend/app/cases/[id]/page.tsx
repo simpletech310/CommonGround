@@ -545,7 +545,7 @@ function CaseDetailsContent() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-4 md:grid-cols-3">
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                     <Button
                       variant="outline"
                       className="h-auto py-6 flex flex-col items-center gap-2"
@@ -564,6 +564,16 @@ function CaseDetailsContent() {
                       <CalendarDays className="h-8 w-8 text-purple-600" />
                       <span className="font-medium">View Schedule</span>
                       <span className="text-xs text-muted-foreground">Parenting time calendar</span>
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="h-auto py-6 flex flex-col items-center gap-2"
+                      onClick={() => router.push(`/cases/${caseId}/children`)}
+                    >
+                      <Users className="h-8 w-8 text-green-600" />
+                      <span className="font-medium">Children & Cubbies</span>
+                      <span className="text-xs text-muted-foreground">Profiles, info & item tracking</span>
                     </Button>
 
                     <Button

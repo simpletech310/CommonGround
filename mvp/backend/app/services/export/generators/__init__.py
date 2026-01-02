@@ -18,6 +18,7 @@ from app.services.export.generators.communication_compliance import Communicatio
 from app.services.export.generators.intervention_log import InterventionLogGenerator
 from app.services.export.generators.parent_impact import ParentImpactGenerator
 from app.services.export.generators.chain_of_custody import ChainOfCustodyGenerator
+from app.services.export.generators.item_tracking import ItemTrackingGenerator
 
 # Create and populate the default registry
 registry = SectionGeneratorRegistry()
@@ -31,6 +32,7 @@ registry.register(CommunicationComplianceGenerator())
 registry.register(InterventionLogGenerator())
 registry.register(ParentImpactGenerator())
 registry.register(ChainOfCustodyGenerator())
+registry.register(ItemTrackingGenerator())
 
 
 def get_registry() -> SectionGeneratorRegistry:
@@ -52,4 +54,5 @@ __all__ = [
     "InterventionLogGenerator",
     "ParentImpactGenerator",
     "ChainOfCustodyGenerator",
+    "ItemTrackingGenerator",
 ]
