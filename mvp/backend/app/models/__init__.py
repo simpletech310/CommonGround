@@ -7,7 +7,15 @@ This module contains all database models for the application.
 from app.models.base import Base
 from app.models.user import User, UserProfile
 from app.models.case import Case, CaseParticipant
-from app.models.child import Child
+from app.models.child import Child, ChildProfileStatus
+from app.models.cubbie import (
+    CubbieItem,
+    CubbieExchangeItem,
+    ChildPhoto,
+    ItemCategory,
+    ItemLocation,
+    ItemCondition,
+)
 from app.models.agreement import Agreement, AgreementVersion, AgreementSection
 from app.models.message import Message, MessageFlag, MessageThread
 from app.models.schedule import ScheduleEvent, ExchangeCheckIn
@@ -42,6 +50,14 @@ __all__ = [
     "Case",
     "CaseParticipant",
     "Child",
+    "ChildProfileStatus",
+    # KidsCubbie
+    "CubbieItem",
+    "CubbieExchangeItem",
+    "ChildPhoto",
+    "ItemCategory",
+    "ItemLocation",
+    "ItemCondition",
     "Agreement",
     "AgreementVersion",
     "AgreementSection",

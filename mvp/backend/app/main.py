@@ -2,14 +2,22 @@
 FastAPI application entry point.
 """
 
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import init_db, close_db
 from app.api.v1.router import api_router
+
+# Create uploads directory
+UPLOADS_DIR = Path(__file__).parent.parent / "uploads"
+UPLOADS_DIR.mkdir(exist_ok=True)
 
 
 @asynccontextmanager
@@ -48,6 +56,9 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Include API router
 app.include_router(api_router, prefix=f"/api/{settings.API_VERSION}")
+
+# Mount static files for uploads
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 
 @app.get("/")
