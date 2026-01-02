@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { agreementsAPI, Agreement, AgreementSection } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -96,11 +96,18 @@ function AgreementBuilderContent() {
   const { user } = useAuth();
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const agreementId = params.id as string;
+
+  // Get initial section from URL query parameter (for editing specific sections)
+  const initialSection = searchParams.get('section');
+  const initialSectionIndex = initialSection ? parseInt(initialSection, 10) : 0;
 
   const [agreement, setAgreement] = useState<Agreement | null>(null);
   const [sections, setSections] = useState<AgreementSection[]>([]);
-  const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
+  const [currentSectionIndex, setCurrentSectionIndex] = useState(
+    initialSectionIndex >= 0 && initialSectionIndex < SECTIONS.length ? initialSectionIndex : 0
+  );
   const [sectionData, setSectionData] = useState<Record<string, any>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -109,6 +116,16 @@ function AgreementBuilderContent() {
   useEffect(() => {
     loadAgreement();
   }, [agreementId]);
+
+  // Update current section if URL parameter changes
+  useEffect(() => {
+    if (initialSection) {
+      const idx = parseInt(initialSection, 10);
+      if (idx >= 0 && idx < SECTIONS.length) {
+        setCurrentSectionIndex(idx);
+      }
+    }
+  }, [initialSection]);
 
   // Helper to get all wizard keys that map to a backend section
   const getWizardKeysForBackendSection = (sectionType: string, sectionNumber: string): SectionKey[] => {

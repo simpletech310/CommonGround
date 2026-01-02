@@ -4,10 +4,230 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { agreementsAPI, Agreement, AgreementSection } from '@/lib/api';
+import { agreementsAPI, Agreement, AgreementSection, AgreementQuickSummary } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { ProtectedRoute } from '@/components/protected-route';
+import { Navigation } from '@/components/navigation';
+import { FileText, Sparkles, CheckCircle, Pencil } from 'lucide-react';
+
+// Map backend section types to wizard section indexes for editing
+function getSectionEditIndex(sectionType: string, sectionNumber: string): number {
+  // Map from backend section (type + number) to wizard section index
+  const mappings: Record<string, number> = {
+    'basic_info_1': 1,       // parent_info (also covers other_parent_info=2, children_info=3)
+    'custody_2': 4,          // legal_custody
+    'custody_3': 5,          // physical_custody
+    'schedule_4': 6,         // parenting_schedule
+    'schedule_5': 7,         // holiday_schedule
+    'schedule_6': 15,        // travel (vacation time)
+    'logistics_8': 8,        // exchange_logistics
+    'decision_making_9': 18, // other_provisions
+    'decision_making_10': 12, // education
+    'decision_making_11': 11, // medical_healthcare
+    'financial_14': 10,      // child_support
+    'financial_15': 10,      // child_support (expense sharing)
+    'communication_16': 13,  // parent_communication
+    'legal_17': 17,          // dispute_resolution
+    'legal_18': 16,          // relocation (modification process)
+  };
+
+  const key = `${sectionType}_${sectionNumber}`;
+  return mappings[key] ?? -1;
+}
+
+// Helper to format structured data into human-readable summary
+function formatSectionSummary(section: AgreementSection): string | null {
+  // If content exists and is not JSON, use it directly
+  if (section.content && !section.content.startsWith('{')) {
+    return section.content;
+  }
+
+  // Try to parse and format structured_data
+  const data = section.structured_data;
+  if (!data) return null;
+
+  try {
+    // Handle different section types
+    const sectionData = typeof data === 'string' ? JSON.parse(data) : data;
+
+    switch (section.section_type) {
+      case 'physical_custody':
+      case 'custody': {
+        const pc = sectionData.physical_custody || sectionData;
+        const parts = [];
+        if (pc.arrangement_type) parts.push(pc.arrangement_type);
+        if (pc.percentage_split) parts.push(`${pc.percentage_split} split`);
+        if (pc.primary_residential_parent) parts.push(`Primary: ${pc.primary_residential_parent}`);
+        if (pc.time_split) parts.push(`${pc.time_split} time split`);
+        if (pc.schedule_type) parts.push(pc.schedule_type.replace(/_/g, ' '));
+        return parts.length > 0 ? parts.join(' • ') : null;
+      }
+
+      case 'parenting_schedule':
+      case 'schedule': {
+        const ps = sectionData.parenting_schedule || sectionData.regular_schedule || sectionData;
+        const parts = [];
+        if (ps.weekly_pattern) parts.push(ps.weekly_pattern);
+        if (ps.type) parts.push(ps.type.replace(/_/g, ' '));
+        if (ps.exchange_day) parts.push(`Exchange: ${ps.exchange_day}`);
+        if (ps.exchange_time) parts.push(`at ${ps.exchange_time}`);
+        return parts.length > 0 ? parts.join(' • ') : null;
+      }
+
+      case 'holiday_schedule': {
+        const hs = sectionData.holiday_schedule || sectionData.holidays || sectionData;
+        const holidays = Object.entries(hs)
+          .filter(([_, v]) => v && typeof v === 'string' && v !== '')
+          .slice(0, 4)
+          .map(([k, _]) => k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()));
+        return holidays.length > 0 ? `Holidays covered: ${holidays.join(', ')}` : 'Holiday schedule configured';
+      }
+
+      case 'education': {
+        const ed = sectionData.education || sectionData;
+        const parts = [];
+        if (ed.current_school) parts.push(ed.current_school);
+        if (ed.school_district) parts.push(ed.school_district);
+        if (ed.school_choice) parts.push(`School decisions: ${ed.school_choice}`);
+        if (ed.conferences === 'Yes') parts.push('Both attend conferences');
+        return parts.length > 0 ? parts.join(' • ') : 'Education provisions configured';
+      }
+
+      case 'healthcare':
+      case 'medical_healthcare': {
+        const hc = sectionData.medical_healthcare || sectionData;
+        const parts = [];
+        if (hc.insurance_provider) parts.push(`Insurance: ${hc.insurance_provider}`);
+        if (hc.primary_pediatrician) parts.push(hc.primary_pediatrician);
+        if (hc.medical_records_access === 'Yes') parts.push('Shared medical records access');
+        if (hc.cost_sharing) parts.push(`Costs: ${hc.cost_sharing}`);
+        return parts.length > 0 ? parts.join(' • ') : 'Healthcare provisions configured';
+      }
+
+      case 'child_support':
+      case 'financial': {
+        const cs = sectionData.child_support || sectionData;
+        const parts = [];
+        if (cs.monthly_amount) parts.push(`$${cs.monthly_amount}/month`);
+        if (cs.paying_parent) parts.push(`Paid by ${cs.paying_parent.split(' ')[0]}`);
+        if (cs.has_support === 'Yes') parts.push('Child support established');
+        if (cs.payment_method) parts.push(`via ${cs.payment_method}`);
+        return parts.length > 0 ? parts.join(' • ') : 'Financial provisions configured';
+      }
+
+      case 'expenses': {
+        const exp = sectionData.shared_expenses || sectionData;
+        const shared = Object.entries(exp)
+          .filter(([_, v]) => v === '50/50')
+          .map(([k, _]) => k.replace(/_/g, ' '));
+        return shared.length > 0 ? `50/50 split: ${shared.slice(0, 3).join(', ')}` : 'Expense sharing configured';
+      }
+
+      case 'dispute_resolution': {
+        const dr = sectionData.dispute_resolution || sectionData;
+        const parts = [];
+        if (dr.first_step) parts.push(`First: ${dr.first_step}`);
+        if (dr.mediation_required === 'Yes') parts.push('Mediation required');
+        if (dr.steps) parts.push(dr.steps.map((s: any) => s.method || s).join(' → '));
+        return parts.length > 0 ? parts.join(' • ') : 'Dispute resolution process defined';
+      }
+
+      case 'communication': {
+        const comm = sectionData.parent_communication || sectionData;
+        const parts = [];
+        if (comm.primary_method) parts.push(`Via ${comm.primary_method}`);
+        if (comm.response_time_hours) parts.push(`${comm.response_time_hours}h response time`);
+        return parts.length > 0 ? parts.join(' • ') : 'Communication guidelines set';
+      }
+
+      case 'activities':
+      case 'extracurricular': {
+        const act = sectionData.current_activities || sectionData;
+        if (Array.isArray(act) && act.length > 0) {
+          const activities = act.map((a: any) => a.activity || a.name).filter(Boolean);
+          return activities.length > 0 ? `Activities: ${activities.join(', ')}` : null;
+        }
+        return 'Extracurricular activities configured';
+      }
+
+      case 'transportation':
+      case 'logistics': {
+        const tr = sectionData.exchange_location || sectionData;
+        const parts = [];
+        if (tr.primary) parts.push(`Exchange at: ${tr.primary}`);
+        if (sectionData.costs) parts.push(`Costs: ${sectionData.costs}`);
+        if (sectionData.transportation_costs) parts.push(`Costs: ${sectionData.transportation_costs}`);
+        return parts.length > 0 ? parts.join(' • ') : 'Transportation logistics configured';
+      }
+
+      case 'basic_info': {
+        const bi = sectionData;
+        const parts = [];
+        if (bi.parent_a?.name) parts.push(bi.parent_a.name);
+        if (bi.parent_b?.name) parts.push(bi.parent_b.name);
+        if (bi.children?.length) parts.push(`${bi.children.length} child${bi.children.length > 1 ? 'ren' : ''}`);
+        return parts.length > 0 ? parts.join(' & ') : null;
+      }
+
+      case 'legal':
+      case 'legal_custody': {
+        const lc = sectionData;
+        const parts = [];
+        if (lc.custody_type) parts.push(lc.custody_type.replace(/_/g, ' '));
+        if (lc.tie_breaker) parts.push(`Tie-breaker: ${lc.tie_breaker}`);
+        return parts.length > 0 ? parts.join(' • ') : 'Legal custody defined';
+      }
+
+      case 'decision_making': {
+        const dm = sectionData.major_decisions || sectionData;
+        if (dm.requires_agreement) {
+          return `Joint decisions: ${dm.requires_agreement.slice(0, 3).join(', ')}`;
+        }
+        return 'Decision-making authority defined';
+      }
+
+      case 'religious': {
+        const rel = sectionData.religious || sectionData;
+        const parts = [];
+        if (rel.religious_upbringing || rel.upbringing) parts.push(rel.religious_upbringing || rel.upbringing);
+        if (rel.religious_education || rel.formal_education) parts.push(`Education: ${rel.religious_education || rel.formal_education}`);
+        return parts.length > 0 ? parts.join(' • ') : 'Religious provisions defined';
+      }
+
+      case 'modifications': {
+        const mod = sectionData.minor_modifications || sectionData;
+        if (mod.relocation_notice_days) {
+          return `${mod.relocation_notice_days} days relocation notice required`;
+        }
+        return 'Modification process defined';
+      }
+
+      case 'vacation_schedule':
+      case 'vacation': {
+        const vs = sectionData.summer_vacation || sectionData;
+        const parts = [];
+        if (vs.weeks_each) parts.push(`${vs.weeks_each} weeks each parent`);
+        if (vs.notice_required_days) parts.push(`${vs.notice_required_days} days notice`);
+        return parts.length > 0 ? parts.join(' • ') : 'Vacation schedule configured';
+      }
+
+      case 'school_breaks': {
+        const sb = sectionData.school_breaks || sectionData;
+        const breaks = Object.entries(sb)
+          .filter(([_, v]) => v && v !== '')
+          .map(([k, _]) => k.replace(/_/g, ' '));
+        return breaks.length > 0 ? `Covers: ${breaks.slice(0, 3).join(', ')}` : 'School breaks scheduled';
+      }
+
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}
 
 function AgreementDetailsContent() {
   const { user } = useAuth();
@@ -17,6 +237,7 @@ function AgreementDetailsContent() {
 
   const [agreement, setAgreement] = useState<Agreement | null>(null);
   const [sections, setSections] = useState<AgreementSection[]>([]);
+  const [summary, setSummary] = useState<AgreementQuickSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isApproving, setIsApproving] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -37,6 +258,14 @@ function AgreementDetailsContent() {
 
       setAgreement(data.agreement);
       setSections(data.sections);
+
+      // Load AI summary
+      try {
+        const summaryData = await agreementsAPI.getQuickSummary(agreementId);
+        setSummary(summaryData);
+      } catch {
+        // Summary may fail if AI is unavailable
+      }
     } catch (err: any) {
       console.error('Failed to load agreement:', err);
       setError(err.message || 'Failed to load agreement');
@@ -197,32 +426,8 @@ function AgreementDetailsContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-8">
-              <Link href="/dashboard" className="text-2xl font-bold text-gray-900">
-                CommonGround
-              </Link>
-              <nav className="flex gap-4">
-                <Link href="/agreements" className="text-sm font-medium text-blue-600">
-                  Agreements
-                </Link>
-              </nav>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">
-                  {user?.first_name} {user?.last_name}
-                </p>
-                <p className="text-xs text-gray-500">{user?.email}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-background">
+      <Navigation />
 
       {/* Main Content */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -335,6 +540,56 @@ function AgreementDetailsContent() {
                 )}
               </CardContent>
             </Card>
+
+            {/* AI Summary Card */}
+            {summary && summary.completion_percentage > 0 && (
+              <Card className="border-cg-primary/20 bg-cg-primary-subtle/30">
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-cg-primary" />
+                    <CardTitle className="text-lg">Agreement Summary</CardTitle>
+                  </div>
+                  <CardDescription>
+                    AI-generated overview of your parenting agreement
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Progress Bar */}
+                  <div>
+                    <div className="flex justify-between text-sm text-muted-foreground mb-1">
+                      <span>Completion</span>
+                      <span>{summary.completion_percentage}%</span>
+                    </div>
+                    <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cg-primary rounded-full transition-all duration-500"
+                        style={{ width: `${summary.completion_percentage}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Summary Text */}
+                  <p className="text-foreground leading-relaxed">
+                    {summary.summary}
+                  </p>
+
+                  {/* Key Points */}
+                  {summary.key_points && summary.key_points.length > 0 && (
+                    <div className="pt-3 border-t border-border">
+                      <p className="text-sm font-medium text-foreground mb-2">Key Terms:</p>
+                      <ul className="space-y-1.5">
+                        {summary.key_points.map((point, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm">
+                            <CheckCircle className="h-4 w-4 text-cg-success flex-shrink-0 mt-0.5" />
+                            <span className="text-muted-foreground">{point}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Actions */}
             <Card>
@@ -530,13 +785,13 @@ function AgreementDetailsContent() {
               <CardHeader>
                 <CardTitle>Agreement Sections</CardTitle>
                 <CardDescription>
-                  {sections.length} of 18 sections completed
+                  {sections.filter(s => s.is_completed).length} of {sections.length} sections completed
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {sections.length === 0 ? (
                   <div className="text-center py-8">
-                    <p className="text-gray-500">No sections completed yet</p>
+                    <p className="text-muted-foreground">No sections completed yet</p>
                     <Button
                       className="mt-4"
                       onClick={() => router.push(`/agreements/${agreementId}/builder`)}
@@ -545,24 +800,68 @@ function AgreementDetailsContent() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {sections.map((section) => (
-                      <div key={section.id} className="p-4 bg-gray-50 rounded-lg">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h4 className="font-medium text-gray-900">{section.section_title}</h4>
-                            <p className="text-sm text-gray-500 mt-1">
-                              Section {section.display_order}
-                            </p>
+                  <div className="space-y-4">
+                    {sections.map((section) => {
+                      const editIndex = getSectionEditIndex(section.section_type, section.section_number);
+                      const canEdit = agreement.status === 'draft' && editIndex >= 0;
+
+                      return (
+                        <div
+                          key={section.id}
+                          className={`p-4 rounded-lg border transition-colors ${
+                            section.is_completed
+                              ? 'bg-cg-success/5 border-cg-success/20'
+                              : 'bg-secondary/50 border-border'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                {section.is_completed ? (
+                                  <CheckCircle className="h-4 w-4 text-cg-success flex-shrink-0" />
+                                ) : (
+                                  <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 flex-shrink-0" />
+                                )}
+                                <h4 className="font-medium text-foreground">{section.section_title}</h4>
+                              </div>
+                              {(section.content || section.structured_data) && (
+                                <p className="text-sm text-muted-foreground mt-2 ml-6 line-clamp-2">
+                                  {formatSectionSummary(section) || 'Section configured'}
+                                </p>
+                              )}
+                              {!section.content && !section.structured_data && !section.is_completed && (
+                                <p className="text-sm text-muted-foreground/60 mt-2 ml-6 italic">
+                                  Not yet completed
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {section.is_required && (
+                                <Badge variant="secondary" size="sm">
+                                  Required
+                                </Badge>
+                              )}
+                              {section.is_completed && (
+                                <Badge variant="success" size="sm">
+                                  Complete
+                                </Badge>
+                              )}
+                              {canEdit && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => router.push(`/agreements/${agreementId}/builder?section=${editIndex}`)}
+                                  className="ml-2"
+                                >
+                                  <Pencil className="h-3.5 w-3.5 mr-1" />
+                                  Edit
+                                </Button>
+                              )}
+                            </div>
                           </div>
-                          {section.is_required && (
-                            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
-                              Required
-                            </span>
-                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>

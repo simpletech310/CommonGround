@@ -3,9 +3,12 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { FolderOpen, Clock, Calendar, FileText, AlertTriangle, Bot, Lock, Stamp, ShieldOff, ChevronRight, MapPin, FileSearch, UserPlus } from "lucide-react";
 import { useCourtAuth } from "../layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/layout";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -75,7 +78,10 @@ export default function CourtDashboardPage() {
   if (isLoading || !professional) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-slate-500">Loading...</div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-indigo-600 border-t-transparent mx-auto" />
+          <p className="mt-4 text-muted-foreground">Loading...</p>
+        </div>
       </div>
     );
   }
@@ -96,24 +102,24 @@ export default function CourtDashboardPage() {
     <div className="space-y-6">
       {/* Welcome */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">
+        <h1 className="text-2xl font-bold text-foreground">
           Welcome, {professional.full_name}
         </h1>
-        <p className="text-slate-600">
+        <p className="text-muted-foreground">
           Court Access Portal - Read-only case access
         </p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <StatCard label="Active Cases" value={stats.active_cases} icon="📁" />
-        <StatCard label="Pending Approvals" value={stats.pending_approvals} icon="⏳" />
-        <StatCard label="Upcoming Events" value={stats.upcoming_events} icon="📅" />
-        <StatCard label="Recent Reports" value={stats.recent_reports} icon="📄" />
+        <StatCard label="Active Cases" value={stats.active_cases} icon={<FolderOpen className="h-5 w-5" />} />
+        <StatCard label="Pending Approvals" value={stats.pending_approvals} icon={<Clock className="h-5 w-5" />} />
+        <StatCard label="Upcoming Events" value={stats.upcoming_events} icon={<Calendar className="h-5 w-5" />} />
+        <StatCard label="Recent Reports" value={stats.recent_reports} icon={<FileText className="h-5 w-5" />} />
         <StatCard
           label="Expiring Soon"
           value={stats.access_expiring_soon}
-          icon="⚠️"
+          icon={<AlertTriangle className="h-5 w-5" />}
           warning={stats.access_expiring_soon > 0}
         />
       </div>
@@ -121,23 +127,33 @@ export default function CourtDashboardPage() {
       {/* Active Cases */}
       <Card>
         <CardHeader>
-          <CardTitle>Your Active Cases</CardTitle>
-          <CardDescription>
-            Cases you have access to view
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Your Active Cases</CardTitle>
+              <CardDescription>
+                Cases you have access to view
+              </CardDescription>
+            </div>
+            <Button asChild>
+              <Link href="/court-portal/request-access">
+                <FileSearch className="h-4 w-4 mr-2" />
+                Request Access
+              </Link>
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoadingCases ? (
-            <div className="text-center py-8 text-slate-500">
-              Loading cases...
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent mx-auto" />
+              <p className="mt-3 text-muted-foreground text-sm">Loading cases...</p>
             </div>
           ) : cases.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
-              <p>No active cases found</p>
-              <p className="text-sm mt-2">
-                Cases will appear here once they are created in the system
-              </p>
-            </div>
+            <EmptyState
+              icon={FolderOpen}
+              title="No active cases"
+              description="Cases will appear here once they are created in the system"
+            />
           ) : (
             <div className="space-y-3">
               {cases.map((caseItem) => (
@@ -157,17 +173,20 @@ export default function CourtDashboardPage() {
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">ARIA Assistant</CardTitle>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Bot className="h-5 w-5 text-indigo-600" />
+              ARIA Assistant
+            </CardTitle>
             <CardDescription>
               Ask questions about case facts
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-slate-600 mb-4">
+            <p className="text-sm text-muted-foreground mb-4">
               ARIA can answer factual questions about schedules, exchanges,
               compliance, and communication patterns.
             </p>
-            <Button asChild variant="outline" className="w-full">
+            <Button asChild variant="outline" className="w-full border-indigo-200 text-indigo-700 hover:bg-indigo-50">
               <Link href="/court-portal/aria">
                 Open ARIA Assistant
               </Link>
@@ -183,21 +202,21 @@ export default function CourtDashboardPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <ul className="text-sm text-slate-600 space-y-2">
-              <li className="flex items-start">
-                <span className="mr-2">📋</span>
+            <ul className="text-sm text-muted-foreground space-y-2.5">
+              <li className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-indigo-500 flex-shrink-0" />
                 <span>All access is read-only and logged</span>
               </li>
-              <li className="flex items-start">
-                <span className="mr-2">🔒</span>
+              <li className="flex items-center gap-2">
+                <Stamp className="h-4 w-4 text-indigo-500 flex-shrink-0" />
                 <span>Exports are watermarked with your identity</span>
               </li>
-              <li className="flex items-start">
-                <span className="mr-2">⏱️</span>
+              <li className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-indigo-500 flex-shrink-0" />
                 <span>Access expires based on your role</span>
               </li>
-              <li className="flex items-start">
-                <span className="mr-2">🚫</span>
+              <li className="flex items-center gap-2">
+                <ShieldOff className="h-4 w-4 text-indigo-500 flex-shrink-0" />
                 <span>Do not share access credentials</span>
               </li>
             </ul>
@@ -216,19 +235,21 @@ function StatCard({
 }: {
   label: string;
   value: number;
-  icon: string;
+  icon: React.ReactNode;
   warning?: boolean;
 }) {
   return (
-    <Card className={warning ? "border-orange-300 bg-orange-50" : ""}>
+    <Card className={warning ? "border-cg-warning/30 bg-cg-warning/5" : ""}>
       <CardContent className="p-4">
-        <div className="flex items-center space-x-3">
-          <span className="text-2xl">{icon}</span>
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-lg ${warning ? "bg-cg-warning/10 text-cg-warning" : "bg-indigo-100 text-indigo-600"}`}>
+            {icon}
+          </div>
           <div>
-            <div className={`text-2xl font-bold ${warning ? "text-orange-600" : "text-slate-900"}`}>
+            <div className={`text-2xl font-bold ${warning ? "text-cg-warning" : "text-foreground"}`}>
               {value}
             </div>
-            <div className="text-xs text-slate-500">{label}</div>
+            <div className="text-xs text-muted-foreground">{label}</div>
           </div>
         </div>
       </CardContent>
@@ -254,39 +275,45 @@ function CaseCard({
     judge: "Judge",
   };
 
-  const statusColors: Record<string, string> = {
-    active: "bg-green-100 text-green-800",
-    pending: "bg-yellow-100 text-yellow-800",
-    closed: "bg-gray-100 text-gray-800",
+  const getStatusVariant = (status: string): 'success' | 'warning' | 'secondary' => {
+    switch (status) {
+      case 'active': return 'success';
+      case 'pending': return 'warning';
+      default: return 'secondary';
+    }
   };
 
   return (
     <div
-      className="border rounded-lg p-4 hover:bg-slate-50 cursor-pointer transition"
+      className="border border-border rounded-xl p-4 hover:bg-secondary/50 cursor-pointer transition-smooth group"
       onClick={onSelect}
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
-          <div className="flex items-center space-x-2">
-            <h3 className="font-semibold text-slate-900">{caseData.case_name}</h3>
-            <span className={`px-2 py-0.5 rounded text-xs ${statusColors[caseData.status] || statusColors.active}`}>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-foreground">{caseData.case_name}</h3>
+            <Badge variant={getStatusVariant(caseData.status)} size="sm">
               {caseData.status}
-            </span>
+            </Badge>
           </div>
           {caseData.case_number && (
-            <div className="text-sm text-slate-500 mt-1">
+            <div className="text-sm text-muted-foreground mt-1">
               Case #{caseData.case_number}
             </div>
           )}
-          <div className="flex items-center space-x-4 mt-2 text-sm text-slate-600">
+          <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
             <span>Role: {roleLabels[role] || role}</span>
-            <span>{caseData.county && `${caseData.county}, `}{caseData.state}</span>
+            <span className="flex items-center gap-1">
+              <MapPin className="h-3.5 w-3.5" />
+              {caseData.county && `${caseData.county}, `}{caseData.state}
+            </span>
           </div>
         </div>
-        <div className="text-right">
+        <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); onSelect(); }}>
             View Case
           </Button>
+          <ChevronRight className="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
         </div>
       </div>
     </div>
