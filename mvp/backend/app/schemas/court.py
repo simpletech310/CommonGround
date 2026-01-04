@@ -307,6 +307,13 @@ class CourtEventResponse(CourtEventBase):
     attendance_summary: str
     is_past: bool
     reminder_sent: bool
+    # RSVP tracking for parent responses
+    petitioner_rsvp_status: Optional[str] = None
+    respondent_rsvp_status: Optional[str] = None
+    petitioner_rsvp_at: Optional[datetime] = None
+    respondent_rsvp_at: Optional[datetime] = None
+    petitioner_rsvp_notes: Optional[str] = None
+    respondent_rsvp_notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -516,3 +523,371 @@ class CourtDashboardStats(BaseModel):
     upcoming_events: int
     recent_reports: int
     access_expiring_soon: int  # Grants expiring within 7 days
+
+
+# =============================================================================
+# Compliance Snapshot Schemas
+# =============================================================================
+
+class ComplianceStatus(str):
+    """Compliance status indicator."""
+    GREEN = "green"    # 🟢 Good standing
+    AMBER = "amber"    # 🟡 Needs attention
+    RED = "red"        # 🔴 Serious issues
+
+
+class CategoryCompliance(BaseModel):
+    """Compliance details for a specific category."""
+    status: str  # green, amber, red
+    score: float  # 0-100
+    metrics: dict  # Category-specific metrics
+    issues: list[str] = []  # Current issues/concerns
+
+
+class ComplianceSnapshot(BaseModel):
+    """
+    Comprehensive compliance snapshot for court dashboard.
+
+    Aggregates data from schedule, messages, financial, and items
+    to provide a unified compliance view.
+    """
+    case_id: str
+    generated_at: datetime
+
+    # Overall status
+    overall_status: str  # green, amber, red
+    overall_score: float  # 0-100 weighted average
+
+    # Category breakdowns
+    schedule_compliance: CategoryCompliance
+    communication_compliance: CategoryCompliance
+    financial_compliance: CategoryCompliance
+    item_compliance: CategoryCompliance
+
+    # Quick stats
+    days_monitored: int
+    total_exchanges: int
+    on_time_rate: float
+    flagged_messages_count: int
+    overdue_obligations: int
+    disputed_items: int
+
+    # Trends (optional)
+    trend: Optional[str] = None  # improving, stable, declining
+
+    class Config:
+        from_attributes = True
+
+
+class ComplianceThresholds(BaseModel):
+    """Configurable thresholds for compliance scoring."""
+    # Schedule thresholds
+    on_time_green: float = 90.0  # >= 90% on-time = green
+    on_time_amber: float = 70.0  # >= 70% on-time = amber, below = red
+
+    # Communication thresholds
+    flagged_rate_green: float = 5.0   # <= 5% flagged = green
+    flagged_rate_amber: float = 15.0  # <= 15% flagged = amber
+
+    # Financial thresholds
+    overdue_green: int = 0   # 0 overdue = green
+    overdue_amber: int = 2   # <= 2 overdue = amber
+
+    # Item thresholds
+    disputes_green: int = 0   # 0 disputes = green
+    disputes_amber: int = 1   # 1 dispute = amber
+
+
+# =============================================================================
+# Court Event Template Schemas
+# =============================================================================
+
+class CourtEventTemplate(BaseModel):
+    """Pre-configured template for court events."""
+    id: str
+    name: str
+    event_type: str
+    description: str
+    default_duration_minutes: int
+    typical_location: Optional[str] = None
+    petitioner_required: bool = True
+    respondent_required: bool = True
+    is_mandatory: bool = True
+    requires_attorney: bool = False
+    notes_template: Optional[str] = None
+    icon: str = "calendar"
+    color: str = "indigo"
+
+
+class CourtEventTemplateList(BaseModel):
+    """List of available event templates."""
+    templates: list[CourtEventTemplate]
+
+
+# Predefined court event templates
+COURT_EVENT_TEMPLATES = [
+    CourtEventTemplate(
+        id="hearing_custody",
+        name="Custody Hearing",
+        event_type="hearing",
+        description="Court hearing to determine custody arrangements",
+        default_duration_minutes=60,
+        typical_location="Courtroom",
+        petitioner_required=True,
+        respondent_required=True,
+        is_mandatory=True,
+        requires_attorney=False,
+        notes_template="Custody hearing regarding: ",
+        icon="gavel",
+        color="red",
+    ),
+    CourtEventTemplate(
+        id="hearing_modification",
+        name="Modification Hearing",
+        event_type="hearing",
+        description="Hearing to modify existing custody order",
+        default_duration_minutes=45,
+        typical_location="Courtroom",
+        petitioner_required=True,
+        respondent_required=True,
+        is_mandatory=True,
+        requires_attorney=False,
+        notes_template="Modification request: ",
+        icon="edit",
+        color="orange",
+    ),
+    CourtEventTemplate(
+        id="mediation",
+        name="Mediation Session",
+        event_type="mediation",
+        description="Facilitated discussion to resolve disputes",
+        default_duration_minutes=120,
+        typical_location="Mediation Center",
+        petitioner_required=True,
+        respondent_required=True,
+        is_mandatory=True,
+        requires_attorney=False,
+        notes_template="Topics for mediation: ",
+        icon="users",
+        color="green",
+    ),
+    CourtEventTemplate(
+        id="status_conference",
+        name="Status Conference",
+        event_type="conference",
+        description="Check-in on case progress and compliance",
+        default_duration_minutes=30,
+        typical_location="Courtroom or virtual",
+        petitioner_required=True,
+        respondent_required=True,
+        is_mandatory=True,
+        requires_attorney=False,
+        notes_template="Status update topics: ",
+        icon="clipboard",
+        color="blue",
+    ),
+    CourtEventTemplate(
+        id="settlement_conference",
+        name="Settlement Conference",
+        event_type="conference",
+        description="Attempt to reach agreement before trial",
+        default_duration_minutes=90,
+        typical_location="Conference room",
+        petitioner_required=True,
+        respondent_required=True,
+        is_mandatory=True,
+        requires_attorney=True,
+        notes_template="Settlement items to discuss: ",
+        icon="handshake",
+        color="purple",
+    ),
+    CourtEventTemplate(
+        id="review_hearing",
+        name="Review Hearing",
+        event_type="review",
+        description="Follow-up to review compliance with orders",
+        default_duration_minutes=30,
+        typical_location="Courtroom",
+        petitioner_required=True,
+        respondent_required=True,
+        is_mandatory=True,
+        requires_attorney=False,
+        notes_template="Items under review: ",
+        icon="search",
+        color="amber",
+    ),
+    CourtEventTemplate(
+        id="deadline_filing",
+        name="Filing Deadline",
+        event_type="deadline",
+        description="Deadline for submitting documents to court",
+        default_duration_minutes=0,
+        typical_location=None,
+        petitioner_required=False,
+        respondent_required=False,
+        is_mandatory=True,
+        requires_attorney=False,
+        notes_template="Documents due: ",
+        icon="file-text",
+        color="gray",
+    ),
+    CourtEventTemplate(
+        id="deadline_response",
+        name="Response Deadline",
+        event_type="deadline",
+        description="Deadline for responding to motion or petition",
+        default_duration_minutes=0,
+        typical_location=None,
+        petitioner_required=False,
+        respondent_required=False,
+        is_mandatory=True,
+        requires_attorney=False,
+        notes_template="Response required for: ",
+        icon="clock",
+        color="red",
+    ),
+    CourtEventTemplate(
+        id="parenting_class",
+        name="Parenting Class",
+        event_type="other",
+        description="Court-ordered parenting education class",
+        default_duration_minutes=240,
+        typical_location="Community center or virtual",
+        petitioner_required=True,
+        respondent_required=True,
+        is_mandatory=True,
+        requires_attorney=False,
+        notes_template="Class topic: ",
+        icon="book",
+        color="teal",
+    ),
+    CourtEventTemplate(
+        id="gal_interview",
+        name="GAL Interview",
+        event_type="other",
+        description="Interview with Guardian ad Litem",
+        default_duration_minutes=60,
+        typical_location="GAL office or home visit",
+        petitioner_required=False,
+        respondent_required=False,
+        is_mandatory=True,
+        requires_attorney=False,
+        notes_template="GAL interview purpose: ",
+        icon="user-check",
+        color="indigo",
+    ),
+    CourtEventTemplate(
+        id="child_custody_evaluation",
+        name="Custody Evaluation",
+        event_type="other",
+        description="Professional evaluation for custody recommendations",
+        default_duration_minutes=120,
+        typical_location="Evaluator's office",
+        petitioner_required=False,
+        respondent_required=False,
+        is_mandatory=True,
+        requires_attorney=False,
+        notes_template="Evaluation focus: ",
+        icon="clipboard-check",
+        color="purple",
+    ),
+]
+
+
+# =============================================================================
+# Predefined Report Types
+# =============================================================================
+
+class PredefinedReportType(BaseModel):
+    """Pre-configured report type for quick generation."""
+    id: str
+    name: str
+    description: str
+    sections_included: list[str]
+    default_date_range_days: int
+    icon: str = "file-text"
+    color: str = "indigo"
+    requires_date_range: bool = True
+
+
+class PredefinedReportTypeList(BaseModel):
+    """List of available report types."""
+    report_types: list[PredefinedReportType]
+
+
+# Predefined report types for courts
+PREDEFINED_REPORT_TYPES = [
+    PredefinedReportType(
+        id="attendance_compliance",
+        name="Attendance Compliance Report",
+        description="Summary of exchange attendance and on-time rates",
+        sections_included=["schedule", "compliance", "exchanges"],
+        default_date_range_days=30,
+        icon="calendar-check",
+        color="green",
+    ),
+    PredefinedReportType(
+        id="financial_summary",
+        name="Financial Summary Report",
+        description="Overview of financial obligations and payment history",
+        sections_included=["financial", "obligations", "payments"],
+        default_date_range_days=90,
+        icon="dollar-sign",
+        color="blue",
+    ),
+    PredefinedReportType(
+        id="communication_analysis",
+        name="Communication Analysis Report",
+        description="Analysis of parent communication patterns and flagged messages",
+        sections_included=["messages", "flagged_content", "response_times"],
+        default_date_range_days=30,
+        icon="message-square",
+        color="purple",
+    ),
+    PredefinedReportType(
+        id="missed_exchanges",
+        name="Missed Exchanges Report",
+        description="Detailed report of all missed or late exchanges",
+        sections_included=["missed_exchanges", "late_arrivals", "cancellations"],
+        default_date_range_days=90,
+        icon="x-circle",
+        color="red",
+    ),
+    PredefinedReportType(
+        id="complete_case_packet",
+        name="Complete Case Packet",
+        description="Comprehensive evidence package for court proceedings",
+        sections_included=["agreement", "schedule", "compliance", "messages", "financial", "items"],
+        default_date_range_days=180,
+        icon="folder",
+        color="indigo",
+    ),
+    PredefinedReportType(
+        id="item_transfer_log",
+        name="Item Transfer Log",
+        description="KidsCubbie item transfer history and disputes",
+        sections_included=["items", "transfers", "disputes", "condition_reports"],
+        default_date_range_days=90,
+        icon="package",
+        color="amber",
+    ),
+    PredefinedReportType(
+        id="aria_summary",
+        name="ARIA Communication Summary",
+        description="Summary of ARIA interventions and compliance suggestions",
+        sections_included=["aria_interventions", "suggestions_accepted", "good_faith_metrics"],
+        default_date_range_days=30,
+        icon="bot",
+        color="teal",
+    ),
+    PredefinedReportType(
+        id="investigation_report",
+        name="Investigation Report",
+        description="Detailed report for court investigations",
+        sections_included=["all"],
+        default_date_range_days=365,
+        icon="search",
+        color="gray",
+        requires_date_range=True,
+    ),
+]

@@ -282,7 +282,7 @@ export default function ItemsPage() {
         >
           Disputes
           {disputedTransfers.length > 0 && (
-            <Badge variant="destructive" size="sm">{disputedTransfers.length}</Badge>
+            <Badge variant="error" size="sm">{disputedTransfers.length}</Badge>
           )}
         </button>
       </div>
@@ -560,7 +560,7 @@ export default function ItemsPage() {
                           <div className="font-medium text-foreground flex items-center gap-2">
                             {transfer.item_name}
                             {transfer.is_disputed && (
-                              <Badge variant="destructive" size="sm">Disputed</Badge>
+                              <Badge variant="error" size="sm">Disputed</Badge>
                             )}
                           </div>
                           <div className="text-sm text-muted-foreground mt-0.5 flex items-center gap-1">
@@ -672,7 +672,7 @@ export default function ItemsPage() {
                           </div>
                         </div>
                       </div>
-                      <Badge variant="destructive">DISPUTED</Badge>
+                      <Badge variant="error">DISPUTED</Badge>
                     </div>
 
                     <div className="mt-4 p-3 bg-background rounded-lg">

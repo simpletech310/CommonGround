@@ -112,7 +112,8 @@ function DashboardContent() {
           let agreementSummary: AgreementQuickSummary | null = null;
           let upcomingEvents: ScheduleEvent[] = [];
 
-          if (c.status === 'active') {
+          // Load data for both active and pending cases
+          if (c.status === 'active' || c.status === 'pending') {
             try {
               settings = await courtSettingsAPI.getSettings(c.id);
             } catch {
@@ -165,9 +166,9 @@ function DashboardContent() {
     }
   };
 
-  // Get all children from active cases
+  // Get all children from active and pending cases
   const allChildren = casesWithData
-    .filter((c) => c.case.status === 'active')
+    .filter((c) => c.case.status === 'active' || c.case.status === 'pending')
     .flatMap((c) => c.case.children || []);
 
   // Get cases with active court controls
@@ -179,11 +180,11 @@ function DashboardContent() {
   const pendingCases = casesWithData.filter((c) => c.case.status === 'pending');
   const activeCases = casesWithData.filter((c) => c.case.status === 'active');
 
-  // Get the primary active case (for quick actions)
-  const primaryCase = activeCases[0];
+  // Get the primary case (for quick actions) - prefer active, then pending
+  const primaryCase = activeCases[0] || casesWithData[0];
 
-  // Check if user has any setup to complete
-  const needsSetup = activeCases.length === 0;
+  // Check if user has any setup to complete - only show Getting Started if NO cases at all
+  const needsSetup = casesWithData.length === 0;
 
   // Show loading state while data is being fetched
   if (isLoading) {

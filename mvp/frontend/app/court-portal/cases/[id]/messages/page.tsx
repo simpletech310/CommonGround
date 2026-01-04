@@ -11,85 +11,21 @@ import { Label } from "@/components/ui/label";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-// Mock messages with ARIA data (parent-to-parent messages)
-const MOCK_MESSAGES = [
-  {
-    id: "msg-1",
-    sender: "petitioner",
-    sender_name: "Marcus Williams",
-    content: "I can pick up the kids at 5pm on Friday as usual. Let me know if that works.",
-    sent_at: "2025-12-30T14:32:00Z",
-    was_flagged: false,
-    original_content: null,
-    aria_score: 0.05,
-  },
-  {
-    id: "msg-2",
-    sender: "respondent",
-    sender_name: "Jennifer Williams",
-    content: "Fine. But you were late last week and the kids were upset. Please be on time.",
-    sent_at: "2025-12-30T15:10:00Z",
-    was_flagged: true,
-    original_content: "You're always late and the kids are sick of it. Get it together.",
-    aria_score: 0.72,
-    aria_categories: ["hostility", "blame"],
-    suggestion_accepted: true,
-  },
-  {
-    id: "msg-3",
-    sender: "petitioner",
-    sender_name: "Marcus Williams",
-    content: "I understand. Traffic was bad that day but I'll leave earlier. Can we discuss the holiday schedule?",
-    sent_at: "2025-12-30T15:45:00Z",
-    was_flagged: false,
-    original_content: null,
-    aria_score: 0.08,
-  },
-  {
-    id: "msg-4",
-    sender: "respondent",
-    sender_name: "Jennifer Williams",
-    content: "Whatever. I don't really care about the holiday schedule.",
-    sent_at: "2025-12-30T16:20:00Z",
-    was_flagged: true,
-    original_content: "I don't give a damn about your holiday plans.",
-    aria_score: 0.65,
-    aria_categories: ["dismissive", "passive_aggressive"],
-    suggestion_accepted: false,
-  },
-  {
-    id: "msg-5",
-    sender: "petitioner",
-    sender_name: "Marcus Williams",
-    content: "The kids would like to see both of us during Christmas. Could we work something out that works for everyone?",
-    sent_at: "2025-12-30T17:00:00Z",
-    was_flagged: false,
-    original_content: null,
-    aria_score: 0.02,
-  },
-];
-
-// Court message (one-way from court to parents)
-const MOCK_COURT_MESSAGES = [
-  {
-    id: "court-1",
-    from: "Sarah Chen (GAL)",
-    subject: "Upcoming Status Review",
-    content: "Please be prepared to discuss the children's academic progress at the January 15th hearing. I will be reviewing report cards and teacher communications.",
-    sent_at: "2025-12-28T10:00:00Z",
-    read_by: ["petitioner"],
-    delivery_confirmed: true,
-  },
-  {
-    id: "court-2",
-    from: "Court Clerk",
-    subject: "Document Request",
-    content: "Please submit updated financial declarations by January 5, 2026. Failure to comply may result in sanctions.",
-    sent_at: "2025-12-20T09:00:00Z",
-    read_by: ["petitioner", "respondent"],
-    delivery_confirmed: true,
-  },
-];
+interface ParentMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: string;
+  recipient_id: string;
+  recipient_name: string;
+  content: string;
+  sent_at: string;
+  was_flagged: boolean;
+  original_content: string | null;
+  aria_score: number | null;
+  aria_categories: string[] | null;
+  suggestion_accepted: boolean | null;
+}
 
 interface CourtMessage {
   id: string;
@@ -106,13 +42,13 @@ export default function MessagesPage() {
   const params = useParams();
   const router = useRouter();
   const { professional, token, isLoading } = useCourtAuth();
-  const [messages] = useState(MOCK_MESSAGES);
-  const [courtMessages, setCourtMessages] = useState<CourtMessage[]>(MOCK_COURT_MESSAGES);
+  const [messages, setMessages] = useState<ParentMessage[]>([]);
+  const [courtMessages, setCourtMessages] = useState<CourtMessage[]>([]);
   const [activeTab, setActiveTab] = useState<"parent" | "court">("parent");
   const [showComposeForm, setShowComposeForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterFlagged, setFilterFlagged] = useState(false);
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
 
   // Compose form state
   const [subject, setSubject] = useState("");
@@ -130,22 +66,33 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (professional && caseId) {
-      loadCourtMessages();
+      loadAllMessages();
     }
   }, [professional, caseId]);
 
-  const loadCourtMessages = async () => {
+  const loadAllMessages = async () => {
     try {
       setIsLoadingMessages(true);
-      const response = await fetch(`${API_BASE}/court/messages/case/${caseId}`, {
+
+      // Load parent-to-parent messages
+      const parentResponse = await fetch(`${API_BASE}/court/parent-messages/${caseId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      if (response.ok) {
-        const data = await response.json();
+      if (parentResponse.ok) {
+        const parentData = await parentResponse.json();
+        setMessages(parentData);
+      }
+
+      // Load court messages
+      const courtResponse = await fetch(`${API_BASE}/court/messages/case/${caseId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (courtResponse.ok) {
+        const courtData = await courtResponse.json();
         // Transform API response to match our interface
-        const transformed = data.map((msg: any) => ({
+        const transformed = courtData.map((msg: any) => ({
           id: msg.id,
-          from: `Court Official`,
+          from: msg.sent_by_name || `Court Official`,
           subject: msg.subject,
           content: msg.content,
           sent_at: msg.sent_at,
@@ -156,12 +103,10 @@ export default function MessagesPage() {
           delivery_confirmed: true,
           is_urgent: msg.is_urgent,
         }));
-        if (transformed.length > 0) {
-          setCourtMessages(transformed);
-        }
+        setCourtMessages(transformed);
       }
     } catch (err) {
-      console.error('Failed to load court messages:', err);
+      console.error('Failed to load messages:', err);
     } finally {
       setIsLoadingMessages(false);
     }
@@ -234,11 +179,17 @@ export default function MessagesPage() {
     return matchesSearch && matchesFilter;
   });
 
-  const getToxicityColor = (score: number) => {
+  const getToxicityColor = (score: number | null) => {
+    if (score === null) return "bg-gray-100 text-gray-700";
     if (score < 0.3) return "bg-green-100 text-green-700";
     if (score < 0.6) return "bg-yellow-100 text-yellow-700";
     return "bg-red-100 text-red-700";
   };
+
+  // Sort messages by date (newest first)
+  const sortedMessages = [...filteredMessages].sort(
+    (a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
+  );
 
   return (
     <div className="space-y-6">
@@ -348,8 +299,18 @@ export default function MessagesPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {isLoadingMessages ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent" />
+                </div>
+              ) : sortedMessages.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <span className="text-4xl">💬</span>
+                  <p className="mt-4">No messages found</p>
+                </div>
+              ) : (
               <div className="space-y-4">
-                {filteredMessages.map((msg) => (
+                {sortedMessages.map((msg) => (
                   <div
                     key={msg.id}
                     className={`border rounded-lg p-4 ${
@@ -359,18 +320,20 @@ export default function MessagesPage() {
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center space-x-2">
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          msg.sender === "petitioner"
+                          msg.sender_role === "petitioner"
                             ? "bg-blue-100 text-blue-700"
                             : "bg-purple-100 text-purple-700"
                         }`}>
-                          {msg.sender === "petitioner" ? "Petitioner" : "Respondent"}
+                          {msg.sender_role === "petitioner" ? "Petitioner" : "Respondent"}
                         </span>
                         <span className="font-medium text-slate-900">{msg.sender_name}</span>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <span className={`px-2 py-0.5 rounded text-xs ${getToxicityColor(msg.aria_score)}`}>
-                          ARIA: {(msg.aria_score * 100).toFixed(0)}%
-                        </span>
+                        {msg.aria_score !== null && (
+                          <span className={`px-2 py-0.5 rounded text-xs ${getToxicityColor(msg.aria_score)}`}>
+                            ARIA: {(msg.aria_score * 100).toFixed(0)}%
+                          </span>
+                        )}
                         <span className="text-xs text-slate-500">
                           {new Date(msg.sent_at).toLocaleString()}
                         </span>
@@ -409,6 +372,7 @@ export default function MessagesPage() {
                   </div>
                 ))}
               </div>
+              )}
             </CardContent>
           </Card>
         </>

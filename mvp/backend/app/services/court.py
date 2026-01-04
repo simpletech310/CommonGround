@@ -562,6 +562,25 @@ class CourtEventService:
         self, data: CourtEventCreate, created_by: str
     ) -> CourtEvent:
         """Create a court event."""
+        from datetime import time
+
+        # Parse time strings to time objects if provided
+        start_time = None
+        end_time = None
+        if data.start_time:
+            try:
+                parts = data.start_time.split(":")
+                start_time = time(int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                pass
+
+        if data.end_time:
+            try:
+                parts = data.end_time.split(":")
+                end_time = time(int(parts[0]), int(parts[1]))
+            except (ValueError, IndexError):
+                pass
+
         event = CourtEvent(
             id=str(uuid4()),
             case_id=data.case_id,
@@ -570,8 +589,8 @@ class CourtEventService:
             title=data.title,
             description=data.description,
             event_date=data.event_date,
-            start_time=data.start_time,
-            end_time=data.end_time,
+            start_time=start_time,
+            end_time=end_time,
             location=data.location,
             virtual_link=data.virtual_link,
             petitioner_required=data.petitioner_required,

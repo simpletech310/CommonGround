@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FileText, Settings, Calendar, MessageSquare, DollarSign, FileBarChart, Info, MapPin, Shield, MessageCircle, Bot, ChevronRight, Eye, AlertTriangle, Lock, Smartphone, Edit, Search, Package } from "lucide-react";
+import { FileText, Settings, Calendar, MessageSquare, DollarSign, FileBarChart, Info, MapPin, Shield, MessageCircle, Bot, ChevronRight, Eye, AlertTriangle, Lock, Smartphone, Edit, Search, Package, Activity, TrendingUp, TrendingDown, Minus, Scale, ClipboardCheck } from "lucide-react";
 import { useCourtAuth } from "../../layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,31 @@ interface CaseData {
   };
 }
 
+interface CategoryCompliance {
+  status: string;
+  score: number;
+  metrics: Record<string, number>;
+  issues: string[];
+}
+
+interface ComplianceSnapshot {
+  case_id: string;
+  generated_at: string;
+  overall_status: string;
+  overall_score: number;
+  schedule_compliance: CategoryCompliance;
+  communication_compliance: CategoryCompliance;
+  financial_compliance: CategoryCompliance;
+  item_compliance: CategoryCompliance;
+  days_monitored: number;
+  total_exchanges: number;
+  on_time_rate: number;
+  flagged_messages_count: number;
+  overdue_obligations: number;
+  disputed_items: number;
+  trend?: string;
+}
+
 export default function CaseDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -57,6 +82,7 @@ export default function CaseDetailPage() {
 
   const [caseInfo, setCaseInfo] = useState<CourtCase | null>(null);
   const [settings, setSettings] = useState<CourtSettings | null>(null);
+  const [compliance, setCompliance] = useState<ComplianceSnapshot | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,12 +103,15 @@ export default function CaseDetailPage() {
       setIsLoadingData(true);
       setError(null);
 
-      // Load case info and settings in parallel
-      const [casesResponse, settingsResponse] = await Promise.all([
+      // Load case info, settings, and compliance in parallel
+      const [casesResponse, settingsResponse, complianceResponse] = await Promise.all([
         fetch(`${API_BASE}/court/cases`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }),
         fetch(`${API_BASE}/court/settings/case/${caseId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        }),
+        fetch(`${API_BASE}/court/compliance/snapshot/${caseId}?days=30`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }),
       ]);
@@ -98,6 +127,11 @@ export default function CaseDetailPage() {
       if (settingsResponse.ok) {
         const settingsData = await settingsResponse.json();
         setSettings(settingsData);
+      }
+
+      if (complianceResponse.ok) {
+        const complianceData = await complianceResponse.json();
+        setCompliance(complianceData);
       }
     } catch (err) {
       console.error("Failed to load case data:", err);
@@ -192,12 +226,91 @@ export default function CaseDetailPage() {
       <div className="flex gap-2 overflow-x-auto pb-2 border-b border-border">
         <NavButton href={`/court-portal/cases/${params.id}`} active icon={<Eye className="h-4 w-4" />}>Overview</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/settings`} icon={<Settings className="h-4 w-4" />}>Settings</NavButton>
+        <NavButton href={`/court-portal/cases/${params.id}/forms`} icon={<Scale className="h-4 w-4" />}>Court Forms</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/events`} icon={<Calendar className="h-4 w-4" />}>Events</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/messages`} icon={<MessageSquare className="h-4 w-4" />}>Messages</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/payments`} icon={<DollarSign className="h-4 w-4" />}>Payments</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/items`} icon={<Package className="h-4 w-4" />}>Items</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/reports`} icon={<FileBarChart className="h-4 w-4" />}>Reports</NavButton>
       </div>
+
+      {/* Compliance Snapshot */}
+      {compliance && (
+        <Card className={`border-2 ${
+          compliance.overall_status === "green" ? "border-green-200 bg-green-50/50" :
+          compliance.overall_status === "amber" ? "border-amber-200 bg-amber-50/50" :
+          "border-red-200 bg-red-50/50"
+        }`}>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-full ${
+                  compliance.overall_status === "green" ? "bg-green-100" :
+                  compliance.overall_status === "amber" ? "bg-amber-100" :
+                  "bg-red-100"
+                }`}>
+                  <Activity className={`h-5 w-5 ${
+                    compliance.overall_status === "green" ? "text-green-600" :
+                    compliance.overall_status === "amber" ? "text-amber-600" :
+                    "text-red-600"
+                  }`} />
+                </div>
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    Compliance Snapshot
+                    <ComplianceStatusBadge status={compliance.overall_status} />
+                  </CardTitle>
+                  <CardDescription>
+                    Last {compliance.days_monitored} days • Score: {compliance.overall_score.toFixed(0)}/100
+                  </CardDescription>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-3xl font-bold">
+                  {compliance.overall_status === "green" ? "🟢" :
+                   compliance.overall_status === "amber" ? "🟡" : "🔴"}
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <ComplianceCategoryCard
+                title="Schedule"
+                status={compliance.schedule_compliance.status}
+                score={compliance.schedule_compliance.score}
+                metric={`${compliance.on_time_rate.toFixed(0)}% on-time`}
+                issues={compliance.schedule_compliance.issues}
+                icon={<Calendar className="h-4 w-4" />}
+              />
+              <ComplianceCategoryCard
+                title="Communication"
+                status={compliance.communication_compliance.status}
+                score={compliance.communication_compliance.score}
+                metric={`${compliance.flagged_messages_count} flagged`}
+                issues={compliance.communication_compliance.issues}
+                icon={<MessageSquare className="h-4 w-4" />}
+              />
+              <ComplianceCategoryCard
+                title="Financial"
+                status={compliance.financial_compliance.status}
+                score={compliance.financial_compliance.score}
+                metric={`${compliance.overdue_obligations} overdue`}
+                issues={compliance.financial_compliance.issues}
+                icon={<DollarSign className="h-4 w-4" />}
+              />
+              <ComplianceCategoryCard
+                title="Items"
+                status={compliance.item_compliance.status}
+                score={compliance.item_compliance.score}
+                metric={`${compliance.disputed_items} disputed`}
+                issues={compliance.item_compliance.issues}
+                icon={<Package className="h-4 w-4" />}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick Info Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -291,6 +404,12 @@ export default function CaseDetailPage() {
       {/* Quick Actions */}
       <div className="grid md:grid-cols-4 gap-4">
         <ActionCard
+          title="Court Form Workflow"
+          description="Review FL-300, FL-311, FL-320, enter orders"
+          href={`/court-portal/cases/${params.id}/forms`}
+          icon={<Scale className="h-6 w-6" />}
+        />
+        <ActionCard
           title="View Communication Log"
           description="Review all messages between parents"
           href={`/court-portal/cases/${params.id}/messages`}
@@ -307,12 +426,6 @@ export default function CaseDetailPage() {
           description="Create court-ready evidence package"
           href={`/court-portal/cases/${params.id}/reports`}
           icon={<FileText className="h-6 w-6" />}
-        />
-        <ActionCard
-          title="Ask ARIA"
-          description="Query case facts and statistics"
-          href="/court-portal/aria"
-          icon={<Bot className="h-6 w-6" />}
         />
       </div>
     </div>
@@ -402,5 +515,66 @@ function ActionCard({
         </CardContent>
       </Card>
     </Link>
+  );
+}
+
+function ComplianceStatusBadge({ status }: { status: string }) {
+  const config = {
+    green: { label: "Good Standing", bg: "bg-green-100", text: "text-green-700", border: "border-green-200" },
+    amber: { label: "Needs Attention", bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-200" },
+    red: { label: "Issues Found", bg: "bg-red-100", text: "text-red-700", border: "border-red-200" },
+  }[status] || { label: "Unknown", bg: "bg-gray-100", text: "text-gray-700", border: "border-gray-200" };
+
+  return (
+    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${config.bg} ${config.text} ${config.border} border`}>
+      {config.label}
+    </span>
+  );
+}
+
+function ComplianceCategoryCard({
+  title,
+  status,
+  score,
+  metric,
+  issues,
+  icon,
+}: {
+  title: string;
+  status: string;
+  score: number;
+  metric: string;
+  issues: string[];
+  icon: React.ReactNode;
+}) {
+  const statusColors = {
+    green: { bg: "bg-green-50", border: "border-green-200", icon: "text-green-600", text: "text-green-700" },
+    amber: { bg: "bg-amber-50", border: "border-amber-200", icon: "text-amber-600", text: "text-amber-700" },
+    red: { bg: "bg-red-50", border: "border-red-200", icon: "text-red-600", text: "text-red-700" },
+  }[status] || { bg: "bg-gray-50", border: "border-gray-200", icon: "text-gray-600", text: "text-gray-700" };
+
+  return (
+    <div className={`p-3 rounded-xl border ${statusColors.bg} ${statusColors.border}`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className={statusColors.icon}>{icon}</span>
+          <span className="text-sm font-medium text-foreground">{title}</span>
+        </div>
+        <span className="text-lg">
+          {status === "green" ? "🟢" : status === "amber" ? "🟡" : "🔴"}
+        </span>
+      </div>
+      <div className="text-xl font-bold text-foreground mb-1">{score.toFixed(0)}</div>
+      <div className="text-xs text-muted-foreground">{metric}</div>
+      {issues.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-current/10">
+          {issues.map((issue, idx) => (
+            <p key={idx} className={`text-xs ${statusColors.text}`}>
+              • {issue}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

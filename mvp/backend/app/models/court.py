@@ -467,6 +467,15 @@ class CourtEvent(Base, UUIDMixin, TimestampMixin):
     reminder_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # RSVP tracking for parent responses
+    petitioner_rsvp_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    # "attending", "not_attending", "pending", "maybe"
+    respondent_rsvp_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    petitioner_rsvp_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    respondent_rsvp_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    petitioner_rsvp_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    respondent_rsvp_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     def __repr__(self) -> str:
         return f"<CourtEvent {self.title} on {self.event_date}>"
 

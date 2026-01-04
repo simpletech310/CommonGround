@@ -3,11 +3,13 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { Calendar, Clock, MapPin, Users, Gavel, FileText, ClipboardCheck, Search, Book, UserCheck, ChevronLeft, Plus, X } from "lucide-react";
 import { useCourtAuth } from "../../../layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -28,8 +30,58 @@ interface CourtEvent {
   shared_notes?: string;
   petitioner_attended?: boolean;
   respondent_attended?: boolean;
+  // RSVP tracking
+  petitioner_rsvp_status?: string;
+  respondent_rsvp_status?: string;
+  petitioner_rsvp_at?: string;
+  respondent_rsvp_at?: string;
+  petitioner_rsvp_notes?: string;
+  respondent_rsvp_notes?: string;
   created_at: string;
 }
+
+interface EventTemplate {
+  id: string;
+  name: string;
+  event_type: string;
+  description: string;
+  default_duration_minutes: number;
+  typical_location?: string;
+  petitioner_required: boolean;
+  respondent_required: boolean;
+  is_mandatory: boolean;
+  requires_attorney: boolean;
+  notes_template?: string;
+  icon: string;
+  color: string;
+}
+
+const TEMPLATE_ICONS: Record<string, React.ReactNode> = {
+  "gavel": <Gavel className="h-5 w-5" />,
+  "edit": <FileText className="h-5 w-5" />,
+  "users": <Users className="h-5 w-5" />,
+  "clipboard": <ClipboardCheck className="h-5 w-5" />,
+  "handshake": <Users className="h-5 w-5" />,
+  "search": <Search className="h-5 w-5" />,
+  "file-text": <FileText className="h-5 w-5" />,
+  "clock": <Clock className="h-5 w-5" />,
+  "book": <Book className="h-5 w-5" />,
+  "user-check": <UserCheck className="h-5 w-5" />,
+  "clipboard-check": <ClipboardCheck className="h-5 w-5" />,
+  "calendar": <Calendar className="h-5 w-5" />,
+};
+
+const TEMPLATE_COLORS: Record<string, string> = {
+  "red": "bg-red-100 text-red-700 border-red-200",
+  "orange": "bg-orange-100 text-orange-700 border-orange-200",
+  "green": "bg-green-100 text-green-700 border-green-200",
+  "blue": "bg-blue-100 text-blue-700 border-blue-200",
+  "purple": "bg-purple-100 text-purple-700 border-purple-200",
+  "amber": "bg-amber-100 text-amber-700 border-amber-200",
+  "gray": "bg-gray-100 text-gray-700 border-gray-200",
+  "teal": "bg-teal-100 text-teal-700 border-teal-200",
+  "indigo": "bg-indigo-100 text-indigo-700 border-indigo-200",
+};
 
 const EVENT_TYPES = [
   { id: "hearing", label: "Court Hearing", icon: "⚖️" },
@@ -43,9 +95,12 @@ const EVENT_TYPES = [
 export default function EventsPage() {
   const params = useParams();
   const router = useRouter();
-  const { professional, token, isLoading } = useCourtAuth();
+  const { professional, activeGrant, token, isLoading } = useCourtAuth();
   const [events, setEvents] = useState<CourtEvent[]>([]);
+  const [templates, setTemplates] = useState<EventTemplate[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<EventTemplate | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,14 +126,46 @@ export default function EventsPage() {
   useEffect(() => {
     if (professional && caseId) {
       loadEvents();
+      loadTemplates();
     }
   }, [professional, caseId]);
+
+  const loadTemplates = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/court/templates/events`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setTemplates(data.templates || []);
+      }
+    } catch (err) {
+      console.error("Failed to load templates:", err);
+    }
+  };
+
+  const applyTemplate = (template: EventTemplate) => {
+    setSelectedTemplate(template);
+    setEventType(template.event_type);
+    setTitle(template.name);
+    setDescription(template.description);
+    setLocation(template.typical_location || "");
+    setNotes(template.notes_template || "");
+    setIsMandatory(template.is_mandatory);
+    setShowTemplateSelector(false);
+    setShowCreateForm(true);
+  };
 
   const loadEvents = async () => {
     try {
       setIsLoadingEvents(true);
       setError(null);
-      const response = await fetch(`${API_BASE}/court/events/case/${caseId}?include_past=true`, {
+      // MVP Demo mode: grant params are optional
+      let queryParams = "include_past=true";
+      if (activeGrant?.professional_id && activeGrant?.id) {
+        queryParams += `&professional_id=${activeGrant.professional_id}&grant_id=${activeGrant.id}`;
+      }
+      const response = await fetch(`${API_BASE}/court/events/case/${caseId}?${queryParams}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (response.ok) {
@@ -102,6 +189,7 @@ export default function EventsPage() {
     );
   }
 
+
   const handleCreate = async () => {
     if (!eventType || !title || !eventDate) return;
 
@@ -109,7 +197,14 @@ export default function EventsPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE}/court/events`, {
+      // Build query params - optional for MVP demo mode
+      const queryParams = activeGrant?.professional_id && activeGrant?.id
+        ? `professional_id=${activeGrant.professional_id}&grant_id=${activeGrant.id}`
+        : "";
+      const url = queryParams
+        ? `${API_BASE}/court/events?${queryParams}`
+        : `${API_BASE}/court/events`;
+      const response = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -136,7 +231,13 @@ export default function EventsPage() {
         resetForm();
       } else {
         const errorData = await response.json();
-        setError(errorData.detail || "Failed to create event");
+        // Handle validation errors (422) which return an array of error objects
+        if (Array.isArray(errorData.detail)) {
+          const messages = errorData.detail.map((err: any) => err.msg || err.message).join(", ");
+          setError(messages || "Validation error");
+        } else {
+          setError(typeof errorData.detail === "string" ? errorData.detail : "Failed to create event");
+        }
       }
     } catch (err) {
       setError("Failed to create event");
@@ -147,6 +248,8 @@ export default function EventsPage() {
 
   const resetForm = () => {
     setShowCreateForm(false);
+    setShowTemplateSelector(false);
+    setSelectedTemplate(null);
     setEventType("");
     setTitle("");
     setDescription("");
@@ -170,6 +273,19 @@ export default function EventsPage() {
     return <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">Pending</span>;
   };
 
+  const getRsvpBadge = (status: string | undefined) => {
+    switch (status) {
+      case "attending":
+        return <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs">✓ Attending</span>;
+      case "not_attending":
+        return <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">✗ Declined</span>;
+      case "maybe":
+        return <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">? Maybe</span>;
+      default:
+        return <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">No Response</span>;
+    }
+  };
+
   const upcomingEvents = events
     .filter((e) => new Date(e.event_date) >= new Date(new Date().toDateString()))
     .sort((a, b) => new Date(a.event_date).getTime() - new Date(b.event_date).getTime());
@@ -186,20 +302,79 @@ export default function EventsPage() {
           <div className="flex items-center space-x-3">
             <Link
               href={`/court-portal/cases/${params.id}`}
-              className="text-slate-500 hover:text-slate-700"
+              className="text-muted-foreground hover:text-foreground flex items-center gap-1"
             >
-              ← Back to Case
+              <ChevronLeft className="h-4 w-4" />
+              Back to Case
             </Link>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mt-2">Court Events</h1>
-          <p className="text-slate-600">
+          <h1 className="text-2xl font-bold text-foreground mt-2">Court Events</h1>
+          <p className="text-muted-foreground">
             Hearings, deadlines, and court-scheduled events
           </p>
         </div>
-        <Button onClick={() => setShowCreateForm(true)}>
-          Schedule Event
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowTemplateSelector(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Use Template
+          </Button>
+          <Button onClick={() => setShowCreateForm(true)}>
+            <Calendar className="h-4 w-4 mr-2" />
+            Custom Event
+          </Button>
+        </div>
       </div>
+
+      {/* Template Selector */}
+      {showTemplateSelector && (
+        <Card className="border-2 border-indigo-200 bg-indigo-50/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-indigo-600" />
+                  Quick Event Templates
+                </CardTitle>
+                <CardDescription>
+                  Select a template to pre-fill event details
+                </CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setShowTemplateSelector(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {templates.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => applyTemplate(template)}
+                  className={`p-4 rounded-xl border-2 text-left transition-all hover:scale-[1.02] hover:shadow-md ${TEMPLATE_COLORS[template.color] || TEMPLATE_COLORS.indigo}`}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    {TEMPLATE_ICONS[template.icon] || <Calendar className="h-5 w-5" />}
+                    <span className="font-medium text-sm">{template.name}</span>
+                  </div>
+                  <p className="text-xs opacity-75 line-clamp-2">{template.description}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    {template.default_duration_minutes > 0 && (
+                      <Badge variant="secondary" className="text-xs">
+                        {template.default_duration_minutes} min
+                      </Badge>
+                    )}
+                    {template.requires_attorney && (
+                      <Badge variant="secondary" className="text-xs">
+                        Attorney
+                      </Badge>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Error Display */}
       {error && (
@@ -219,10 +394,37 @@ export default function EventsPage() {
       {showCreateForm && (
         <Card className="border-2 border-blue-200 bg-blue-50">
           <CardHeader>
-            <CardTitle>Schedule New Event</CardTitle>
-            <CardDescription>
-              Create a court event that both parents will be notified about
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  Schedule New Event
+                  {selectedTemplate && (
+                    <Badge className={TEMPLATE_COLORS[selectedTemplate.color] || TEMPLATE_COLORS.indigo}>
+                      {selectedTemplate.name}
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  {selectedTemplate
+                    ? `Using "${selectedTemplate.name}" template - customize details below`
+                    : "Create a court event that both parents will be notified about"
+                  }
+                </CardDescription>
+              </div>
+              {selectedTemplate && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedTemplate(null);
+                    setShowTemplateSelector(true);
+                    setShowCreateForm(false);
+                  }}
+                >
+                  Change Template
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Event Type */}
@@ -378,17 +580,31 @@ export default function EventsPage() {
                       </div>
                     </div>
                     <div className="text-right space-y-2">
-                      <div className="text-xs text-slate-500">Attendance</div>
+                      <div className="text-xs text-slate-500">Parent RSVP</div>
                       <div className="flex flex-col space-y-1">
                         <div className="flex items-center justify-end space-x-2">
                           <span className="text-xs text-slate-500">Petitioner:</span>
-                          {getAttendanceBadge(event.petitioner_attended)}
+                          {getRsvpBadge(event.petitioner_rsvp_status)}
                         </div>
                         <div className="flex items-center justify-end space-x-2">
                           <span className="text-xs text-slate-500">Respondent:</span>
-                          {getAttendanceBadge(event.respondent_attended)}
+                          {getRsvpBadge(event.respondent_rsvp_status)}
                         </div>
                       </div>
+                      {(event.petitioner_rsvp_notes || event.respondent_rsvp_notes) && (
+                        <div className="text-xs text-slate-500 mt-1 space-y-1">
+                          {event.petitioner_rsvp_notes && (
+                            <div className="text-left">
+                              <span className="font-medium">P Note:</span> {event.petitioner_rsvp_notes}
+                            </div>
+                          )}
+                          {event.respondent_rsvp_notes && (
+                            <div className="text-left">
+                              <span className="font-medium">R Note:</span> {event.respondent_rsvp_notes}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   {event.shared_notes && (
@@ -434,9 +650,17 @@ export default function EventsPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex space-x-1">
-                      {getAttendanceBadge(event.petitioner_attended)}
-                      {getAttendanceBadge(event.respondent_attended)}
+                    <div className="space-y-2">
+                      <div className="flex flex-col space-y-1">
+                        <div className="flex items-center justify-end space-x-2">
+                          <span className="text-xs text-slate-500">P:</span>
+                          {getAttendanceBadge(event.petitioner_attended)}
+                        </div>
+                        <div className="flex items-center justify-end space-x-2">
+                          <span className="text-xs text-slate-500">R:</span>
+                          {getAttendanceBadge(event.respondent_attended)}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

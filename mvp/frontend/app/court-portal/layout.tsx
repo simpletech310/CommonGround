@@ -3,7 +3,25 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Scale, LayoutDashboard, FolderOpen, Bot, LogOut, Shield, Clock, FileCheck } from "lucide-react";
+import {
+  Scale,
+  LayoutDashboard,
+  FolderOpen,
+  Bot,
+  LogOut,
+  Shield,
+  Clock,
+  FileCheck,
+  FileText,
+  Calendar,
+  BarChart3,
+  Menu,
+  X,
+  ChevronDown,
+  Bell,
+  Users,
+  Gavel,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -169,23 +187,9 @@ export default function CourtPortalLayout({
           </div>
         </header>
 
-        {/* Navigation */}
+        {/* Enhanced Navigation */}
         {professional && !isLoginPage && (
-          <nav className="bg-card border-b border-border shadow-sm">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6">
-              <div className="flex gap-1 overflow-x-auto">
-                <NavLink href="/court-portal/dashboard" current={pathname} icon={<LayoutDashboard className="h-4 w-4" />}>
-                  Dashboard
-                </NavLink>
-                <NavLink href="/court-portal/cases" current={pathname} icon={<FolderOpen className="h-4 w-4" />}>
-                  Cases
-                </NavLink>
-                <NavLink href="/court-portal/aria" current={pathname} icon={<Bot className="h-4 w-4" />}>
-                  ARIA Assistant
-                </NavLink>
-              </div>
-            </div>
-          </nav>
+          <CourtNavigation pathname={pathname} activeGrant={activeGrant} />
         )}
 
         {/* Active Grant Banner */}
@@ -248,23 +252,324 @@ export default function CourtPortalLayout({
   );
 }
 
+// Enhanced Court Navigation Component
+function CourtNavigation({ pathname, activeGrant }: { pathname: string; activeGrant: any }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Navigation items with categories
+  const mainNavItems = [
+    {
+      href: "/court-portal/dashboard",
+      label: "Dashboard",
+      icon: <LayoutDashboard className="h-4 w-4" />,
+      description: "Overview & quick stats",
+    },
+    {
+      href: "/court-portal/cases",
+      label: "Cases",
+      icon: <FolderOpen className="h-4 w-4" />,
+      description: "Manage assigned cases",
+    },
+  ];
+
+  const workflowNavItems = [
+    {
+      href: "/court-portal/forms-queue",
+      label: "Form Queue",
+      icon: <FileText className="h-4 w-4" />,
+      description: "Forms pending review",
+      badge: "3", // This would be dynamic
+    },
+    {
+      href: "/court-portal/calendar",
+      label: "Calendar",
+      icon: <Calendar className="h-4 w-4" />,
+      description: "Hearings & events",
+    },
+  ];
+
+  const toolsNavItems = [
+    {
+      href: "/court-portal/aria",
+      label: "ARIA",
+      icon: <Bot className="h-4 w-4" />,
+      description: "AI Assistant",
+    },
+  ];
+
+  // Case-specific navigation (shown when viewing a case)
+  const caseNavItems = activeGrant ? [
+    {
+      href: `/court-portal/cases/${activeGrant.case_id}`,
+      label: "Overview",
+      icon: <FolderOpen className="h-4 w-4" />,
+    },
+    {
+      href: `/court-portal/cases/${activeGrant.case_id}/forms`,
+      label: "Forms",
+      icon: <FileText className="h-4 w-4" />,
+    },
+    {
+      href: `/court-portal/cases/${activeGrant.case_id}/events`,
+      label: "Hearings",
+      icon: <Gavel className="h-4 w-4" />,
+    },
+    {
+      href: `/court-portal/cases/${activeGrant.case_id}/messages`,
+      label: "Messages",
+      icon: <Users className="h-4 w-4" />,
+    },
+    {
+      href: `/court-portal/cases/${activeGrant.case_id}/agreement`,
+      label: "Agreement",
+      icon: <FileCheck className="h-4 w-4" />,
+    },
+    {
+      href: `/court-portal/cases/${activeGrant.case_id}/reports`,
+      label: "Reports",
+      icon: <BarChart3 className="h-4 w-4" />,
+    },
+  ] : [];
+
+  const isInCaseContext = pathname.includes("/court-portal/cases/") &&
+    pathname !== "/court-portal/cases" &&
+    !pathname.endsWith("/cases/");
+
+  return (
+    <>
+      {/* Desktop Navigation */}
+      <nav className="bg-card border-b border-border shadow-sm hidden md:block">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between">
+            {/* Main Nav */}
+            <div className="flex gap-1">
+              {mainNavItems.map((item) => (
+                <NavLink
+                  key={item.href}
+                  href={item.href}
+                  current={pathname}
+                  icon={item.icon}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+
+              {/* Workflow Section with Visual Separator */}
+              <div className="flex items-center">
+                <div className="h-6 w-px bg-border mx-2" />
+              </div>
+
+              {workflowNavItems.map((item) => (
+                <NavLink
+                  key={item.href}
+                  href={item.href}
+                  current={pathname}
+                  icon={item.icon}
+                  badge={item.badge}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+
+              {/* Tools Section */}
+              <div className="flex items-center">
+                <div className="h-6 w-px bg-border mx-2" />
+              </div>
+
+              {toolsNavItems.map((item) => (
+                <NavLink
+                  key={item.href}
+                  href={item.href}
+                  current={pathname}
+                  icon={item.icon}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+
+            {/* Quick Actions */}
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground hover:text-foreground relative"
+              >
+                <Bell className="h-4 w-4" />
+                <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center">
+                  2
+                </span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Case Sub-Navigation (when viewing a case) */}
+      {isInCaseContext && activeGrant && (
+        <nav className="bg-indigo-50/50 border-b border-indigo-100 hidden md:block">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="flex gap-1 overflow-x-auto py-1">
+              {caseNavItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`px-3 py-2 text-xs font-medium rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                    pathname === item.href ||
+                    (item.label !== "Overview" && pathname.startsWith(item.href))
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "text-indigo-600 hover:bg-indigo-100/50"
+                  }`}
+                >
+                  {item.icon}
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </nav>
+      )}
+
+      {/* Mobile Navigation */}
+      <nav className="bg-card border-b border-border shadow-sm md:hidden">
+        <div className="px-4 py-2 flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="flex items-center gap-2"
+          >
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            <span>Menu</span>
+          </Button>
+
+          {/* Current Location */}
+          <span className="text-sm text-muted-foreground">
+            {pathname.split("/").pop()?.replace(/-/g, " ").replace(/\b\w/g, l => l.toUpperCase()) || "Dashboard"}
+          </span>
+
+          {/* Notifications */}
+          <Button variant="ghost" size="sm" className="relative">
+            <Bell className="h-4 w-4" />
+            <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center">
+              2
+            </span>
+          </Button>
+        </div>
+
+        {/* Mobile Menu Dropdown */}
+        {mobileMenuOpen && (
+          <div className="border-t border-border bg-card px-4 py-3 space-y-4">
+            {/* Main Section */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Main
+              </p>
+              <div className="space-y-1">
+                {mainNavItems.map((item) => (
+                  <MobileNavLink
+                    key={item.href}
+                    href={item.href}
+                    current={pathname}
+                    icon={item.icon}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {item.label}
+                  </MobileNavLink>
+                ))}
+              </div>
+            </div>
+
+            {/* Workflow Section */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Workflow
+              </p>
+              <div className="space-y-1">
+                {workflowNavItems.map((item) => (
+                  <MobileNavLink
+                    key={item.href}
+                    href={item.href}
+                    current={pathname}
+                    icon={item.icon}
+                    badge={item.badge}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {item.label}
+                  </MobileNavLink>
+                ))}
+              </div>
+            </div>
+
+            {/* Tools Section */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Tools
+              </p>
+              <div className="space-y-1">
+                {toolsNavItems.map((item) => (
+                  <MobileNavLink
+                    key={item.href}
+                    href={item.href}
+                    current={pathname}
+                    icon={item.icon}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    {item.label}
+                  </MobileNavLink>
+                ))}
+              </div>
+            </div>
+
+            {/* Case Navigation (if in case context) */}
+            {isInCaseContext && activeGrant && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Current Case
+                </p>
+                <div className="space-y-1">
+                  {caseNavItems.map((item) => (
+                    <MobileNavLink
+                      key={item.href}
+                      href={item.href}
+                      current={pathname}
+                      icon={item.icon}
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      {item.label}
+                    </MobileNavLink>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </nav>
+    </>
+  );
+}
+
+// Desktop NavLink Component
 function NavLink({
   href,
   current,
   icon,
   children,
+  badge,
 }: {
   href: string;
   current: string;
   icon: React.ReactNode;
   children: React.ReactNode;
+  badge?: string;
 }) {
-  const isActive = current.startsWith(href);
+  const isActive = current.startsWith(href) &&
+    (href !== "/court-portal/cases" || current === "/court-portal/cases");
 
   return (
     <Link
       href={href}
-      className={`px-4 py-3 text-sm font-medium border-b-2 flex items-center gap-2 transition-smooth whitespace-nowrap ${
+      className={`px-4 py-3 text-sm font-medium border-b-2 flex items-center gap-2 transition-colors whitespace-nowrap ${
         isActive
           ? "border-indigo-600 text-indigo-600"
           : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
@@ -272,6 +577,52 @@ function NavLink({
     >
       {icon}
       {children}
+      {badge && (
+        <span className="ml-1 px-1.5 py-0.5 text-[10px] font-semibold bg-red-500 text-white rounded-full">
+          {badge}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+// Mobile NavLink Component
+function MobileNavLink({
+  href,
+  current,
+  icon,
+  children,
+  badge,
+  onClick,
+}: {
+  href: string;
+  current: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  badge?: string;
+  onClick?: () => void;
+}) {
+  const isActive = current.startsWith(href);
+
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={`flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+        isActive
+          ? "bg-indigo-100 text-indigo-700"
+          : "text-foreground hover:bg-muted"
+      }`}
+    >
+      <span className="flex items-center gap-2">
+        {icon}
+        {children}
+      </span>
+      {badge && (
+        <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-red-500 text-white rounded-full">
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }

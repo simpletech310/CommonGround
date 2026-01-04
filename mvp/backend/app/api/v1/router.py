@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     calendar,
     exchanges,
     court,
+    court_forms,
     cubbie,
     children,
     clearfund,
@@ -44,6 +45,9 @@ api_router.include_router(exchanges.router, prefix="/exchanges", tags=["Custody 
 
 # Court Access Mode (MediatorMode)
 api_router.include_router(court.router, prefix="/court", tags=["Court Access Mode"])
+
+# Court Form Workflow (FL-300, FL-311, FL-320, FL-340, FL-341, FL-342)
+api_router.include_router(court_forms.router, prefix="/court/forms", tags=["Court Form Workflow"])
 
 # KidsCubbie - High-value item tracking
 api_router.include_router(cubbie.router, prefix="/cubbie", tags=["KidsCubbie"])

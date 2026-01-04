@@ -70,21 +70,42 @@ function PaymentsContent() {
       setIsLoading(true);
       setError(null);
 
-      const [obligationsRes, balanceRes, metricsRes] = await Promise.all([
-        clearfundAPI.listObligations(selectedCase.id),
-        clearfundAPI.getBalance(selectedCase.id),
-        clearfundAPI.getMetrics(selectedCase.id),
-      ]);
+      // Load data individually to handle partial failures
+      let obligationsRes = null;
+      let balanceRes = null;
+      let metricsRes = null;
 
-      setObligations(obligationsRes.items);
-      setBalanceSummary(balanceRes);
-      setMetrics(metricsRes);
+      try {
+        obligationsRes = await clearfundAPI.listObligations(selectedCase.id);
+        setObligations(obligationsRes.items);
+      } catch (err: any) {
+        console.error('Failed to load obligations:', err);
+        setObligations([]);
+        if (err.status === 401) {
+          setError('Authentication error loading obligations. Please try logging out and back in.');
+        } else if (err.status === 403) {
+          setError('You do not have access to this case.');
+        }
+      }
+
+      try {
+        balanceRes = await clearfundAPI.getBalance(selectedCase.id);
+        setBalanceSummary(balanceRes);
+      } catch (err: any) {
+        console.error('Failed to load balance:', err);
+        setBalanceSummary(null);
+      }
+
+      try {
+        metricsRes = await clearfundAPI.getMetrics(selectedCase.id);
+        setMetrics(metricsRes);
+      } catch (err: any) {
+        console.error('Failed to load metrics:', err);
+        setMetrics(null);
+      }
     } catch (err: any) {
       console.error('ClearFund data load error:', err);
-      // Set empty defaults if no data exists yet
-      setObligations([]);
-      setBalanceSummary(null);
-      setMetrics(null);
+      setError(err.message || 'Failed to load payment data');
     } finally {
       setIsLoading(false);
     }
