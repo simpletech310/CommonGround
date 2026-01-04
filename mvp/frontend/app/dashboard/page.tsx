@@ -14,17 +14,13 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
-import { PageContainer, PageHeader, EmptyState } from '@/components/layout';
+import { PageContainer, EmptyState } from '@/components/layout';
 import { useRouter } from 'next/navigation';
 import {
-  casesAPI,
-  courtSettingsAPI,
-  scheduleAPI,
+  familyFilesAPI,
   agreementsAPI,
-  Case,
-  Child,
-  CourtSettingsPublic,
-  ScheduleEvent,
+  FamilyFileDetail,
+  FamilyFileChild,
   Agreement,
   AgreementQuickSummary,
 } from '@/lib/api';
@@ -32,13 +28,9 @@ import {
   Calendar,
   MessageSquare,
   FileText,
-  Clock,
-  MapPin,
-  Users,
-  AlertTriangle,
   ChevronRight,
   Plus,
-  Gavel,
+  FolderOpen,
 } from 'lucide-react';
 
 /**
@@ -46,14 +38,15 @@ import {
  *
  * Design: Child-centered view - children are the focus, not the conflict.
  * Philosophy: "It's about the children, not the parents."
+ *
+ * Architecture: Family Files are the primary container.
+ * SharedCare Agreements live inside Family Files.
  */
 
-interface CaseWithData {
-  case: Case;
-  settings: CourtSettingsPublic | null;
+interface FamilyFileWithData {
+  familyFile: FamilyFileDetail;
   agreements: Agreement[];
   agreementSummary: AgreementQuickSummary | null;
-  upcomingEvents: ScheduleEvent[];
 }
 
 // Helper to calculate child's age
@@ -73,26 +66,10 @@ function getInitials(firstName: string, lastName: string): string {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 }
 
-// Format date for display
-function formatEventDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  if (date.toDateString() === today.toDateString()) {
-    return `Today at ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
-  }
-  if (date.toDateString() === tomorrow.toDateString()) {
-    return `Tomorrow at ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
-  }
-  return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
 function DashboardContent() {
   const { user } = useAuth();
   const router = useRouter();
-  const [casesWithData, setCasesWithData] = useState<CaseWithData[]>([]);
+  const [familyFilesWithData, setFamilyFilesWithData] = useState<FamilyFileWithData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -102,27 +79,36 @@ function DashboardContent() {
   const loadDashboardData = async () => {
     try {
       setIsLoading(true);
-      const cases = await casesAPI.list();
+      const familyFilesResponse = await familyFilesAPI.list();
+      const familyFiles = familyFilesResponse.items;
 
-      // Fetch additional data for each case
-      const casesWithData: CaseWithData[] = await Promise.all(
-        cases.map(async (c) => {
-          let settings: CourtSettingsPublic | null = null;
+      // Fetch additional data for each family file
+      const filesWithData: FamilyFileWithData[] = await Promise.all(
+        familyFiles.map(async (ff) => {
           let agreements: Agreement[] = [];
           let agreementSummary: AgreementQuickSummary | null = null;
-          let upcomingEvents: ScheduleEvent[] = [];
+          let familyFileDetail: FamilyFileDetail;
 
-          // Load data for both active and pending cases
-          if (c.status === 'active' || c.status === 'pending') {
-            try {
-              settings = await courtSettingsAPI.getSettings(c.id);
-            } catch {
-              // Court settings may not exist
-            }
+          try {
+            // Get full family file details (includes children)
+            familyFileDetail = await familyFilesAPI.get(ff.id);
+          } catch {
+            // Fallback to basic info
+            familyFileDetail = {
+              ...ff,
+              children: [],
+              active_agreement_count: 0,
+              quick_accord_count: 0,
+            };
+          }
 
+          // Load agreements for active family files
+          if (ff.status === 'active') {
             try {
-              agreements = await agreementsAPI.list(c.id);
-              // Get summary for the active agreement first, then approved, then first available
+              const agreementsData = await agreementsAPI.listForFamilyFile(ff.id);
+              agreements = agreementsData.items;
+
+              // Get summary for the active agreement
               if (agreements.length > 0) {
                 const activeAgreement = agreements.find(a => a.status === 'active')
                   || agreements.find(a => a.status === 'approved')
@@ -136,29 +122,13 @@ function DashboardContent() {
             } catch {
               // No agreements yet
             }
-
-            try {
-              // Get events for the next 7 days
-              const now = new Date();
-              const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-              const events = await scheduleAPI.getEvents(
-                c.id,
-                now.toISOString().split('T')[0],
-                nextWeek.toISOString().split('T')[0]
-              );
-              upcomingEvents = events
-                .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
-                .slice(0, 3);
-            } catch {
-              // No events yet
-            }
           }
 
-          return { case: c, settings, agreements, agreementSummary, upcomingEvents };
+          return { familyFile: familyFileDetail, agreements, agreementSummary };
         })
       );
 
-      setCasesWithData(casesWithData);
+      setFamilyFilesWithData(filesWithData);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -166,25 +136,24 @@ function DashboardContent() {
     }
   };
 
-  // Get all children from active and pending cases
-  const allChildren = casesWithData
-    .filter((c) => c.case.status === 'active' || c.case.status === 'pending')
-    .flatMap((c) => c.case.children || []);
+  // Get all children from active family files
+  const allChildren = familyFilesWithData
+    .filter((f) => f.familyFile.status === 'active')
+    .flatMap((f) => f.familyFile.children || []);
 
-  // Get cases with active court controls
-  const casesWithActiveControls = casesWithData.filter(
-    (c) => c.settings?.active_controls && c.settings.active_controls.length > 0
+  // Get pending family files (awaiting parent B)
+  const pendingFamilyFiles = familyFilesWithData.filter(
+    (f) => !f.familyFile.is_complete && f.familyFile.status === 'active'
+  );
+  const activeFamilyFiles = familyFilesWithData.filter(
+    (f) => f.familyFile.status === 'active' && f.familyFile.is_complete
   );
 
-  // Get pending cases
-  const pendingCases = casesWithData.filter((c) => c.case.status === 'pending');
-  const activeCases = casesWithData.filter((c) => c.case.status === 'active');
+  // Get the primary family file (for quick actions)
+  const primaryFamilyFile = activeFamilyFiles[0] || familyFilesWithData[0];
 
-  // Get the primary case (for quick actions) - prefer active, then pending
-  const primaryCase = activeCases[0] || casesWithData[0];
-
-  // Check if user has any setup to complete - only show Getting Started if NO cases at all
-  const needsSetup = casesWithData.length === 0;
+  // Check if user has any setup to complete
+  const needsSetup = familyFilesWithData.length === 0;
 
   // Show loading state while data is being fetched
   if (isLoading) {
@@ -207,43 +176,6 @@ function DashboardContent() {
     <div className="min-h-screen bg-background">
       <Navigation />
 
-      {/* Court Controls Banner */}
-      {casesWithActiveControls.length > 0 && (
-        <div className="bg-cg-warning-subtle border-b border-cg-warning/20">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-            {casesWithActiveControls.map(({ case: c, settings }) => (
-              <div key={c.id} className="flex items-start gap-3">
-                <Gavel className="h-5 w-5 text-cg-warning flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-foreground">
-                      Court-Ordered Controls Active
-                    </span>
-                    <span className="text-muted-foreground text-sm">
-                      ({c.case_name})
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {settings?.gps_checkins_required && (
-                      <Badge variant="warning" size="sm">GPS Check-ins</Badge>
-                    )}
-                    {settings?.supervised_exchange_required && (
-                      <Badge variant="warning" size="sm">Supervised Exchanges</Badge>
-                    )}
-                    {settings?.in_app_communication_only && (
-                      <Badge variant="warning" size="sm">In-App Communication Only</Badge>
-                    )}
-                    {settings?.aria_enforcement_locked && (
-                      <Badge variant="warning" size="sm">ARIA Moderation Locked</Badge>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <PageContainer>
         {/* Welcome Header */}
         <div className="mb-8">
@@ -257,17 +189,17 @@ function DashboardContent() {
           </p>
         </div>
 
-        {/* Pending Case Alerts */}
-        {pendingCases.length > 0 && (
+        {/* Pending Family File Alerts */}
+        {pendingFamilyFiles.length > 0 && (
           <Alert variant="default" className="mb-6">
             <AlertDescription>
               <div className="flex items-center justify-between">
                 <span>
-                  You have {pendingCases.length} pending case
-                  {pendingCases.length > 1 ? 's' : ''} awaiting the other parent to join.
+                  You have {pendingFamilyFiles.length} Family File
+                  {pendingFamilyFiles.length > 1 ? 's' : ''} awaiting the other parent to join.
                 </span>
-                <Button variant="ghost" size="sm" onClick={() => router.push('/cases')}>
-                  View cases
+                <Button variant="ghost" size="sm" onClick={() => router.push('/family-files')}>
+                  View Family Files
                 </Button>
               </div>
             </AlertDescription>
@@ -280,7 +212,7 @@ function DashboardContent() {
           <GettingStartedSection router={router} />
         ) : (
           <div className="grid gap-6 lg:grid-cols-3">
-            {/* Left Column - Children & Events */}
+            {/* Left Column - Children & Family Files */}
             <div className="lg:col-span-2 space-y-6">
               {/* Children Cards */}
               {allChildren.length > 0 && (
@@ -290,7 +222,7 @@ function DashboardContent() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => router.push('/cases')}
+                      onClick={() => router.push('/family-files')}
                     >
                       Manage
                       <ChevronRight className="h-4 w-4 ml-1" />
@@ -304,39 +236,40 @@ function DashboardContent() {
                 </section>
               )}
 
-              {/* What's Next - Upcoming Events */}
+              {/* Family Files Section */}
               <section>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-foreground">What's Next</h2>
+                  <h2 className="text-lg font-semibold text-foreground">Family Files</h2>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => router.push('/schedule')}
+                    onClick={() => router.push('/family-files')}
                   >
-                    View schedule
+                    View all
                     <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 </div>
-                {primaryCase?.upcomingEvents && primaryCase.upcomingEvents.length > 0 ? (
-                  <Card>
-                    <CardContent className="p-0">
-                      <div className="divide-y divide-border">
-                        {primaryCase.upcomingEvents.map((event) => (
-                          <EventRow key={event.id} event={event} />
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+                {familyFilesWithData.length > 0 ? (
+                  <div className="space-y-4">
+                    {familyFilesWithData.slice(0, 2).map(({ familyFile, agreements }) => (
+                      <FamilyFileCard
+                        key={familyFile.id}
+                        familyFile={familyFile}
+                        agreementCount={agreements.length}
+                        onClick={() => router.push(`/family-files/${familyFile.id}`)}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <Card>
                     <CardContent className="py-8">
                       <EmptyState
-                        icon={Calendar}
-                        title="No upcoming events"
-                        description="Your schedule is clear for the next 7 days"
+                        icon={FolderOpen}
+                        title="No Family Files"
+                        description="Create a Family File to start co-parenting"
                         action={{
-                          label: 'Add event',
-                          onClick: () => router.push('/schedule'),
+                          label: 'Create Family File',
+                          onClick: () => router.push('/family-files/new'),
                         }}
                       />
                     </CardContent>
@@ -381,67 +314,55 @@ function DashboardContent() {
               </Card>
 
               {/* Agreement Summary */}
-              {primaryCase && (
+              {primaryFamilyFile && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-base">Agreement Summary</CardTitle>
+                    <CardTitle className="text-base">SharedCare Agreements</CardTitle>
                     <CardDescription>
-                      {primaryCase.case.case_name}
+                      {primaryFamilyFile.familyFile.title}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {primaryCase.agreements.length > 0 ? (
+                    {primaryFamilyFile.agreements.length > 0 ? (
                       <div className="space-y-4">
                         {/* AI Summary (if available) */}
-                        {primaryCase.agreementSummary && (
+                        {primaryFamilyFile.agreementSummary && (
                           <div className="space-y-3">
                             {/* Progress Bar */}
                             <div>
                               <div className="flex justify-between text-xs text-muted-foreground mb-1">
                                 <span>Completion</span>
-                                <span>{primaryCase.agreementSummary.completion_percentage}%</span>
+                                <span>{primaryFamilyFile.agreementSummary.completion_percentage}%</span>
                               </div>
                               <div className="h-2 bg-secondary rounded-full overflow-hidden">
                                 <div
                                   className="h-full bg-cg-primary rounded-full transition-all duration-500"
-                                  style={{ width: `${primaryCase.agreementSummary.completion_percentage}%` }}
+                                  style={{ width: `${primaryFamilyFile.agreementSummary.completion_percentage}%` }}
                                 />
                               </div>
                             </div>
 
                             {/* Summary Text */}
                             <p className="text-sm text-muted-foreground leading-relaxed">
-                              {primaryCase.agreementSummary.summary}
+                              {primaryFamilyFile.agreementSummary.summary}
                             </p>
-
-                            {/* Key Points */}
-                            {primaryCase.agreementSummary.key_points.length > 0 && (
-                              <ul className="space-y-1.5">
-                                {primaryCase.agreementSummary.key_points.slice(0, 3).map((point, idx) => (
-                                  <li key={idx} className="flex items-start gap-2 text-sm">
-                                    <span className="text-cg-success mt-0.5">•</span>
-                                    <span className="text-muted-foreground">{point}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
                           </div>
                         )}
 
                         {/* Agreement List */}
                         <div className="space-y-2 pt-2 border-t border-border">
-                          {primaryCase.agreements.slice(0, 2).map((agreement) => (
+                          {primaryFamilyFile.agreements.slice(0, 2).map((agreement) => (
                             <div
                               key={agreement.id}
                               className="flex items-center justify-between"
                             >
                               <div className="flex items-center gap-2">
                                 <FileText className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm">{agreement.title}</span>
+                                <span className="text-sm truncate">{agreement.title}</span>
                               </div>
                               <Badge
                                 variant={
-                                  agreement.status === 'approved'
+                                  agreement.status === 'approved' || agreement.status === 'active'
                                     ? 'success'
                                     : agreement.status === 'pending_approval'
                                     ? 'warning'
@@ -471,7 +392,7 @@ function DashboardContent() {
                         </p>
                         <Button
                           size="sm"
-                          onClick={() => router.push(`/cases/${primaryCase.case.id}`)}
+                          onClick={() => router.push('/agreements')}
                         >
                           Create agreement
                         </Button>
@@ -513,7 +434,7 @@ function DashboardContent() {
 }
 
 // Child Card Component
-function ChildCard({ child }: { child: Child }) {
+function ChildCard({ child }: { child: FamilyFileChild }) {
   const age = calculateAge(child.date_of_birth);
   const initials = getInitials(child.first_name, child.last_name);
 
@@ -540,45 +461,43 @@ function ChildCard({ child }: { child: Child }) {
   );
 }
 
-// Event Row Component
-function EventRow({ event }: { event: ScheduleEvent }) {
-  const isExchange = event.event_type === 'exchange' || event.title.toLowerCase().includes('exchange');
-
+// Family File Card Component
+function FamilyFileCard({
+  familyFile,
+  agreementCount,
+  onClick,
+}: {
+  familyFile: FamilyFileDetail;
+  agreementCount: number;
+  onClick: () => void;
+}) {
   return (
-    <div className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-smooth">
-      {/* Icon */}
-      <div
-        className={`flex-shrink-0 h-10 w-10 rounded-lg flex items-center justify-center ${
-          isExchange ? 'bg-cg-primary-subtle' : 'bg-secondary'
-        }`}
-      >
-        {isExchange ? (
-          <Users className="h-5 w-5 text-cg-primary" />
-        ) : (
-          <Calendar className="h-5 w-5 text-muted-foreground" />
-        )}
-      </div>
-      {/* Details */}
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-foreground truncate">{event.title}</p>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" />
-            {formatEventDate(event.start_time)}
-          </span>
-          {event.location && (
-            <span className="flex items-center gap-1 truncate">
-              <MapPin className="h-3.5 w-3.5" />
-              {event.location}
-            </span>
-          )}
+    <Card className="hover:shadow-md transition-smooth cursor-pointer" onClick={onClick}>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex-shrink-0 h-10 w-10 rounded-lg bg-cg-primary-subtle flex items-center justify-center">
+              <FolderOpen className="h-5 w-5 text-cg-primary" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">{familyFile.title}</h3>
+              <p className="text-sm text-muted-foreground">
+                {familyFile.children?.length || 0} children • {agreementCount} agreement{agreementCount !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {!familyFile.is_complete && (
+              <Badge variant="warning" size="sm">Pending</Badge>
+            )}
+            {familyFile.has_court_case && (
+              <Badge variant="secondary" size="sm">Court Case</Badge>
+            )}
+            <ChevronRight className="h-5 w-5 text-muted-foreground" />
+          </div>
         </div>
-      </div>
-      {/* Type Badge */}
-      {isExchange && (
-        <Badge variant="default" size="sm">Exchange</Badge>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -600,15 +519,16 @@ function GettingStartedSection({ router }: { router: ReturnType<typeof useRouter
                 1
               </div>
               <div className="flex-1">
-                <h4 className="font-medium text-foreground">Create a case</h4>
+                <h4 className="font-medium text-foreground">Create a Family File</h4>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Start by creating a new co-parenting case and inviting the other parent
+                  Start by creating a Family File and inviting the other parent
                 </p>
                 <Button
                   className="mt-3"
-                  onClick={() => router.push('/cases/new')}
+                  onClick={() => router.push('/family-files/new')}
                 >
-                  Create case
+                  <FolderOpen className="h-4 w-4 mr-2" />
+                  Create Family File
                 </Button>
               </div>
             </div>
@@ -618,9 +538,9 @@ function GettingStartedSection({ router }: { router: ReturnType<typeof useRouter
                 2
               </div>
               <div className="flex-1">
-                <h4 className="font-medium text-foreground">Build your agreement</h4>
+                <h4 className="font-medium text-foreground">Build your SharedCare Agreement</h4>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Use our guided interview to create a comprehensive custody agreement
+                  Use ARIA or our guided wizard to create a comprehensive custody agreement
                 </p>
               </div>
             </div>
@@ -630,9 +550,9 @@ function GettingStartedSection({ router }: { router: ReturnType<typeof useRouter
                 3
               </div>
               <div className="flex-1">
-                <h4 className="font-medium text-foreground">Start communicating</h4>
+                <h4 className="font-medium text-foreground">Start co-parenting together</h4>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Send messages with AI-powered moderation to reduce conflict
+                  Send messages, schedule events, and track expenses with AI-powered support
                 </p>
               </div>
             </div>

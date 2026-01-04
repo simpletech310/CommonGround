@@ -340,6 +340,7 @@ async def send_message(
         id=str(uuid.uuid4()),
         case_id=message_data.case_id,
         thread_id=message_data.thread_id,
+        agreement_id=message_data.agreement_id,  # Link to SharedCare Agreement
         sender_id=current_user.id,
         recipient_id=message_data.recipient_id,
         content=message_data.content,
@@ -406,6 +407,7 @@ async def send_message(
         id=new_message.id,
         case_id=new_message.case_id,
         thread_id=new_message.thread_id,
+        agreement_id=new_message.agreement_id,
         sender_id=new_message.sender_id,
         recipient_id=new_message.recipient_id,
         content=new_message.content,
@@ -498,6 +500,7 @@ async def handle_intervention_response(
         id=message.id,
         case_id=message.case_id,
         thread_id=message.thread_id,
+        agreement_id=message.agreement_id,
         sender_id=message.sender_id,
         recipient_id=message.recipient_id,
         content=message.content,
@@ -562,6 +565,65 @@ async def list_messages(
             id=msg.id,
             case_id=msg.case_id,
             thread_id=msg.thread_id,
+            agreement_id=msg.agreement_id,
+            sender_id=msg.sender_id,
+            recipient_id=msg.recipient_id,
+            content=msg.content,
+            message_type=msg.message_type,
+            sent_at=msg.sent_at,
+            delivered_at=msg.delivered_at,
+            read_at=msg.read_at,
+            was_flagged=msg.was_flagged,
+            original_content=msg.original_content
+        )
+        for msg in messages
+    ]
+
+
+@router.get("/agreement/{agreement_id}", response_model=List[MessageResponse])
+async def list_messages_by_agreement(
+    agreement_id: str,
+    limit: int = Query(default=50, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get messages for a specific SharedCare Agreement.
+
+    This is the primary way to get messages in the new agreement-centric architecture.
+
+    Args:
+        agreement_id: Agreement ID
+        limit: Number of messages to return
+        offset: Offset for pagination
+
+    Returns:
+        List of messages (most recent first)
+    """
+    from app.models.agreement import Agreement
+    from app.services.agreement import AgreementService
+
+    # Verify user has access to the agreement
+    agreement_service = AgreementService(db)
+    agreement = await agreement_service.get_agreement(agreement_id, current_user)
+
+    # Get messages for this agreement
+    messages_result = await db.execute(
+        select(Message)
+        .where(Message.agreement_id == agreement_id)
+        .order_by(desc(Message.sent_at))
+        .limit(limit)
+        .offset(offset)
+    )
+    messages = messages_result.scalars().all()
+
+    return [
+        MessageResponse(
+            id=msg.id,
+            case_id=msg.case_id,
+            thread_id=msg.thread_id,
+            agreement_id=msg.agreement_id,
             sender_id=msg.sender_id,
             recipient_id=msg.recipient_id,
             content=msg.content,

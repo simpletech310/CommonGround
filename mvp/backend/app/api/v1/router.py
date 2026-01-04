@@ -8,6 +8,8 @@ from app.api.v1.endpoints import (
     auth,
     users,
     cases,
+    family_files,
+    quick_accords,
     agreements,
     messages,
     schedule,
@@ -23,6 +25,7 @@ from app.api.v1.endpoints import (
     children,
     clearfund,
     exports,
+    intake,
 )
 
 api_router = APIRouter()
@@ -31,6 +34,8 @@ api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(cases.router, prefix="/cases", tags=["Cases"])
+api_router.include_router(family_files.router, prefix="/family-files", tags=["Family Files"])
+api_router.include_router(quick_accords.router, prefix="/quick-accords", tags=["QuickAccords"])
 api_router.include_router(agreements.router, prefix="/agreements", tags=["Agreements"])
 api_router.include_router(messages.router, prefix="/messages", tags=["Messages"])
 api_router.include_router(schedule.router, prefix="/schedule", tags=["Schedule"])
@@ -60,3 +65,6 @@ api_router.include_router(clearfund.router, prefix="/clearfund", tags=["ClearFun
 
 # CaseExport - Court-ready documentation packages
 api_router.include_router(exports.router, prefix="/exports", tags=["Case Exports"])
+
+# ARIA Paralegal - Legal Intake
+api_router.include_router(intake.router, prefix="/intake", tags=["ARIA Paralegal"])

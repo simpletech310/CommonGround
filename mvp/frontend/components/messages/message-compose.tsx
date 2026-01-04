@@ -8,12 +8,13 @@ import { ARIAIntervention } from './aria-intervention';
 
 interface MessageComposeProps {
   caseId: string;
+  agreementId?: string;  // SharedCare Agreement context
   recipientId: string;
   onMessageSent: () => void;
   ariaEnabled?: boolean;
 }
 
-export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled = true }: MessageComposeProps) {
+export function MessageCompose({ caseId, agreementId, recipientId, onMessageSent, ariaEnabled = true }: MessageComposeProps) {
   const [message, setMessage] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -57,6 +58,7 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
 
       await messagesAPI.send({
         case_id: caseId,
+        agreement_id: agreementId,
         recipient_id: recipientId,
         content,
         message_type: 'text',

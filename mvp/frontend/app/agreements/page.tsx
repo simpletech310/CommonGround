@@ -5,74 +5,78 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Navigation } from '@/components/navigation';
-import { casesAPI, agreementsAPI, courtSettingsAPI, Case, Agreement, CourtSettingsPublic } from '@/lib/api';
+import { familyFilesAPI, agreementsAPI, FamilyFileDetail, Agreement } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProtectedRoute } from '@/components/protected-route';
+import { FolderOpen } from 'lucide-react';
+
+interface FamilyFileAgreement {
+  id: string;
+  agreement_number?: string;
+  title: string;
+  agreement_type?: string;
+  version: number;
+  status: string;
+  petitioner_approved?: boolean;
+  respondent_approved?: boolean;
+  effective_date?: string;
+  created_at: string;
+}
+
+interface FamilyFileWithAgreements extends FamilyFileDetail {
+  agreements?: FamilyFileAgreement[];
+}
 
 function AgreementsListContent() {
   const { user } = useAuth();
   const router = useRouter();
-  const [cases, setCases] = useState<Case[]>([]);
-  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
-  const [agreements, setAgreements] = useState<Agreement[]>([]);
-  const [isLoadingCases, setIsLoadingCases] = useState(true);
+  const [familyFiles, setFamilyFiles] = useState<FamilyFileWithAgreements[]>([]);
+  const [selectedFamilyFile, setSelectedFamilyFile] = useState<FamilyFileWithAgreements | null>(null);
+  const [isLoadingFamilyFiles, setIsLoadingFamilyFiles] = useState(true);
   const [isLoadingAgreements, setIsLoadingAgreements] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showBuilderChoice, setShowBuilderChoice] = useState(false);
   const [isCreatingAgreement, setIsCreatingAgreement] = useState(false);
-  const [courtSettings, setCourtSettings] = useState<CourtSettingsPublic | null>(null);
 
   useEffect(() => {
-    loadCases();
+    loadFamilyFiles();
   }, []);
 
-  const loadCases = async () => {
+  const loadFamilyFiles = async () => {
     try {
-      setIsLoadingCases(true);
+      setIsLoadingFamilyFiles(true);
       setError(null);
-      const data = await casesAPI.list();
-      // Show both pending and active cases
-      const availableCases = data.filter((c) => c.status === 'active' || c.status === 'pending');
-      setCases(availableCases);
+      const data = await familyFilesAPI.list();
+      // Filter to active family files
+      const activeFiles = data.items.filter((ff) => ff.status === 'active');
+      setFamilyFiles(activeFiles as FamilyFileWithAgreements[]);
 
-      if (availableCases.length > 0) {
-        handleSelectCase(availableCases[0]);
+      if (activeFiles.length > 0) {
+        handleSelectFamilyFile(activeFiles[0] as FamilyFileWithAgreements);
       }
     } catch (err: any) {
-      console.error('Failed to load cases:', err);
-      setError(err.message || 'Failed to load cases');
+      console.error('Failed to load family files:', err);
+      setError(err.message || 'Failed to load family files');
     } finally {
-      setIsLoadingCases(false);
+      setIsLoadingFamilyFiles(false);
     }
   };
 
-  const handleSelectCase = async (caseItem: Case) => {
-    setSelectedCase(caseItem);
-    setCourtSettings(null);
-    await loadAgreements(caseItem.id);
-    await loadCourtSettings(caseItem.id);
+  const handleSelectFamilyFile = async (familyFile: FamilyFileWithAgreements) => {
+    setSelectedFamilyFile(familyFile);
+    await loadAgreements(familyFile.id);
   };
 
-  const loadCourtSettings = async (caseId: string) => {
-    try {
-      const settings = await courtSettingsAPI.getSettings(caseId);
-      setCourtSettings(settings);
-    } catch (err) {
-      console.error('Failed to load court settings:', err);
-      setCourtSettings(null);
-    }
-  };
-
-  const loadAgreements = async (caseId: string) => {
+  const loadAgreements = async (familyFileId: string) => {
     try {
       setIsLoadingAgreements(true);
       setError(null);
-      const data = await agreementsAPI.list(caseId);
-      setAgreements(data);
+
+      const data = await agreementsAPI.listForFamilyFile(familyFileId);
+      setSelectedFamilyFile(prev => prev ? { ...prev, agreements: data.items as FamilyFileAgreement[] } : null);
     } catch (err: any) {
       console.error('Failed to load agreements:', err);
-      // Don't set error for 404 - just means no agreements yet
       if (err.status !== 404) {
         setError(err.message || 'Failed to load agreements');
       }
@@ -82,16 +86,16 @@ function AgreementsListContent() {
   };
 
   const createAgreementWithBuilder = async (useAria: boolean) => {
-    if (!selectedCase) return;
+    if (!selectedFamilyFile) return;
 
     try {
       setIsCreatingAgreement(true);
       setShowBuilderChoice(false);
-      const newAgreement = await agreementsAPI.create({
-        case_id: selectedCase.id,
-        title: `${selectedCase.case_name} - Parenting Agreement`,
-        agreement_type: 'parenting_plan',
-      });
+
+      const newAgreement = await agreementsAPI.createForFamilyFile(
+        selectedFamilyFile.id,
+        { title: `${selectedFamilyFile.title} - SharedCare Agreement` }
+      );
 
       // Navigate to chosen builder
       if (useAria) {
@@ -108,6 +112,8 @@ function AgreementsListContent() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'active':
+        return 'text-green-700 bg-green-100 border-green-200';
       case 'approved':
         return 'text-green-700 bg-green-100 border-green-200';
       case 'pending_approval':
@@ -127,56 +133,59 @@ function AgreementsListContent() {
     return status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
+  const canCreateAgreement = selectedFamilyFile && !selectedFamilyFile.has_court_case;
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navigation */}
       <Navigation />
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex flex-col lg:flex-row gap-6">
-          {/* Sidebar - Case Selection */}
+          {/* Sidebar - Family File Selection */}
           <div className="w-full lg:w-80 lg:flex-shrink-0">
             <Card>
               <CardHeader>
-                <CardTitle>Cases</CardTitle>
-                <CardDescription>Select a case to view agreements</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <FolderOpen className="h-5 w-5" />
+                  Family Files
+                </CardTitle>
+                <CardDescription>Select a family file to view agreements</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                {isLoadingCases && (
+                {isLoadingFamilyFiles && (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
                   </div>
                 )}
 
-                {!isLoadingCases && cases.length === 0 && (
+                {!isLoadingFamilyFiles && familyFiles.length === 0 && (
                   <div className="text-center py-8">
-                    <p className="text-sm text-gray-500 mb-4">No active cases</p>
-                    <Link href="/cases/new">
-                      <Button size="sm">Create Case</Button>
+                    <p className="text-sm text-gray-500 mb-4">No family files</p>
+                    <Link href="/family-files/new">
+                      <Button size="sm">Create Family File</Button>
                     </Link>
                   </div>
                 )}
 
-                {cases.map((caseItem) => (
+                {familyFiles.map((familyFile) => (
                   <button
-                    key={caseItem.id}
-                    onClick={() => handleSelectCase(caseItem)}
+                    key={familyFile.id}
+                    onClick={() => handleSelectFamilyFile(familyFile)}
                     className={`w-full text-left p-3 rounded-lg transition-colors ${
-                      selectedCase?.id === caseItem.id
+                      selectedFamilyFile?.id === familyFile.id
                         ? 'bg-blue-50 border-2 border-blue-300'
                         : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <p className="font-medium text-gray-900">{caseItem.case_name}</p>
-                      {caseItem.status === 'pending' && (
-                        <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs rounded-full">
-                          Pending
+                      <p className="font-medium text-gray-900">{familyFile.title}</p>
+                      {familyFile.has_court_case && (
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">
+                          Court Case
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">{caseItem.state}</p>
+                    <p className="text-xs text-gray-500 mt-1">{familyFile.family_file_number}</p>
                   </button>
                 ))}
               </CardContent>
@@ -185,7 +194,7 @@ function AgreementsListContent() {
 
           {/* Main Area - Agreements */}
           <div className="flex-1">
-            {!selectedCase && (
+            {!selectedFamilyFile && (
               <Card>
                 <CardContent className="py-12">
                   <div className="text-center">
@@ -195,55 +204,54 @@ function AgreementsListContent() {
                       </svg>
                     </div>
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
-                      Select a case to view agreements
+                      Select a family file to view agreements
                     </h3>
                     <p className="text-gray-600">
-                      Choose a case from the sidebar to manage custody agreements
+                      Choose a family file from the sidebar to manage SharedCare agreements
                     </p>
                   </div>
                 </CardContent>
               </Card>
             )}
 
-            {selectedCase && (
+            {selectedFamilyFile && (
               <div className="space-y-6">
-                {/* Court Controls Notice */}
-                {courtSettings?.agreement_edits_locked && (
+                {/* Court Case Notice */}
+                {selectedFamilyFile.has_court_case && (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                     <div className="flex items-start gap-3">
                       <span className="text-xl">⚖️</span>
                       <div>
-                        <div className="font-medium text-amber-900">Agreement Edits Locked by Court</div>
+                        <div className="font-medium text-amber-900">Court Custody Case Active</div>
                         <p className="text-sm text-amber-700 mt-1">
-                          A court order restricts changes to agreements for this case.
-                          You can view existing agreements but cannot create new ones or make modifications.
-                          Contact the court if you need to request changes.
+                          This family file has an active Court Custody Case. You cannot create new SharedCare Agreements.
+                          Use QuickAccords for situational agreements.
                         </p>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Case Header */}
+                {/* Family File Header */}
                 <Card>
                   <CardHeader>
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                       <div>
-                        <CardTitle className="text-lg sm:text-xl">{selectedCase.case_name} - Agreements</CardTitle>
-                        <CardDescription>Custody and parenting agreements</CardDescription>
+                        <CardTitle className="text-lg sm:text-xl">{selectedFamilyFile.title}</CardTitle>
+                        <CardDescription>SharedCare Agreements</CardDescription>
                       </div>
                       <Button
                         className="w-full sm:w-auto"
                         onClick={() => setShowBuilderChoice(true)}
-                        disabled={isCreatingAgreement || courtSettings?.agreement_edits_locked}
-                        title={courtSettings?.agreement_edits_locked ? 'Agreement edits are locked by court order' : ''}
+                        disabled={isCreatingAgreement || !canCreateAgreement}
+                        title={!canCreateAgreement ? 'Cannot create agreements when court case is active' : ''}
                       >
                         {isCreatingAgreement ? (
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                             Creating...
                           </>
-                        ) : courtSettings?.agreement_edits_locked ? (
+                        ) : !canCreateAgreement ? (
                           <>
                             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -284,7 +292,7 @@ function AgreementsListContent() {
                           <p className="text-sm text-red-700">{error}</p>
                         </div>
                       </div>
-                      <Button variant="outline" className="mt-4" onClick={() => loadAgreements(selectedCase.id)}>
+                      <Button variant="outline" className="mt-4" onClick={() => loadAgreements(selectedFamilyFile.id)}>
                         Try Again
                       </Button>
                     </CardContent>
@@ -292,7 +300,7 @@ function AgreementsListContent() {
                 )}
 
                 {/* Empty State */}
-                {!isLoadingAgreements && !error && agreements.length === 0 && (
+                {!isLoadingAgreements && !error && (!selectedFamilyFile.agreements || selectedFamilyFile.agreements.length === 0) && (
                   <Card>
                     <CardContent className="py-12">
                       <div className="text-center">
@@ -305,20 +313,22 @@ function AgreementsListContent() {
                           No agreements yet
                         </h3>
                         <p className="text-gray-600 mb-6">
-                          Create your first custody agreement to get started
+                          Create your first SharedCare Agreement to get started
                         </p>
-                        <Link href={`/agreements/new?case=${selectedCase.id}`}>
-                          <Button>Create First Agreement</Button>
-                        </Link>
+                        {canCreateAgreement && (
+                          <Button onClick={() => setShowBuilderChoice(true)}>
+                            Create First Agreement
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
                 )}
 
                 {/* Agreements List */}
-                {!isLoadingAgreements && !error && agreements.length > 0 && (
+                {!isLoadingAgreements && !error && selectedFamilyFile.agreements && selectedFamilyFile.agreements.length > 0 && (
                   <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
-                    {agreements.map((agreement) => (
+                    {selectedFamilyFile.agreements.map((agreement) => (
                       <Card
                         key={agreement.id}
                         className="hover:shadow-lg transition-shadow cursor-pointer"
@@ -329,7 +339,7 @@ function AgreementsListContent() {
                             <div className="flex-1 min-w-0">
                               <CardTitle className="text-base sm:text-lg truncate">{agreement.title}</CardTitle>
                               <CardDescription className="mt-1">
-                                Version {agreement.version}
+                                {agreement.agreement_number} • Version {agreement.version}
                               </CardDescription>
                             </div>
                             <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(agreement.status)}`}>
@@ -347,13 +357,13 @@ function AgreementsListContent() {
                                   Awaiting approval from both parents
                                 </p>
                                 <div className="mt-2 text-xs text-yellow-800">
-                                  <p>Petitioner: {agreement.petitioner_approved ? '✓ Approved' : '○ Pending'}</p>
-                                  <p>Respondent: {agreement.respondent_approved ? '✓ Approved' : '○ Pending'}</p>
+                                  <p>Parent A: {agreement.petitioner_approved ? '✓ Approved' : '○ Pending'}</p>
+                                  <p>Parent B: {agreement.respondent_approved ? '✓ Approved' : '○ Pending'}</p>
                                 </div>
                               </div>
                             )}
 
-                            {agreement.status === 'approved' && agreement.effective_date && (
+                            {(agreement.status === 'approved' || agreement.status === 'active') && agreement.effective_date && (
                               <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
                                 <p className="text-xs font-medium text-green-900">
                                   Effective: {new Date(agreement.effective_date).toLocaleDateString()}

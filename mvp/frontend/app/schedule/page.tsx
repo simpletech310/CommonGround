@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Calendar, Clock, FolderOpen, RefreshCw } from 'lucide-react';
+import { Calendar, Clock, FolderOpen, RefreshCw, Users, FileText } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { casesAPI, exchangesAPI, Case, MyTimeCollection, EventV2, ExchangeInstanceForCalendar, CustodyExchangeInstance } from '@/lib/api';
+import { familyFilesAPI, agreementsAPI, exchangesAPI, FamilyFileDetail, Agreement, MyTimeCollection, EventV2, ExchangeInstanceForCalendar, CustodyExchangeInstance } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,43 +21,76 @@ import EventDetails from '@/components/schedule/event-details';
 import ExchangeForm from '@/components/schedule/exchange-form';
 import SilentHandoffCheckIn from '@/components/schedule/silent-handoff-checkin';
 
+interface FamilyFileWithAgreements {
+  familyFile: FamilyFileDetail;
+  agreements: Agreement[];
+}
+
 function ScheduleContent() {
   const router = useRouter();
   const { user } = useAuth();
-  const [cases, setCases] = useState<Case[]>([]);
-  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [familyFilesWithAgreements, setFamilyFilesWithAgreements] = useState<FamilyFileWithAgreements[]>([]);
+  const [selectedFamilyFile, setSelectedFamilyFile] = useState<FamilyFileDetail | null>(null);
+  const [selectedAgreement, setSelectedAgreement] = useState<Agreement | null>(null);
   const [selectedCollection, setSelectedCollection] = useState<MyTimeCollection | null>(null);
   const [showEventForm, setShowEventForm] = useState(false);
   const [showExchangeForm, setShowExchangeForm] = useState(false);
   const [eventFormDate, setEventFormDate] = useState<Date | undefined>();
   const [selectedEvent, setSelectedEvent] = useState<EventV2 | null>(null);
   const [activeTab, setActiveTab] = useState<'calendar' | 'collections' | 'blocks'>('calendar');
-  const [calendarKey, setCalendarKey] = useState(0); // For refreshing calendar
+  const [calendarKey, setCalendarKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedExchangeInstance, setSelectedExchangeInstance] = useState<CustodyExchangeInstance | null>(null);
 
   useEffect(() => {
     if (user) {
-      loadCases();
+      loadFamilyFilesAndAgreements();
     }
   }, [user]);
 
-  const loadCases = async () => {
+  const loadFamilyFilesAndAgreements = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await casesAPI.list();
-      setCases(data);
 
-      const activeCase = data.find(c => c.status === 'active');
-      if (activeCase) {
-        setSelectedCase(activeCase);
-      } else if (data.length > 0) {
-        setSelectedCase(data[0]);
+      const familyFilesResponse = await familyFilesAPI.list();
+      const familyFiles = familyFilesResponse.items || [];
+
+      const filesWithAgreements: FamilyFileWithAgreements[] = [];
+
+      for (const ff of familyFiles) {
+        try {
+          const agreementsResponse = await agreementsAPI.listForFamilyFile(ff.id);
+          filesWithAgreements.push({
+            familyFile: ff,
+            agreements: agreementsResponse,
+          });
+        } catch (err) {
+          console.error(`Failed to load agreements for family file ${ff.id}:`, err);
+          filesWithAgreements.push({
+            familyFile: ff,
+            agreements: [],
+          });
+        }
+      }
+
+      setFamilyFilesWithAgreements(filesWithAgreements);
+
+      // Auto-select first family file with agreements
+      if (filesWithAgreements.length > 0) {
+        const firstWithAgreements = filesWithAgreements.find(f => f.agreements.length > 0);
+        if (firstWithAgreements) {
+          setSelectedFamilyFile(firstWithAgreements.familyFile);
+          if (firstWithAgreements.agreements.length > 0) {
+            setSelectedAgreement(firstWithAgreements.agreements[0]);
+          }
+        } else {
+          setSelectedFamilyFile(filesWithAgreements[0].familyFile);
+        }
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to load cases');
+      setError(err.message || 'Failed to load family files');
     } finally {
       setIsLoading(false);
     }
@@ -71,12 +104,12 @@ function ScheduleContent() {
   const handleEventCreated = () => {
     setShowEventForm(false);
     setEventFormDate(undefined);
-    setCalendarKey(prev => prev + 1); // Refresh calendar
+    setCalendarKey(prev => prev + 1);
   };
 
   const handleExchangeCreated = () => {
     setShowExchangeForm(false);
-    setCalendarKey(prev => prev + 1); // Refresh calendar
+    setCalendarKey(prev => prev + 1);
   };
 
   const handleEventClick = (event: EventV2) => {
@@ -84,7 +117,7 @@ function ScheduleContent() {
   };
 
   const handleRsvpUpdate = () => {
-    setCalendarKey(prev => prev + 1); // Refresh calendar after RSVP
+    setCalendarKey(prev => prev + 1);
   };
 
   const handleCollectionSelect = (collection: MyTimeCollection) => {
@@ -93,19 +126,18 @@ function ScheduleContent() {
   };
 
   const handleExchangeClick = async (exchange: ExchangeInstanceForCalendar) => {
-    if (!selectedCase) return;
+    if (!selectedFamilyFile) return;
 
     try {
-      // Get a date range around the exchange time to ensure we find it
       const exchangeDate = new Date(exchange.scheduled_time);
       const startDate = new Date(exchangeDate);
       startDate.setDate(startDate.getDate() - 1);
       const endDate = new Date(exchangeDate);
       endDate.setDate(endDate.getDate() + 1);
 
-      // Fetch full instance details with date range
+      // Use family file ID for exchanges (they still use case_id which maps to family_file in the legacy system)
       const instances = await exchangesAPI.getUpcoming(
-        selectedCase.id,
+        selectedFamilyFile.id,
         startDate.toISOString(),
         endDate.toISOString()
       );
@@ -123,7 +155,29 @@ function ScheduleContent() {
 
   const handleCheckInComplete = (updatedInstance: CustodyExchangeInstance) => {
     setSelectedExchangeInstance(updatedInstance);
-    setCalendarKey(prev => prev + 1); // Refresh calendar
+    setCalendarKey(prev => prev + 1);
+  };
+
+  const handleFamilyFileChange = (familyFileId: string) => {
+    const item = familyFilesWithAgreements.find(f => f.familyFile.id === familyFileId);
+    if (item) {
+      setSelectedFamilyFile(item.familyFile);
+      if (item.agreements.length > 0) {
+        setSelectedAgreement(item.agreements[0]);
+      } else {
+        setSelectedAgreement(null);
+      }
+      setCalendarKey(prev => prev + 1);
+    }
+  };
+
+  const handleAgreementChange = (agreementId: string) => {
+    const currentData = familyFilesWithAgreements.find(f => f.familyFile.id === selectedFamilyFile?.id);
+    const agreement = currentData?.agreements.find(a => a.id === agreementId);
+    if (agreement) {
+      setSelectedAgreement(agreement);
+      setCalendarKey(prev => prev + 1);
+    }
   };
 
   if (!user) {
@@ -147,7 +201,7 @@ function ScheduleContent() {
     );
   }
 
-  if (!selectedCase) {
+  if (!selectedFamilyFile) {
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
@@ -156,11 +210,11 @@ function ScheduleContent() {
             <CardContent className="py-12">
               <EmptyState
                 icon={Calendar}
-                title="No Cases Found"
-                description="You need to create or join a case to access the schedule."
+                title="No Family Files Found"
+                description="You need to create or join a Family File to access the schedule."
                 action={{
-                  label: 'Go to Cases',
-                  onClick: () => router.push('/cases'),
+                  label: 'Go to Family Files',
+                  onClick: () => router.push('/family-files'),
                 }}
               />
             </CardContent>
@@ -169,6 +223,8 @@ function ScheduleContent() {
       </div>
     );
   }
+
+  const currentFamilyFileData = familyFilesWithAgreements.find(f => f.familyFile.id === selectedFamilyFile.id);
 
   return (
     <div className="min-h-screen bg-background">
@@ -179,8 +235,18 @@ function ScheduleContent() {
         <PageContainer className="py-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Schedule & Calendar</h1>
-              <p className="text-muted-foreground mt-1">{selectedCase.case_name}</p>
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">TimeBridge</h1>
+              <div className="flex items-center gap-2 text-muted-foreground mt-1">
+                <Users className="h-4 w-4" />
+                <span>{selectedFamilyFile.name}</span>
+                {selectedAgreement && (
+                  <>
+                    <span className="text-border">/</span>
+                    <FileText className="h-4 w-4" />
+                    <span>{selectedAgreement.title}</span>
+                  </>
+                )}
+              </div>
             </div>
             <div className="flex gap-2">
               <Button onClick={() => handleCreateEvent()} className="flex items-center gap-2">
@@ -197,21 +263,42 @@ function ScheduleContent() {
               </Button>
             </div>
           </div>
-          {cases.length > 1 && (
-            <div className="mt-4 max-w-xs">
-              <Select
-                value={selectedCase.id}
-                onChange={(e) => {
-                  const case_ = cases.find(c => c.id === e.target.value);
-                  if (case_) setSelectedCase(case_);
-                }}
-              >
-                {cases.map(case_ => (
-                  <SelectOption key={case_.id} value={case_.id}>{case_.case_name}</SelectOption>
-                ))}
-              </Select>
-            </div>
-          )}
+
+          {/* Family File and Agreement Selectors */}
+          <div className="mt-4 flex flex-col sm:flex-row gap-4">
+            {familyFilesWithAgreements.length > 1 && (
+              <div className="flex-1 max-w-xs">
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Family File</label>
+                <Select
+                  value={selectedFamilyFile.id}
+                  onChange={(e) => handleFamilyFileChange(e.target.value)}
+                >
+                  {familyFilesWithAgreements.map(item => (
+                    <SelectOption key={item.familyFile.id} value={item.familyFile.id}>
+                      {item.familyFile.name}
+                    </SelectOption>
+                  ))}
+                </Select>
+              </div>
+            )}
+
+            {currentFamilyFileData && currentFamilyFileData.agreements.length > 0 && (
+              <div className="flex-1 max-w-xs">
+                <label className="block text-sm font-medium text-muted-foreground mb-1">SharedCare Agreement</label>
+                <Select
+                  value={selectedAgreement?.id || ''}
+                  onChange={(e) => handleAgreementChange(e.target.value)}
+                >
+                  <SelectOption value="">All Agreements</SelectOption>
+                  {currentFamilyFileData.agreements.map(agreement => (
+                    <SelectOption key={agreement.id} value={agreement.id}>
+                      {agreement.title}
+                    </SelectOption>
+                  ))}
+                </Select>
+              </div>
+            )}
+          </div>
         </PageContainer>
       </div>
 
@@ -267,7 +354,8 @@ function ScheduleContent() {
           {activeTab === 'calendar' && (
             <CalendarView
               key={calendarKey}
-              caseId={selectedCase.id}
+              caseId={selectedFamilyFile.id}
+              agreementId={selectedAgreement?.id}
               onCreateEvent={handleCreateEvent}
               onEventClick={handleEventClick}
               onExchangeClick={handleExchangeClick}
@@ -275,12 +363,12 @@ function ScheduleContent() {
           )}
           {activeTab === 'collections' && (
             <div className="max-w-3xl mx-auto">
-              <CollectionsManager caseId={selectedCase.id} onCollectionSelect={handleCollectionSelect} />
+              <CollectionsManager caseId={selectedFamilyFile.id} onCollectionSelect={handleCollectionSelect} />
             </div>
           )}
           {activeTab === 'blocks' && (
             <div className="max-w-3xl mx-auto">
-              <TimeBlocksManager caseId={selectedCase.id} selectedCollection={selectedCollection || undefined} />
+              <TimeBlocksManager caseId={selectedFamilyFile.id} selectedCollection={selectedCollection || undefined} />
             </div>
           )}
         </div>
@@ -288,7 +376,8 @@ function ScheduleContent() {
 
       {showEventForm && (
         <EventForm
-          caseId={selectedCase.id}
+          caseId={selectedFamilyFile.id}
+          agreementId={selectedAgreement?.id}
           onClose={() => {
             setShowEventForm(false);
             setEventFormDate(undefined);
@@ -308,7 +397,8 @@ function ScheduleContent() {
 
       {showExchangeForm && (
         <ExchangeForm
-          caseId={selectedCase.id}
+          caseId={selectedFamilyFile.id}
+          agreementId={selectedAgreement?.id}
           onClose={() => setShowExchangeForm(false)}
           onSuccess={handleExchangeCreated}
         />

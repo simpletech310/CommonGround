@@ -20,6 +20,7 @@ import { Card } from '@/components/ui/card';
 
 interface ExchangeFormProps {
   caseId: string;
+  agreementId?: string;  // Link exchange to specific SharedCare Agreement
   onClose: () => void;
   onSuccess?: () => void;
   initialDate?: Date;

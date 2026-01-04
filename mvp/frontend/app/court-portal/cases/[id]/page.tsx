@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FileText, Settings, Calendar, MessageSquare, DollarSign, FileBarChart, Info, MapPin, Shield, MessageCircle, Bot, ChevronRight, Eye, AlertTriangle, Lock, Smartphone, Edit, Search, Package, Activity, TrendingUp, TrendingDown, Minus, Scale, ClipboardCheck } from "lucide-react";
+import { FileText, Settings, Calendar, MessageSquare, DollarSign, FileBarChart, Info, MapPin, Shield, MessageCircle, Bot, ChevronRight, Eye, AlertTriangle, Lock, Smartphone, Edit, Search, Package, Activity, TrendingUp, TrendingDown, Minus, Scale, ClipboardCheck, UserPlus } from "lucide-react";
 import { useCourtAuth } from "../../layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -405,6 +405,12 @@ export default function CaseDetailPage() {
       {/* Quick Actions */}
       <div className="grid md:grid-cols-4 gap-4">
         <ActionCard
+          title="ARIA Paralegal"
+          description="Send legal intake request to parent"
+          href={`/court-portal/cases/${params.id}/intake`}
+          icon={<UserPlus className="h-6 w-6" />}
+        />
+        <ActionCard
           title="Court Form Workflow"
           description="Review FL-300, FL-311, FL-320, enter orders"
           href={`/court-portal/cases/${params.id}/forms`}
@@ -415,12 +421,6 @@ export default function CaseDetailPage() {
           description="Review all messages between parents"
           href={`/court-portal/cases/${params.id}/messages`}
           icon={<MessageCircle className="h-6 w-6" />}
-        />
-        <ActionCard
-          title="KidsCubbie Items"
-          description="Track high-value item transfers"
-          href={`/court-portal/cases/${params.id}/items`}
-          icon={<Package className="h-6 w-6" />}
         />
         <ActionCard
           title="Generate Court Packet"

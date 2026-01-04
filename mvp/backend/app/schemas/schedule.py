@@ -131,6 +131,7 @@ class ScheduleEventCreate(BaseModel):
     """Create a new schedule event."""
 
     collection_id: str
+    agreement_id: Optional[str] = None  # SharedCare Agreement context
     title: str = Field(..., min_length=1)
     start_time: datetime
     end_time: datetime
@@ -172,6 +173,7 @@ class ScheduleEventResponse(BaseModel):
     id: str
     case_id: str
     collection_id: Optional[str] = None
+    agreement_id: Optional[str] = None  # SharedCare Agreement context
     created_by: Optional[str] = None
     title: str  # Filtered for non-creators
     description: Optional[str] = None  # Filtered

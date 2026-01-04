@@ -28,6 +28,15 @@ class CustodyExchange(Base):
         nullable=False,
         index=True
     )
+
+    # Agreement link (primary - exchanges belong to a specific SharedCare Agreement)
+    agreement_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("agreements.id"),
+        nullable=True,
+        index=True
+    )
+
     created_by: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.id"),

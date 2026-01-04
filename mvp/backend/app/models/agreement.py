@@ -1,33 +1,76 @@
 """
-Agreement models - custody and co-parenting agreements.
+Agreement models - custody and co-parenting agreements (SharedCare Agreements).
+
+Agreement Types:
+- shared_care: Formal 18-section comprehensive agreement (SharedCare Agreement)
+- parenting: Legacy type for backwards compatibility (treated as shared_care)
+- custody: Legacy type (treated as shared_care)
+- visitation: Legacy type (treated as shared_care)
+
+Note: QuickAccords are separate lightweight agreements in family_file.py
 """
 
 from datetime import datetime
-from typing import Optional
+from enum import Enum
+from typing import Optional, TYPE_CHECKING
+import secrets
+import string
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
+if TYPE_CHECKING:
+    from app.models.case import Case
+    from app.models.family_file import FamilyFile
+
+
+class AgreementType(str, Enum):
+    """Type of agreement."""
+    SHARED_CARE = "shared_care"  # Formal 18-section SharedCare Agreement
+    PARENTING = "parenting"  # Legacy type, treated same as shared_care
+    CUSTODY = "custody"  # Legacy type
+    VISITATION = "visitation"  # Legacy type
+
+
+def generate_shared_care_number() -> str:
+    """Generate a unique SharedCare Agreement number (SCA-XXXXXX)."""
+    chars = string.ascii_uppercase + string.digits
+    random_part = ''.join(secrets.choice(chars) for _ in range(6))
+    return f"SCA-{random_part}"
+
 
 class Agreement(Base, UUIDMixin, TimestampMixin):
     """
-    Agreement - The source of truth for custody arrangements.
+    Agreement - The source of truth for custody arrangements (SharedCare Agreement).
 
     This is the active agreement. Version history is in AgreementVersion.
+    Supports both legacy Case linkage and new FamilyFile linkage.
     """
 
     __tablename__ = "agreements"
 
-    # Case link
-    case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), index=True)
+    # Case link (legacy - for backwards compatibility)
+    case_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("cases.id"), index=True, nullable=True
+    )
+
+    # Family File link (new)
+    family_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("family_files.id"), index=True, nullable=True
+    )
+
+    # Agreement number (SCA-XXXXXX format)
+    agreement_number: Mapped[Optional[str]] = mapped_column(
+        String(20), unique=True, index=True, nullable=True
+    )
 
     # Agreement metadata
-    title: Mapped[str] = mapped_column(String(200), default="Parenting Agreement")
+    title: Mapped[str] = mapped_column(String(200), default="SharedCare Agreement")
     agreement_type: Mapped[str] = mapped_column(
-        String(50), default="parenting"
-    )  # parenting, custody, visitation
+        String(50), default=AgreementType.SHARED_CARE.value
+    )  # shared_care, parenting (legacy), custody (legacy), visitation (legacy)
 
     # Version tracking
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -63,7 +106,10 @@ class Agreement(Base, UUIDMixin, TimestampMixin):
     pdf_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # SHA-256
 
     # Relationships
-    case: Mapped["Case"] = relationship("Case", back_populates="agreements")
+    case: Mapped[Optional["Case"]] = relationship("Case", back_populates="agreements")
+    family_file: Mapped[Optional["FamilyFile"]] = relationship(
+        "FamilyFile", back_populates="agreements"
+    )
     sections: Mapped[list["AgreementSection"]] = relationship(
         "AgreementSection", back_populates="agreement", cascade="all, delete-orphan"
     )

@@ -18,8 +18,13 @@ class MessageThread(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "message_threads"
 
-    # Case link
+    # Case link (legacy - being phased out)
     case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), index=True)
+
+    # Agreement link (primary - messages belong to a specific SharedCare Agreement)
+    agreement_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("agreements.id"), index=True, nullable=True
+    )
 
     # Thread info
     subject: Mapped[str] = mapped_column(String(200))
@@ -60,6 +65,10 @@ class Message(Base, UUIDMixin, TimestampMixin):
     case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), index=True)
     thread_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("message_threads.id"), index=True, nullable=True
+    )
+    # Agreement link (primary - messages belong to a specific SharedCare Agreement)
+    agreement_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("agreements.id"), index=True, nullable=True
     )
 
     # Sender/recipient

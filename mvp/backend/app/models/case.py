@@ -61,6 +61,11 @@ class Case(Base, UUIDMixin, TimestampMixin):
         Boolean, default=True
     )  # Can agreement be modified
 
+    # Link to Family File (optional - for migration)
+    family_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("family_files.id"), nullable=True
+    )
+
     # ARIA Settings (Court Documentation Protection)
     aria_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True

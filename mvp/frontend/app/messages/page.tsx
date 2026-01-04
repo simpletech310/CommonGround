@@ -4,12 +4,11 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { casesAPI, messagesAPI, courtSettingsAPI, Case, Message, CourtSettingsPublic } from '@/lib/api';
+import { familyFilesAPI, agreementsAPI, messagesAPI, FamilyFileDetail, Agreement, Message } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Switch } from '@/components/ui/switch';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
 import { PageContainer, EmptyState } from '@/components/layout';
@@ -19,142 +18,125 @@ import {
   Plus,
   X,
   Sparkles,
-  Lock,
   AlertTriangle,
-  Send,
   Clock,
   CheckCircle,
   Lightbulb,
+  FileText,
+  ChevronRight,
+  Users,
 } from 'lucide-react';
+
+interface FamilyFileWithAgreements {
+  familyFile: FamilyFileDetail;
+  agreements: Agreement[];
+}
 
 function MessagesContent() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const caseIdParam = searchParams.get('case');
+  const agreementIdParam = searchParams.get('agreement');
+  const familyFileIdParam = searchParams.get('familyFile');
 
-  const [cases, setCases] = useState<Case[]>([]);
-  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [familyFilesWithAgreements, setFamilyFilesWithAgreements] = useState<FamilyFileWithAgreements[]>([]);
+  const [selectedFamilyFile, setSelectedFamilyFile] = useState<FamilyFileDetail | null>(null);
+  const [selectedAgreement, setSelectedAgreement] = useState<Agreement | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoadingCases, setIsLoadingCases] = useState(true);
+  const [isLoadingFamilyFiles, setIsLoadingFamilyFiles] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCompose, setShowCompose] = useState(false);
-  const [ariaSettings, setAriaSettings] = useState<{
-    aria_enabled: boolean;
-    aria_provider: string;
-    aria_disabled_at?: string;
-    aria_disabled_by?: string;
-  } | null>(null);
-  const [isUpdatingAria, setIsUpdatingAria] = useState(false);
-  const [courtSettings, setCourtSettings] = useState<CourtSettingsPublic | null>(null);
 
   useEffect(() => {
-    loadCases();
+    loadFamilyFilesAndAgreements();
   }, []);
 
   useEffect(() => {
-    if (caseIdParam && cases.length > 0) {
-      const caseToSelect = cases.find((c) => c.id === caseIdParam);
-      if (caseToSelect) {
-        handleSelectCase(caseToSelect);
+    // Handle URL params for pre-selecting agreement
+    if (familyFilesWithAgreements.length > 0 && agreementIdParam) {
+      for (const item of familyFilesWithAgreements) {
+        const agreement = item.agreements.find(a => a.id === agreementIdParam);
+        if (agreement) {
+          setSelectedFamilyFile(item.familyFile);
+          handleSelectAgreement(agreement, item.familyFile);
+          break;
+        }
       }
     }
-  }, [caseIdParam, cases]);
+  }, [agreementIdParam, familyFilesWithAgreements]);
 
-  const loadCases = async () => {
+  const loadFamilyFilesAndAgreements = async () => {
     try {
-      setIsLoadingCases(true);
+      setIsLoadingFamilyFiles(true);
       setError(null);
-      const data = await casesAPI.list();
-      // Show both pending and active cases
-      const availableCases = data.filter((c) => c.status === 'active' || c.status === 'pending');
-      setCases(availableCases);
 
-      // Auto-select first available case if available
-      if (availableCases.length > 0 && !selectedCase) {
-        handleSelectCase(availableCases[0]);
+      // Load family files
+      const familyFilesResponse = await familyFilesAPI.list();
+      const familyFiles = familyFilesResponse.items || [];
+
+      // Load agreements for each family file
+      const filesWithAgreements: FamilyFileWithAgreements[] = [];
+
+      for (const ff of familyFiles) {
+        try {
+          const agreementsResponse = await agreementsAPI.listForFamilyFile(ff.id);
+          filesWithAgreements.push({
+            familyFile: ff,
+            agreements: agreementsResponse,
+          });
+        } catch (err) {
+          console.error(`Failed to load agreements for family file ${ff.id}:`, err);
+          filesWithAgreements.push({
+            familyFile: ff,
+            agreements: [],
+          });
+        }
+      }
+
+      setFamilyFilesWithAgreements(filesWithAgreements);
+
+      // Auto-select first family file with agreements if available
+      if (filesWithAgreements.length > 0 && !selectedFamilyFile) {
+        const firstWithAgreements = filesWithAgreements.find(f => f.agreements.length > 0);
+        if (firstWithAgreements) {
+          setSelectedFamilyFile(firstWithAgreements.familyFile);
+          if (firstWithAgreements.agreements.length > 0) {
+            handleSelectAgreement(firstWithAgreements.agreements[0], firstWithAgreements.familyFile);
+          }
+        } else {
+          setSelectedFamilyFile(filesWithAgreements[0].familyFile);
+        }
       }
     } catch (err: any) {
-      console.error('Failed to load cases:', err);
-      setError(err.message || 'Failed to load cases');
+      console.error('Failed to load family files:', err);
+      setError(err.message || 'Failed to load family files');
     } finally {
-      setIsLoadingCases(false);
+      setIsLoadingFamilyFiles(false);
     }
   };
 
-  const handleSelectCase = async (caseItem: Case) => {
-    setSelectedCase(caseItem);
+  const handleSelectFamilyFile = (familyFile: FamilyFileDetail) => {
+    setSelectedFamilyFile(familyFile);
+    setSelectedAgreement(null);
+    setMessages([]);
     setShowCompose(false);
-    setCourtSettings(null);
-    await loadMessages(caseItem.id);
-    await loadAriaSettings(caseItem.id);
-    await loadCourtSettings(caseItem.id);
   };
 
-  const loadCourtSettings = async (caseId: string) => {
-    try {
-      const settings = await courtSettingsAPI.getSettings(caseId);
-      setCourtSettings(settings);
-    } catch (err) {
-      console.error('Failed to load court settings:', err);
-      setCourtSettings(null);
+  const handleSelectAgreement = async (agreement: Agreement, familyFile?: FamilyFileDetail) => {
+    if (familyFile) {
+      setSelectedFamilyFile(familyFile);
     }
+    setSelectedAgreement(agreement);
+    setShowCompose(false);
+    await loadMessages(agreement.id);
   };
 
-  const loadAriaSettings = async (caseId: string) => {
-    try {
-      const response = await fetch(`http://localhost:8000/api/v1/cases/${caseId}/aria-settings`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setAriaSettings(data);
-      }
-    } catch (err) {
-      console.error('Failed to load ARIA settings:', err);
-    }
-  };
-
-  const toggleAriaEnabled = async () => {
-    if (!selectedCase || !ariaSettings) return;
-
-    try {
-      setIsUpdatingAria(true);
-      const response = await fetch(`http://localhost:8000/api/v1/cases/${selectedCase.id}/aria-settings`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          aria_enabled: !ariaSettings.aria_enabled,
-          aria_provider: ariaSettings.aria_provider,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAriaSettings(data);
-      } else {
-        const errorData = await response.json();
-        alert(`Failed to update ARIA settings: ${errorData.detail || 'Unknown error'}`);
-      }
-    } catch (err) {
-      console.error('Failed to update ARIA settings:', err);
-      alert('Failed to update ARIA settings');
-    } finally {
-      setIsUpdatingAria(false);
-    }
-  };
-
-  const loadMessages = async (caseId: string) => {
+  const loadMessages = async (agreementId: string) => {
     try {
       setIsLoadingMessages(true);
       setError(null);
-      const data = await messagesAPI.list(caseId);
+      const data = await messagesAPI.listByAgreement(agreementId);
       setMessages(data.reverse()); // Reverse to show oldest first
     } catch (err: any) {
       console.error('Failed to load messages:', err);
@@ -166,18 +148,19 @@ function MessagesContent() {
 
   const handleMessageSent = () => {
     setShowCompose(false);
-    if (selectedCase) {
-      loadMessages(selectedCase.id);
+    if (selectedAgreement) {
+      loadMessages(selectedAgreement.id);
     }
   };
 
   const getOtherParentId = () => {
-    if (!selectedCase || !user) return '';
-    // Find the other parent from case participants
-    const otherParticipant = selectedCase.participants?.find(
-      (p) => p.user_id !== user.id
-    );
-    return otherParticipant?.user_id || '';
+    if (!selectedFamilyFile || !user) return '';
+    // Get the other parent from the family file
+    if (selectedFamilyFile.parent_a_id === user.id) {
+      return selectedFamilyFile.parent_b_id || '';
+    } else {
+      return selectedFamilyFile.parent_a_id;
+    }
   };
 
   const formatTime = (dateString: string) => {
@@ -195,92 +178,188 @@ function MessagesContent() {
     }
   };
 
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+      case 'approved':
+        return <Badge variant="success" size="sm">Active</Badge>;
+      case 'draft':
+        return <Badge variant="secondary" size="sm">Draft</Badge>;
+      case 'pending_approval':
+        return <Badge variant="warning" size="sm">Pending</Badge>;
+      default:
+        return <Badge variant="secondary" size="sm">{status}</Badge>;
+    }
+  };
+
+  // Get agreements for selected family file
+  const selectedFamilyFileData = familyFilesWithAgreements.find(
+    f => f.familyFile.id === selectedFamilyFile?.id
+  );
+
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
 
       <PageContainer className="max-w-7xl">
-        {/* Mobile Case Selector */}
-        <div className="lg:hidden mb-4">
+        {/* Mobile Selector */}
+        <div className="lg:hidden mb-4 space-y-3">
           <Card>
             <CardContent className="py-3">
               <label className="text-sm font-medium text-muted-foreground block mb-2">
-                Select Case
+                Family File
               </label>
-              {isLoadingCases ? (
+              {isLoadingFamilyFiles ? (
                 <div className="flex items-center justify-center py-2">
                   <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary border-t-transparent" />
                 </div>
-              ) : cases.length === 0 ? (
+              ) : familyFilesWithAgreements.length === 0 ? (
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">No active cases</span>
-                  <Link href="/cases/new">
-                    <Button size="sm">Create Case</Button>
+                  <span className="text-sm text-muted-foreground">No family files</span>
+                  <Link href="/family-files/new">
+                    <Button size="sm">Create Family File</Button>
                   </Link>
                 </div>
               ) : (
                 <select
-                  value={selectedCase?.id || ''}
+                  value={selectedFamilyFile?.id || ''}
                   onChange={(e) => {
-                    const caseItem = cases.find((c) => c.id === e.target.value);
-                    if (caseItem) handleSelectCase(caseItem);
+                    const item = familyFilesWithAgreements.find(f => f.familyFile.id === e.target.value);
+                    if (item) handleSelectFamilyFile(item.familyFile);
                   }}
                   className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 >
-                  <option value="">Select a case...</option>
-                  {cases.map((caseItem) => (
-                    <option key={caseItem.id} value={caseItem.id}>
-                      {caseItem.case_name} {caseItem.status === 'pending' ? '(Pending)' : ''}
+                  <option value="">Select a family file...</option>
+                  {familyFilesWithAgreements.map((item) => (
+                    <option key={item.familyFile.id} value={item.familyFile.id}>
+                      {item.familyFile.name} ({item.agreements.length} agreements)
                     </option>
                   ))}
                 </select>
               )}
             </CardContent>
           </Card>
+
+          {selectedFamilyFile && selectedFamilyFileData && (
+            <Card>
+              <CardContent className="py-3">
+                <label className="text-sm font-medium text-muted-foreground block mb-2">
+                  SharedCare Agreement
+                </label>
+                {selectedFamilyFileData.agreements.length === 0 ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">No agreements</span>
+                    <Link href={`/agreements?familyFileId=${selectedFamilyFile.id}`}>
+                      <Button size="sm">Create Agreement</Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedAgreement?.id || ''}
+                    onChange={(e) => {
+                      const agreement = selectedFamilyFileData.agreements.find(a => a.id === e.target.value);
+                      if (agreement) handleSelectAgreement(agreement);
+                    }}
+                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  >
+                    <option value="">Select an agreement...</option>
+                    {selectedFamilyFileData.agreements.map((agreement) => (
+                      <option key={agreement.id} value={agreement.id}>
+                        {agreement.title} ({agreement.status})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6">
-          {/* Sidebar - Case List (Desktop only) */}
+          {/* Sidebar - Family Files & Agreements (Desktop only) */}
           <div className="hidden lg:block w-80 flex-shrink-0">
             <Card className="sticky top-24">
               <CardHeader>
-                <CardTitle>Cases</CardTitle>
-                <CardDescription>Select a case to view messages</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Family Files
+                </CardTitle>
+                <CardDescription>Select an agreement to view messages</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2 max-h-[calc(100vh-200px)] overflow-y-auto">
-                {isLoadingCases && (
+              <CardContent className="space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
+                {isLoadingFamilyFiles && (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent mx-auto" />
                   </div>
                 )}
 
-                {!isLoadingCases && cases.length === 0 && (
+                {!isLoadingFamilyFiles && familyFilesWithAgreements.length === 0 && (
                   <div className="text-center py-8">
-                    <p className="text-sm text-muted-foreground mb-4">No active cases</p>
-                    <Link href="/cases/new">
-                      <Button size="sm">Create Case</Button>
+                    <p className="text-sm text-muted-foreground mb-4">No family files</p>
+                    <Link href="/family-files/new">
+                      <Button size="sm">Create Family File</Button>
                     </Link>
                   </div>
                 )}
 
-                {cases.map((caseItem) => (
-                  <button
-                    key={caseItem.id}
-                    onClick={() => handleSelectCase(caseItem)}
-                    className={`w-full text-left p-3 rounded-lg transition-smooth ${
-                      selectedCase?.id === caseItem.id
-                        ? 'bg-cg-primary-subtle border-2 border-cg-primary/30'
-                        : 'bg-secondary/50 border-2 border-transparent hover:bg-secondary'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium text-foreground">{caseItem.case_name}</p>
-                      {caseItem.status === 'pending' && (
-                        <Badge variant="warning" size="sm">Pending</Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">{caseItem.state}</p>
-                  </button>
+                {familyFilesWithAgreements.map((item) => (
+                  <div key={item.familyFile.id} className="space-y-2">
+                    <button
+                      onClick={() => handleSelectFamilyFile(item.familyFile)}
+                      className={`w-full text-left p-3 rounded-lg transition-smooth ${
+                        selectedFamilyFile?.id === item.familyFile.id && !selectedAgreement
+                          ? 'bg-cg-primary-subtle border-2 border-cg-primary/30'
+                          : 'bg-secondary/50 border-2 border-transparent hover:bg-secondary'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium text-foreground">{item.familyFile.name}</p>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {item.agreements.length} agreement{item.agreements.length !== 1 ? 's' : ''}
+                      </p>
+                    </button>
+
+                    {/* Show agreements when family file is selected */}
+                    {selectedFamilyFile?.id === item.familyFile.id && (
+                      <div className="ml-3 pl-3 border-l-2 border-border space-y-2">
+                        {item.agreements.length === 0 ? (
+                          <div className="py-2">
+                            <p className="text-xs text-muted-foreground mb-2">No agreements yet</p>
+                            <Link href={`/agreements?familyFileId=${item.familyFile.id}`}>
+                              <Button size="sm" variant="outline" className="w-full">
+                                <Plus className="h-3 w-3 mr-1" />
+                                Create Agreement
+                              </Button>
+                            </Link>
+                          </div>
+                        ) : (
+                          item.agreements.map((agreement) => (
+                            <button
+                              key={agreement.id}
+                              onClick={() => handleSelectAgreement(agreement)}
+                              className={`w-full text-left p-2 rounded-md transition-smooth ${
+                                selectedAgreement?.id === agreement.id
+                                  ? 'bg-cg-primary text-white'
+                                  : 'bg-background hover:bg-secondary'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <FileText className="h-4 w-4 flex-shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium truncate">{agreement.title}</p>
+                                  <div className="mt-0.5">
+                                    {getStatusBadge(agreement.status)}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
                 ))}
               </CardContent>
             </Card>
@@ -288,93 +367,42 @@ function MessagesContent() {
 
           {/* Main Area - Messages */}
           <div className="flex-1 min-w-0">
-            {!selectedCase && (
+            {!selectedAgreement && (
               <Card>
                 <CardContent className="py-12">
                   <EmptyState
                     icon={MessageSquare}
-                    title="Select a case to view messages"
-                    description="Choose a case from the sidebar to start communicating"
+                    title="Select an agreement to view messages"
+                    description="Choose a SharedCare Agreement from the sidebar to start communicating. Messages are organized by agreement so you can keep Summer Schedule and School Year Schedule conversations separate."
                   />
                 </CardContent>
               </Card>
             )}
 
-            {selectedCase && (
+            {selectedAgreement && selectedFamilyFile && (
               <div className="space-y-6">
-                {/* Court Controls Notice */}
-                {courtSettings && (courtSettings.in_app_communication_only || courtSettings.aria_enforcement_locked) && (
-                  <Alert variant="default" className="bg-cg-warning-subtle border-cg-warning/30">
-                    <AlertTriangle className="h-4 w-4 text-cg-warning" />
-                    <AlertDescription>
-                      <div className="font-medium text-foreground mb-2">Court-Ordered Controls Active</div>
-                      <div className="flex flex-wrap gap-2">
-                        {courtSettings.in_app_communication_only && (
-                          <Badge variant="warning" size="sm">In-App Communication Only</Badge>
-                        )}
-                        {courtSettings.aria_enforcement_locked && (
-                          <Badge variant="warning" size="sm">ARIA Moderation Required</Badge>
-                        )}
-                      </div>
-                      {courtSettings.in_app_communication_only && (
-                        <p className="text-sm text-muted-foreground mt-2">
-                          You are required to use this platform for all communication with the other parent.
-                        </p>
-                      )}
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {/* Case Header */}
+                {/* Agreement Header */}
                 <Card>
                   <CardHeader>
                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                       <div className="flex-1 min-w-0">
-                        <CardTitle className="truncate">{selectedCase.case_name}</CardTitle>
-                        <CardDescription className="hidden sm:block">AI-powered communication with conflict prevention</CardDescription>
-
-                        {/* ARIA Toggle */}
-                        {ariaSettings && (
-                          <div className="flex items-center gap-3 sm:gap-4 mt-4 pt-4 border-t border-border">
-                            <Switch
-                              checked={ariaSettings.aria_enabled}
-                              onCheckedChange={courtSettings?.aria_enforcement_locked ? undefined : toggleAriaEnabled}
-                              disabled={isUpdatingAria || courtSettings?.aria_enforcement_locked}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Sparkles className="h-4 w-4 text-cg-primary flex-shrink-0" />
-                                <span className="text-sm font-medium text-foreground">
-                                  ARIA
-                                </span>
-                                <Badge
-                                  variant={ariaSettings.aria_enabled ? 'success' : 'secondary'}
-                                  size="sm"
-                                >
-                                  {ariaSettings.aria_enabled ? 'ON' : 'OFF'}
-                                </Badge>
-                                {courtSettings?.aria_enforcement_locked && (
-                                  <Badge variant="warning" size="sm">
-                                    <Lock className="h-3 w-3 mr-1" />
-                                    Locked
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">
-                                {courtSettings?.aria_enforcement_locked
-                                  ? 'ARIA moderation is required by court order.'
-                                  : ariaSettings.aria_enabled
-                                    ? `AI monitoring active`
-                                    : 'ARIA is disabled'}
-                              </p>
-                            </div>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                          <Users className="h-4 w-4" />
+                          {selectedFamilyFile.name}
+                        </div>
+                        <CardTitle className="truncate flex items-center gap-2">
+                          <FileText className="h-5 w-5" />
+                          {selectedAgreement.title}
+                        </CardTitle>
+                        <CardDescription className="hidden sm:flex items-center gap-2 mt-1">
+                          Messages for this SharedCare Agreement
+                          {getStatusBadge(selectedAgreement.status)}
+                        </CardDescription>
                       </div>
                       <Button
                         onClick={() => setShowCompose(!showCompose)}
                         disabled={!getOtherParentId()}
-                        title={!getOtherParentId() ? "Waiting for other parent to join case" : ""}
+                        title={!getOtherParentId() ? "Waiting for other parent to join" : ""}
                         className="w-full sm:w-auto flex-shrink-0"
                       >
                         {showCompose ? (
@@ -394,14 +422,15 @@ function MessagesContent() {
                 </Card>
 
                 {/* Compose Area */}
-                {showCompose && selectedCase && (
+                {showCompose && (
                   <>
                     {getOtherParentId() ? (
                       <MessageCompose
-                        caseId={selectedCase.id}
+                        caseId={selectedAgreement.case_id || selectedFamilyFile.id}
+                        agreementId={selectedAgreement.id}
                         recipientId={getOtherParentId()}
                         onMessageSent={handleMessageSent}
-                        ariaEnabled={ariaSettings?.aria_enabled ?? true}
+                        ariaEnabled={true}
                       />
                     ) : (
                       <Alert variant="default" className="bg-cg-warning-subtle border-cg-warning/30">
@@ -409,12 +438,7 @@ function MessagesContent() {
                         <AlertDescription>
                           <p className="font-medium text-foreground">Can't send messages yet</p>
                           <p className="text-sm text-muted-foreground mt-1">
-                            The other parent needs to accept your case invitation before you can exchange messages.
-                            {selectedCase.status === 'pending' && (
-                              <span className="block mt-2">
-                                Case status: <Badge variant="warning" size="sm">Pending</Badge> - Waiting for other parent to join
-                              </span>
-                            )}
+                            The other parent needs to join this family file before you can exchange messages.
                           </p>
                         </AlertDescription>
                       </Alert>
@@ -439,7 +463,7 @@ function MessagesContent() {
                       <EmptyState
                         icon={MessageSquare}
                         title="No messages yet"
-                        description="Start the conversation by sending a message"
+                        description={`Start a conversation about "${selectedAgreement.title}"`}
                         action={{
                           label: 'Send First Message',
                           onClick: () => setShowCompose(true),

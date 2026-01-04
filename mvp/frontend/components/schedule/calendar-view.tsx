@@ -9,6 +9,7 @@ import CourtEventDetails from './court-event-details';
 
 interface CalendarViewProps {
   caseId: string;
+  agreementId?: string;  // Filter events by SharedCare Agreement
   onCreateEvent?: (date: Date) => void;
   onEventClick?: (event: EventV2) => void;
   onExchangeClick?: (exchange: ExchangeInstanceForCalendar) => void;
@@ -16,6 +17,7 @@ interface CalendarViewProps {
 
 export default function CalendarView({
   caseId,
+  agreementId,
   onCreateEvent,
   onEventClick,
   onExchangeClick,

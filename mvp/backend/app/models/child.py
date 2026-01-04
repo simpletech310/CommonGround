@@ -20,6 +20,9 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.cubbie import CubbieItem, ChildPhoto
+    from app.models.case import Case
+    from app.models.family_file import FamilyFile
+    from app.models.user import User
 
 
 class ChildProfileStatus(str, Enum):
@@ -41,8 +44,15 @@ class Child(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "children"
 
-    # Case link
-    case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), index=True)
+    # Case link (legacy - for backwards compatibility)
+    case_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("cases.id"), index=True, nullable=True
+    )
+
+    # Family File link (new)
+    family_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("family_files.id"), index=True, nullable=True
+    )
 
     # === APPROVAL WORKFLOW ===
     status: Mapped[str] = mapped_column(
@@ -144,7 +154,10 @@ class Child(Base, UUIDMixin, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # === RELATIONSHIPS ===
-    case: Mapped["Case"] = relationship("Case", back_populates="children")
+    case: Mapped[Optional["Case"]] = relationship("Case", back_populates="children")
+    family_file: Mapped[Optional["FamilyFile"]] = relationship(
+        "FamilyFile", back_populates="children", foreign_keys=[family_file_id]
+    )
     creator: Mapped[Optional["User"]] = relationship(
         "User", foreign_keys=[created_by]
     )

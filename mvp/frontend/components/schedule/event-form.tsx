@@ -25,6 +25,7 @@ import { MedicalFields, SchoolFields, SportsFields, ExchangeFields } from './cat
 
 interface EventFormProps {
   caseId: string;
+  agreementId?: string;  // Link event to specific SharedCare Agreement
   onClose: () => void;
   onSuccess?: () => void;
   initialDate?: Date;
@@ -33,6 +34,7 @@ interface EventFormProps {
 
 export default function EventForm({
   caseId,
+  agreementId,
   onClose,
   onSuccess,
   initialDate,

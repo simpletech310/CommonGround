@@ -26,18 +26,26 @@ class AgreementSectionCreate(BaseModel):
 
 
 class AgreementCreate(BaseModel):
-    """Create a new agreement for a case."""
+    """Create a new agreement for a case (legacy support)."""
 
     case_id: str
     title: str = "Parenting Agreement"
     agreement_type: str = "parenting"
 
 
+class AgreementCreateForFamilyFile(BaseModel):
+    """Create a new SharedCare Agreement for a Family File."""
+
+    title: str = "SharedCare Agreement"
+    agreement_type: str = "shared_care"
+
+
 class AgreementResponse(BaseModel):
     """Agreement response with all details."""
 
     id: str
-    case_id: str
+    case_id: Optional[str] = None  # Optional for Family File-based agreements
+    family_file_id: Optional[str] = None  # Primary container for SharedCare Agreements
     title: str
     version: int
     status: str

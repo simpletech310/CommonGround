@@ -314,6 +314,8 @@ class ClearFundService:
                 query = query.where(Obligation.status.in_(filters.status))
             if filters.purpose_category:
                 query = query.where(Obligation.purpose_category.in_(filters.purpose_category))
+            if filters.agreement_id:
+                query = query.where(Obligation.agreement_id == filters.agreement_id)
             if filters.created_by:
                 query = query.where(Obligation.created_by == filters.created_by)
             if filters.due_before:

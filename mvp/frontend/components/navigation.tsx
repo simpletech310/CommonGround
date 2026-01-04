@@ -5,15 +5,18 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth-context';
 import {
   Home,
-  Briefcase,
+  FolderHeart,
   MessageSquare,
-  FileText,
   Calendar,
   Wallet,
   Menu,
   X,
+  Settings,
+  HelpCircle,
+  LogOut,
+  ChevronDown,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 /**
  * CommonGround Navigation Component
@@ -30,11 +33,10 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { name: 'Dashboard', path: '/dashboard', icon: Home },
-  { name: 'Cases', path: '/cases', icon: Briefcase },
+  { name: 'Family Files', path: '/family-files', icon: FolderHeart },
   { name: 'Messages', path: '/messages', icon: MessageSquare },
-  { name: 'Agreements', path: '/agreements', icon: FileText },
-  { name: 'Schedule', path: '/schedule', icon: Calendar },
-  { name: 'Payments', path: '/payments', icon: Wallet },
+  { name: 'TimeBridge', path: '/schedule', icon: Calendar },
+  { name: 'ClearFund', path: '/payments', icon: Wallet },
 ];
 
 export function Navigation() {
@@ -42,6 +44,19 @@ export function Navigation() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setUserMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -51,6 +66,7 @@ export function Navigation() {
   const handleNavigation = (path: string) => {
     router.push(path);
     setMobileMenuOpen(false);
+    setUserMenuOpen(false);
   };
 
   return (
@@ -100,15 +116,52 @@ export function Navigation() {
 
           {/* User Menu & Mobile Toggle */}
           <div className="flex items-center gap-3">
-            {/* User Info - Hidden on small screens */}
-            <div className="hidden md:block text-right">
-              <p className="text-sm font-medium text-foreground">
-                {user?.first_name} {user?.last_name}
-              </p>
-              <p className="text-xs text-muted-foreground">{user?.email}</p>
+            {/* User Menu Dropdown */}
+            <div className="relative" ref={userMenuRef}>
+              <button
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-secondary transition-smooth"
+              >
+                <div className="text-right">
+                  <p className="text-sm font-medium text-foreground">
+                    {user?.first_name} {user?.last_name}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{user?.email}</p>
+                </div>
+                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${userMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Dropdown Menu */}
+              {userMenuOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-card rounded-lg border border-border shadow-lg py-1 z-50">
+                  <button
+                    onClick={() => handleNavigation('/settings')}
+                    className="w-full flex items-center gap-3 px-4 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-smooth"
+                  >
+                    <Settings className="h-4 w-4" />
+                    Settings
+                  </button>
+                  <button
+                    onClick={() => handleNavigation('/help')}
+                    className="w-full flex items-center gap-3 px-4 py-2 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-smooth"
+                  >
+                    <HelpCircle className="h-4 w-4" />
+                    Help Center
+                  </button>
+                  <div className="border-t border-border my-1" />
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 px-4 py-2 text-sm text-destructive hover:bg-destructive/10 transition-smooth"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign out
+                  </button>
+                </div>
+              )}
             </div>
 
-            <Button variant="outline" size="sm" onClick={handleLogout}>
+            {/* Mobile Sign Out Button (visible on small screens) */}
+            <Button variant="outline" size="sm" onClick={handleLogout} className="md:hidden">
               Sign out
             </Button>
 
@@ -156,6 +209,24 @@ export function Navigation() {
                   </button>
                 );
               })}
+            </div>
+
+            {/* Settings & Help on mobile */}
+            <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handleNavigation('/settings')}
+                className="flex items-center gap-2 px-3 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-smooth"
+              >
+                <Settings className="h-5 w-5" />
+                Settings
+              </button>
+              <button
+                onClick={() => handleNavigation('/help')}
+                className="flex items-center gap-2 px-3 py-3 rounded-lg text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-smooth"
+              >
+                <HelpCircle className="h-5 w-5" />
+                Help
+              </button>
             </div>
 
             {/* User info on mobile */}

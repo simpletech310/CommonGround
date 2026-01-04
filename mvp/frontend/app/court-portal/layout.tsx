@@ -155,9 +155,9 @@ export default function CourtPortalLayout({
                     <Scale className="h-5 w-5" />
                   </div>
                   <div>
-                    <span className="text-lg font-bold tracking-tight">CommonGround</span>
+                    <span className="text-lg font-bold tracking-tight">MediatorMode</span>
                     <Badge variant="secondary" className="ml-2 text-xs bg-indigo-800 text-indigo-100 border-0">
-                      Court Portal
+                      by CommonGround
                     </Badge>
                   </div>
                 </Link>
@@ -228,7 +228,7 @@ export default function CourtPortalLayout({
             <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-sm text-muted-foreground">
               <div className="flex items-center gap-2">
                 <Shield className="h-4 w-4" />
-                <span>CommonGround Court Access Mode</span>
+                <span>MediatorMode by CommonGround</span>
               </div>
               <div className="flex items-center gap-4 text-xs">
                 <span className="flex items-center gap-1">

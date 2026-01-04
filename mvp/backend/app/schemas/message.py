@@ -13,6 +13,7 @@ class MessageCreate(BaseModel):
     recipient_id: str = Field(..., min_length=1, max_length=100)
     content: str = Field(..., min_length=1, max_length=10000)
     thread_id: Optional[str] = Field(None, max_length=100)
+    agreement_id: Optional[str] = Field(None, max_length=100)  # SharedCare Agreement context
     message_type: str = Field(default="text", max_length=50)
 
     @field_validator('content')
@@ -128,6 +129,7 @@ class MessageResponse(BaseModel):
     id: str
     case_id: str
     thread_id: Optional[str]
+    agreement_id: Optional[str] = None  # SharedCare Agreement context
     sender_id: str
     recipient_id: str
     content: str
@@ -153,6 +155,7 @@ class ThreadCreate(BaseModel):
     """Create a new message thread."""
 
     case_id: str = Field(..., min_length=1, max_length=100)
+    agreement_id: Optional[str] = Field(None, max_length=100)  # SharedCare Agreement context
     subject: str = Field(..., min_length=1, max_length=200)
     participants: List[str] = Field(..., min_items=2, max_items=10)
 
@@ -186,6 +189,7 @@ class ThreadResponse(BaseModel):
 
     id: str
     case_id: str
+    agreement_id: Optional[str] = None  # SharedCare Agreement context
     subject: str
     participants: List[str]
     last_message_at: Optional[datetime]

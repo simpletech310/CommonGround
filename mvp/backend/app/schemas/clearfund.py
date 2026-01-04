@@ -56,6 +56,7 @@ class ObligationCreate(ObligationBase):
     """Create obligation request."""
 
     case_id: str = Field(..., description="Case ID")
+    agreement_id: Optional[str] = Field(None, description="SharedCare Agreement ID")
     source_type: str = Field("request", description="Source: court_order, agreement, request")
     source_id: Optional[str] = Field(None, description="Reference to source document")
 
@@ -95,6 +96,7 @@ class ObligationResponse(BaseModel):
 
     id: str
     case_id: str
+    agreement_id: Optional[str] = None  # SharedCare Agreement context
     source_type: str
     source_id: Optional[str]
     purpose_category: str
@@ -439,6 +441,7 @@ class ObligationFilters(BaseModel):
 
     status: Optional[list[str]] = Field(None, description="Filter by status(es)")
     purpose_category: Optional[list[str]] = Field(None, description="Filter by category(ies)")
+    agreement_id: Optional[str] = Field(None, description="Filter by SharedCare Agreement ID")
     child_id: Optional[str] = Field(None, description="Filter by affected child")
     created_by: Optional[str] = Field(None, description="Filter by creator")
     due_before: Optional[datetime] = Field(None, description="Due before date")

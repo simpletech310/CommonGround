@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { DollarSign, Plus, Clock, CheckCircle, AlertTriangle, FileText } from 'lucide-react';
+import { DollarSign, Plus, Clock, CheckCircle, AlertTriangle, FileText, Users } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { casesAPI, clearfundAPI, Case, Obligation, BalanceSummary, ObligationMetrics } from '@/lib/api';
+import { familyFilesAPI, agreementsAPI, clearfundAPI, FamilyFileDetail, Agreement, Obligation, BalanceSummary, ObligationMetrics } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,11 +19,17 @@ import MetricsCards from '@/components/clearfund/metrics-cards';
 
 type TabType = 'pending' | 'active' | 'completed' | 'ledger';
 
+interface FamilyFileWithAgreements {
+  familyFile: FamilyFileDetail;
+  agreements: Agreement[];
+}
+
 function PaymentsContent() {
   const router = useRouter();
   const { user } = useAuth();
-  const [cases, setCases] = useState<Case[]>([]);
-  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [familyFilesWithAgreements, setFamilyFilesWithAgreements] = useState<FamilyFileWithAgreements[]>([]);
+  const [selectedFamilyFile, setSelectedFamilyFile] = useState<FamilyFileDetail | null>(null);
+  const [selectedAgreement, setSelectedAgreement] = useState<Agreement | null>(null);
   const [obligations, setObligations] = useState<Obligation[]>([]);
   const [balanceSummary, setBalanceSummary] = useState<BalanceSummary | null>(null);
   const [metrics, setMetrics] = useState<ObligationMetrics | null>(null);
@@ -33,50 +39,75 @@ function PaymentsContent() {
 
   useEffect(() => {
     if (user) {
-      loadCases();
+      loadFamilyFilesAndAgreements();
     }
   }, [user]);
 
   useEffect(() => {
-    if (selectedCase) {
+    if (selectedFamilyFile) {
       loadClearFundData();
     }
-  }, [selectedCase]);
+  }, [selectedFamilyFile, selectedAgreement]);
 
-  const loadCases = async () => {
+  const loadFamilyFilesAndAgreements = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const data = await casesAPI.list();
-      setCases(data);
 
-      const activeCase = data.find(c => c.status === 'active');
-      if (activeCase) {
-        setSelectedCase(activeCase);
-      } else if (data.length > 0) {
-        setSelectedCase(data[0]);
+      const familyFilesResponse = await familyFilesAPI.list();
+      const familyFiles = familyFilesResponse.items || [];
+
+      const filesWithAgreements: FamilyFileWithAgreements[] = [];
+
+      for (const ff of familyFiles) {
+        try {
+          const agreementsResponse = await agreementsAPI.listForFamilyFile(ff.id);
+          filesWithAgreements.push({
+            familyFile: ff,
+            agreements: agreementsResponse,
+          });
+        } catch (err) {
+          console.error(`Failed to load agreements for family file ${ff.id}:`, err);
+          filesWithAgreements.push({
+            familyFile: ff,
+            agreements: [],
+          });
+        }
+      }
+
+      setFamilyFilesWithAgreements(filesWithAgreements);
+
+      if (filesWithAgreements.length > 0) {
+        const firstWithAgreements = filesWithAgreements.find(f => f.agreements.length > 0);
+        if (firstWithAgreements) {
+          setSelectedFamilyFile(firstWithAgreements.familyFile);
+          if (firstWithAgreements.agreements.length > 0) {
+            setSelectedAgreement(firstWithAgreements.agreements[0]);
+          }
+        } else {
+          setSelectedFamilyFile(filesWithAgreements[0].familyFile);
+        }
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to load cases');
+      setError(err.message || 'Failed to load family files');
     } finally {
       setIsLoading(false);
     }
   };
 
   const loadClearFundData = async () => {
-    if (!selectedCase) return;
+    if (!selectedFamilyFile) return;
 
     try {
       setIsLoading(true);
       setError(null);
 
-      // Load data individually to handle partial failures
-      let obligationsRes = null;
-      let balanceRes = null;
-      let metricsRes = null;
-
+      // Load obligations with optional agreement filter
       try {
-        obligationsRes = await clearfundAPI.listObligations(selectedCase.id);
+        const obligationsRes = await clearfundAPI.listObligations(
+          selectedFamilyFile.id,
+          selectedAgreement?.id
+        );
         setObligations(obligationsRes.items);
       } catch (err: any) {
         console.error('Failed to load obligations:', err);
@@ -84,12 +115,12 @@ function PaymentsContent() {
         if (err.status === 401) {
           setError('Authentication error loading obligations. Please try logging out and back in.');
         } else if (err.status === 403) {
-          setError('You do not have access to this case.');
+          setError('You do not have access to this family file.');
         }
       }
 
       try {
-        balanceRes = await clearfundAPI.getBalance(selectedCase.id);
+        const balanceRes = await clearfundAPI.getBalance(selectedFamilyFile.id);
         setBalanceSummary(balanceRes);
       } catch (err: any) {
         console.error('Failed to load balance:', err);
@@ -97,7 +128,7 @@ function PaymentsContent() {
       }
 
       try {
-        metricsRes = await clearfundAPI.getMetrics(selectedCase.id);
+        const metricsRes = await clearfundAPI.getMetrics(selectedFamilyFile.id);
         setMetrics(metricsRes);
       } catch (err: any) {
         console.error('Failed to load metrics:', err);
@@ -108,6 +139,30 @@ function PaymentsContent() {
       setError(err.message || 'Failed to load payment data');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleFamilyFileChange = (familyFileId: string) => {
+    const item = familyFilesWithAgreements.find(f => f.familyFile.id === familyFileId);
+    if (item) {
+      setSelectedFamilyFile(item.familyFile);
+      if (item.agreements.length > 0) {
+        setSelectedAgreement(item.agreements[0]);
+      } else {
+        setSelectedAgreement(null);
+      }
+    }
+  };
+
+  const handleAgreementChange = (agreementId: string) => {
+    if (!agreementId) {
+      setSelectedAgreement(null);
+      return;
+    }
+    const currentData = familyFilesWithAgreements.find(f => f.familyFile.id === selectedFamilyFile?.id);
+    const agreement = currentData?.agreements.find(a => a.id === agreementId);
+    if (agreement) {
+      setSelectedAgreement(agreement);
     }
   };
 
@@ -133,7 +188,7 @@ function PaymentsContent() {
     return null;
   }
 
-  if (isLoading && !selectedCase) {
+  if (isLoading && !selectedFamilyFile) {
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
@@ -149,7 +204,7 @@ function PaymentsContent() {
     );
   }
 
-  if (!selectedCase) {
+  if (!selectedFamilyFile) {
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
@@ -158,11 +213,11 @@ function PaymentsContent() {
             <CardContent className="py-12">
               <EmptyState
                 icon={DollarSign}
-                title="No Cases Found"
-                description="You need to create or join a case to access ClearFund payments."
+                title="No Family Files Found"
+                description="You need to create or join a Family File to access ClearFund payments."
                 action={{
-                  label: 'Go to Cases',
-                  onClick: () => router.push('/cases'),
+                  label: 'Go to Family Files',
+                  onClick: () => router.push('/family-files'),
                 }}
               />
             </CardContent>
@@ -173,6 +228,7 @@ function PaymentsContent() {
   }
 
   const filteredObligations = getFilteredObligations();
+  const currentFamilyFileData = familyFilesWithAgreements.find(f => f.familyFile.id === selectedFamilyFile.id);
 
   return (
     <div className="min-h-screen bg-background">
@@ -187,7 +243,17 @@ function PaymentsContent() {
                 <DollarSign className="h-8 w-8 text-cg-success" />
                 ClearFund
               </h1>
-              <p className="text-muted-foreground mt-1">Purpose-locked financial obligations for {selectedCase.case_name}</p>
+              <div className="flex items-center gap-2 text-muted-foreground mt-1">
+                <Users className="h-4 w-4" />
+                <span>{selectedFamilyFile.name}</span>
+                {selectedAgreement && (
+                  <>
+                    <span className="text-border">/</span>
+                    <FileText className="h-4 w-4" />
+                    <span>{selectedAgreement.title}</span>
+                  </>
+                )}
+              </div>
             </div>
             <Button
               onClick={() => router.push('/payments/new')}
@@ -198,21 +264,41 @@ function PaymentsContent() {
             </Button>
           </div>
 
-          {cases.length > 1 && (
-            <div className="mt-4 max-w-xs">
-              <Select
-                value={selectedCase.id}
-                onChange={(e) => {
-                  const case_ = cases.find(c => c.id === e.target.value);
-                  if (case_) setSelectedCase(case_);
-                }}
-              >
-                {cases.map(case_ => (
-                  <SelectOption key={case_.id} value={case_.id}>{case_.case_name}</SelectOption>
-                ))}
-              </Select>
-            </div>
-          )}
+          {/* Family File and Agreement Selectors */}
+          <div className="mt-4 flex flex-col sm:flex-row gap-4">
+            {familyFilesWithAgreements.length > 1 && (
+              <div className="flex-1 max-w-xs">
+                <label className="block text-sm font-medium text-muted-foreground mb-1">Family File</label>
+                <Select
+                  value={selectedFamilyFile.id}
+                  onChange={(e) => handleFamilyFileChange(e.target.value)}
+                >
+                  {familyFilesWithAgreements.map(item => (
+                    <SelectOption key={item.familyFile.id} value={item.familyFile.id}>
+                      {item.familyFile.name}
+                    </SelectOption>
+                  ))}
+                </Select>
+              </div>
+            )}
+
+            {currentFamilyFileData && currentFamilyFileData.agreements.length > 0 && (
+              <div className="flex-1 max-w-xs">
+                <label className="block text-sm font-medium text-muted-foreground mb-1">SharedCare Agreement</label>
+                <Select
+                  value={selectedAgreement?.id || ''}
+                  onChange={(e) => handleAgreementChange(e.target.value)}
+                >
+                  <SelectOption value="">All Agreements</SelectOption>
+                  {currentFamilyFileData.agreements.map(agreement => (
+                    <SelectOption key={agreement.id} value={agreement.id}>
+                      {agreement.title}
+                    </SelectOption>
+                  ))}
+                </Select>
+              </div>
+            )}
+          </div>
         </PageContainer>
       </div>
 
@@ -337,10 +423,10 @@ function PaymentsContent() {
               <EmptyState
                 icon={FileText}
                 title="Transaction Ledger"
-                description="View the complete financial history for this case."
+                description="View the complete financial history for this family file."
                 action={{
                   label: 'View Full Ledger',
-                  onClick: () => router.push(`/payments/ledger?case_id=${selectedCase.id}`),
+                  onClick: () => router.push(`/payments/ledger?case_id=${selectedFamilyFile.id}`),
                 }}
               />
             </CardContent>
