@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
@@ -9,9 +9,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { APIError } from '@/lib/api';
+import { Loader2 } from 'lucide-react';
 
-export default function RegisterPage() {
+interface InviteData {
+  case_id: string;
+  role: string;
+  name: string;
+  email: string;
+  token: string;
+}
+
+function RegisterContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { register } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
@@ -22,6 +32,32 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [inviteData, setInviteData] = useState<InviteData | null>(null);
+
+  // Parse invite parameter on mount
+  useEffect(() => {
+    const invite = searchParams.get('invite');
+    if (invite) {
+      try {
+        const decoded = JSON.parse(atob(invite));
+        setInviteData(decoded);
+
+        // Pre-fill form with invite data
+        const nameParts = decoded.name?.split(' ') || [];
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+
+        setFormData(prev => ({
+          ...prev,
+          email: decoded.email || '',
+          first_name: firstName,
+          last_name: lastName,
+        }));
+      } catch (e) {
+        console.error('Failed to parse invite data:', e);
+      }
+    }
+  }, [searchParams]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
@@ -54,6 +90,35 @@ export default function RegisterPage() {
         first_name: formData.first_name,
         last_name: formData.last_name,
       });
+
+      // If we have invite data, accept the invite to link user to case
+      if (inviteData) {
+        try {
+          const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+          const token = localStorage.getItem('access_token');
+
+          const response = await fetch(`${API_BASE}/cases/accept-invite`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              case_id: inviteData.case_id,
+              role: inviteData.role,
+              token: inviteData.token,
+            }),
+          });
+
+          if (!response.ok) {
+            console.error('Failed to accept invite:', await response.text());
+          }
+        } catch (inviteErr) {
+          console.error('Error accepting invite:', inviteErr);
+          // Don't block registration even if invite fails
+        }
+      }
+
       router.push('/dashboard');
     } catch (err) {
       if (err instanceof APIError) {
@@ -74,7 +139,10 @@ export default function RegisterPage() {
             Create an account
           </CardTitle>
           <CardDescription className="text-center">
-            Get started with CommonGround today
+            {inviteData
+              ? `You've been invited to join a co-parenting case as ${inviteData.role}`
+              : 'Get started with CommonGround today'
+            }
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -125,8 +193,13 @@ export default function RegisterPage() {
                 value={formData.email}
                 onChange={handleChange}
                 required
-                disabled={isLoading}
+                disabled={isLoading || !!inviteData?.email}
               />
+              {inviteData?.email && (
+                <p className="text-xs text-muted-foreground">
+                  Email is pre-filled from your invitation
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -180,5 +253,19 @@ export default function RegisterPage() {
         </form>
       </Card>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+          <Loader2 className="h-10 w-10 animate-spin text-indigo-600" />
+        </div>
+      }
+    >
+      <RegisterContent />
+    </Suspense>
   );
 }

@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, RefreshCw, Gavel } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, RefreshCw, Gavel, Check, XCircle, HelpCircle } from 'lucide-react';
 import { calendarAPI, CalendarDataV2, EventV2, BusyPeriod, ExchangeInstanceForCalendar, CourtEventForCalendar } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import CourtEventDetails from './court-event-details';
 
 interface CalendarViewProps {
   caseId: string;
@@ -21,6 +22,7 @@ export default function CalendarView({
   const [calendarData, setCalendarData] = useState<CalendarDataV2 | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCourtEvent, setSelectedCourtEvent] = useState<CourtEventForCalendar | null>(null);
 
   useEffect(() => {
     loadCalendarData();
@@ -321,20 +323,35 @@ export default function CalendarView({
                   ))}
 
                   {/* Court Events */}
-                  {courtEvents.slice(0, 2).map(courtEvent => (
-                    <div
-                      key={courtEvent.id}
-                      className={`w-full px-2 py-1 rounded text-xs text-white truncate flex items-center gap-1 ${
-                        courtEvent.is_mandatory ? 'bg-red-600' : 'bg-slate-600'
-                      }`}
-                      title={`${courtEvent.title}${courtEvent.is_mandatory ? ' (Required)' : ''} - ${courtEvent.location || 'See details'}`}
-                    >
-                      <Gavel className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate">
-                        {courtEvent.start_time ? formatTimeString(courtEvent.start_time) : ''} {courtEvent.title}
-                      </span>
-                    </div>
-                  ))}
+                  {courtEvents.slice(0, 2).map(courtEvent => {
+                    // RSVP indicator for court events
+                    const rsvpStatus = courtEvent.my_rsvp_status;
+                    const RsvpIcon = rsvpStatus === 'attending' ? Check :
+                                     rsvpStatus === 'not_attending' ? XCircle :
+                                     rsvpStatus === 'maybe' ? HelpCircle : null;
+
+                    return (
+                      <button
+                        key={courtEvent.id}
+                        onClick={() => setSelectedCourtEvent(courtEvent)}
+                        className={`w-full px-2 py-1 rounded text-xs text-white truncate flex items-center gap-1 hover:opacity-80 transition-opacity cursor-pointer text-left ${
+                          courtEvent.is_mandatory ? 'bg-red-600' : 'bg-slate-600'
+                        }`}
+                        title={`${courtEvent.title}${courtEvent.is_mandatory ? ' (Required)' : ''}${rsvpStatus ? ` - ${rsvpStatus}` : ''} - Click to respond`}
+                      >
+                        <Gavel className="h-3 w-3 flex-shrink-0" />
+                        {RsvpIcon && (
+                          <RsvpIcon className={`h-3 w-3 flex-shrink-0 ${
+                            rsvpStatus === 'attending' ? 'text-green-300' :
+                            rsvpStatus === 'not_attending' ? 'text-red-300' : 'text-yellow-300'
+                          }`} />
+                        )}
+                        <span className="truncate">
+                          {courtEvent.start_time ? formatTimeString(courtEvent.start_time) : ''} {courtEvent.title}
+                        </span>
+                      </button>
+                    );
+                  })}
 
                   {/* Busy Periods */}
                   {busyPeriods.slice(0, 2).map((period, i) => (
@@ -383,6 +400,18 @@ export default function CalendarView({
             </>
           )}
         </div>
+      )}
+
+      {/* Court Event Details Modal */}
+      {selectedCourtEvent && (
+        <CourtEventDetails
+          event={selectedCourtEvent}
+          onClose={() => setSelectedCourtEvent(null)}
+          onRsvpUpdate={() => {
+            setSelectedCourtEvent(null);
+            loadCalendarData(); // Refresh calendar after RSVP
+          }}
+        />
       )}
     </div>
   );

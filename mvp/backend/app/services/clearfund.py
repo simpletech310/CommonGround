@@ -275,19 +275,28 @@ class ClearFundService:
     async def list_obligations(
         self,
         case_id: str,
-        user: User,
         filters: Optional[ObligationFilters] = None,
         page: int = 1,
-        page_size: int = 20
+        page_size: int = 20,
+        user: Optional[User] = None
     ) -> Tuple[list[Obligation], int]:
         """
         List obligations for a case with optional filters.
 
+        Args:
+            case_id: The case ID
+            filters: Optional filters
+            page: Page number
+            page_size: Items per page
+            user: Optional user for access verification. If None, skips access check
+                  (for court professional access where auth is handled by endpoint).
+
         Returns:
             Tuple of (obligations, total_count)
         """
-        # Verify case access
-        await self._verify_case_access(case_id, user)
+        # Verify case access if user provided
+        if user is not None:
+            await self._verify_case_access(case_id, user)
 
         # Build query
         query = (
@@ -725,10 +734,17 @@ class ClearFundService:
     async def get_obligation_metrics(
         self,
         case_id: str,
-        user: User
+        user: Optional[User] = None
     ) -> ObligationMetrics:
-        """Get obligation metrics for a case."""
-        await self._verify_case_access(case_id, user)
+        """Get obligation metrics for a case.
+
+        Args:
+            case_id: The case ID
+            user: Optional user for access verification. If None, skips access check
+                  (for court professional access where auth is handled by endpoint).
+        """
+        if user is not None:
+            await self._verify_case_access(case_id, user)
 
         result = await self.db.execute(
             select(
@@ -766,10 +782,17 @@ class ClearFundService:
     async def get_balance_summary(
         self,
         case_id: str,
-        user: User
+        user: Optional[User] = None
     ) -> BalanceSummary:
-        """Get balance summary for a case."""
-        await self._verify_case_access(case_id, user)
+        """Get balance summary for a case.
+
+        Args:
+            case_id: The case ID
+            user: Optional user for access verification. If None, skips access check
+                  (for court professional access where auth is handled by endpoint).
+        """
+        if user is not None:
+            await self._verify_case_access(case_id, user)
         petitioner_id, respondent_id = await self._get_case_participants(case_id)
 
         # Calculate balances from ledger
@@ -865,6 +888,42 @@ class LedgerService:
         entries = list(result.scalars().all())
 
         return entries, total
+
+    async def get_ledger_history(
+        self,
+        case_id: str,
+        filters: "LedgerFilters",
+        page: int = 1,
+        page_size: int = 50
+    ) -> dict:
+        """Get paginated ledger history for court access.
+
+        Unlike get_ledger_entries, this doesn't require user access verification
+        because it's intended for court professional access where auth is
+        handled by the endpoint.
+        """
+        # Build query
+        query = (
+            select(PaymentLedger)
+            .where(PaymentLedger.case_id == case_id)
+            .order_by(PaymentLedger.effective_date.desc())
+        )
+
+        # Count
+        count_query = select(func.count()).select_from(query.subquery())
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Paginate
+        query = query.offset((page - 1) * page_size).limit(page_size)
+        result = await self.db.execute(query)
+        entries = list(result.scalars().all())
+
+        return {
+            "items": entries,
+            "total": total,
+            "has_more": (page * page_size) < total
+        }
 
     async def record_prepayment(
         self,

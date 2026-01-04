@@ -103,7 +103,7 @@ async def list_obligations(
 
     service = ClearFundService(db)
     obligations, total = await service.list_obligations(
-        case_id, current_user, filters, page, page_size
+        case_id, filters, page, page_size, current_user
     )
 
     return ObligationListResponse(

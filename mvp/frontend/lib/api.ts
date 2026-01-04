@@ -1069,6 +1069,49 @@ export interface CourtEventForCalendar {
   is_mandatory: boolean;
   shared_notes?: string;
   is_court_event: boolean;
+  // RSVP fields
+  my_rsvp_status?: string;
+  my_rsvp_required?: boolean;
+  other_parent_rsvp_status?: string;
+}
+
+// Court Event with full RSVP details (from /schedule/cases/{case_id}/court-events)
+export interface CourtEventWithRSVP {
+  id: string;
+  case_id: string;
+  event_type: string;
+  title: string;
+  description?: string;
+  event_date: string;
+  start_time?: string;
+  end_time?: string;
+  location?: string;
+  virtual_link?: string;
+  is_mandatory: boolean;
+  status: string;
+  shared_notes?: string;
+  my_rsvp_status?: string;
+  my_rsvp_required: boolean;
+  my_rsvp_notes?: string;
+  other_parent_rsvp_status?: string;
+}
+
+export interface CourtEventsListResponse {
+  events: CourtEventWithRSVP[];
+  total: number;
+}
+
+export interface CourtEventRSVPRequest {
+  status: 'attending' | 'not_attending' | 'maybe';
+  notes?: string;
+}
+
+export interface CourtEventRSVPResponse {
+  success: boolean;
+  message: string;
+  event_id: string;
+  rsvp_status: string;
+  rsvp_at: string;
 }
 
 // Calendar Data Response (V2.0)
@@ -2985,6 +3028,526 @@ export const childrenAPI = {
     total: number;
   }> {
     return fetchAPI(`/children/case/${caseId}/counts`);
+  },
+};
+
+// ============================================================================
+// Court Form Workflow API
+// ============================================================================
+
+export type CourtFormType = 'FL-300' | 'FL-311' | 'FL-320' | 'FL-340' | 'FL-341' | 'FL-342';
+export type CourtFormStatus = 'draft' | 'pending_submission' | 'submitted' | 'under_court_review' | 'approved' | 'rejected' | 'resubmit_required' | 'served' | 'entered' | 'withdrawn';
+export type HearingType = 'rfo' | 'status_conference' | 'trial' | 'mediation' | 'settlement_conference' | 'motion' | 'other';
+export type HearingOutcome = 'pending' | 'continued' | 'settled' | 'order_issued' | 'dismissed' | 'default';
+export type ServiceType = 'personal' | 'substituted' | 'mail' | 'electronic' | 'notice_acknowledge';
+
+export interface CourtFormSubmission {
+  id: string;
+  case_id: string;
+  parent_id: string | null;
+  form_type: CourtFormType;
+  form_state: string;
+  status: CourtFormStatus;
+  status_history: Array<{
+    from_status: string;
+    to_status: string;
+    changed_at: string;
+    changed_by: string | null;
+    notes: string | null;
+  }> | null;
+  submission_source: string;
+  submitted_at: string | null;
+  approved_at: string | null;
+  form_data: Record<string, any> | null;
+  pdf_url: string | null;
+  aria_assisted: boolean;
+  aria_conversation_id: string | null;
+  responds_to_form_id: string | null;
+  parent_form_id: string | null;
+  hearing_id: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
+  court_notes: string | null;
+  rejection_reason: string | null;
+  resubmission_issues: string[] | null;
+  extraction_confidence: number | null;
+  requires_review: boolean;
+  custody_order_id: string | null;
+  created_at: string;
+  updated_at: string;
+  // Edit permission fields
+  edits_allowed: boolean;
+  edits_allowed_by: string | null;
+  edits_allowed_at: string | null;
+  edits_allowed_notes: string | null;
+  edits_allowed_sections: string[] | null;
+}
+
+export interface CourtHearing {
+  id: string;
+  case_id: string;
+  hearing_type: HearingType;
+  title: string;
+  description: string | null;
+  scheduled_date: string;
+  scheduled_time: string | null;
+  court_name: string | null;
+  department: string | null;
+  courtroom: string | null;
+  judge_name: string | null;
+  outcome: HearingOutcome;
+  outcome_notes: string | null;
+  petitioner_attended: boolean | null;
+  respondent_attended: boolean | null;
+  related_fl300_id: string | null;
+  resulting_fl340_id: string | null;
+  notifications_sent: boolean;
+  notification_sent_at: string | null;
+  reminder_sent: boolean;
+  is_continuation: boolean;
+  continued_from_id: string | null;
+  continued_to_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CaseFormProgress {
+  case_id: string;
+  activation_status: string;
+  forms_workflow_started_at: string | null;
+  forms_workflow_completed_at: string | null;
+  fl300_status: string | null;
+  fl300_submission_id: string | null;
+  fl311_status: string | null;
+  fl311_submission_id: string | null;
+  fl320_status: string | null;
+  fl320_submission_id: string | null;
+  fl340_status: string | null;
+  fl340_submission_id: string | null;
+  respondent_notified: boolean;
+  respondent_on_platform: boolean;
+  proof_of_service_filed: boolean;
+  hearing_scheduled: boolean;
+  hearing_id: string | null;
+  hearing_date: string | null;
+  progress_percent: number;
+  next_action: string | null;
+  next_action_by: string | null;
+  // Computed helper properties
+  total_forms: number;
+  pending_forms: number;
+  approved_forms: number;
+  has_fl300: boolean;
+  has_fl300_approved: boolean;
+  has_fl311: boolean;
+  has_fl320: boolean;
+  has_fl340: boolean;
+  fl300_id: string | null;
+}
+
+export interface ProofOfService {
+  id: string;
+  case_id: string;
+  served_form_id: string;
+  service_type: ServiceType;
+  served_to_name: string;
+  served_at_address: string | null;
+  served_on_date: string;
+  served_by_name: string;
+  served_by_relationship: string | null;
+  proof_pdf_url: string | null;
+  filed_with_court: boolean;
+  filed_at: string | null;
+  accepted_by_court: boolean;
+  rejection_reason: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+// Request types
+export interface FL300FormData {
+  court_name?: string;
+  court_county?: string;
+  case_number?: string;
+  petitioner_name: string;
+  petitioner_address?: string;
+  petitioner_phone?: string;
+  petitioner_email?: string;
+  respondent_name: string;
+  respondent_address?: string;
+  respondent_phone?: string;
+  respondent_email?: string;
+  request_child_custody: boolean;
+  request_child_visitation: boolean;
+  request_child_support: boolean;
+  request_spousal_support: boolean;
+  request_property_orders: boolean;
+  request_attorney_fees: boolean;
+  request_other?: string;
+  request_temporary_orders: boolean;
+  reason_for_temporary?: string;
+  facts_supporting_request?: string;
+  declaration_text?: string;
+  signature_date?: string;
+}
+
+export interface FL311FormData {
+  children: Array<{ name: string; birth_date?: string; age?: number }>;
+  physical_custody: string;
+  legal_custody: string;
+  visitation_type: string;
+  visitation_schedule?: Record<string, any>;
+  holiday_schedule?: Array<Record<string, any>>;
+  transportation_arrangements?: Record<string, any>;
+  supervised_visitation?: Record<string, any>;
+  abuse_allegations: boolean;
+  substance_abuse_allegations: boolean;
+  travel_restrictions?: Record<string, any>;
+  other_provisions?: string;
+}
+
+export interface FL320FormData {
+  responds_to_fl300_id: string;
+  custody_response: 'agree' | 'disagree' | 'counter_propose';
+  custody_counter_proposal?: string;
+  visitation_response: 'agree' | 'disagree' | 'counter_propose';
+  visitation_counter_proposal?: string;
+  support_response?: string;
+  support_counter_proposal?: string;
+  additional_facts?: string;
+  declaration_text?: string;
+  signature_date?: string;
+}
+
+export interface CreateFormRequest {
+  form_data?: Record<string, any>;
+  aria_assisted?: boolean;
+}
+
+export interface CreateFL320Request {
+  responds_to_form_id: string;
+  form_data?: FL320FormData;
+  aria_assisted?: boolean;
+}
+
+export interface CreateHearingRequest {
+  case_id: string;
+  hearing_type: HearingType;
+  title: string;
+  scheduled_date: string;
+  scheduled_time?: string;
+  court_name?: string;
+  department?: string;
+  courtroom?: string;
+  judge_name?: string;
+  related_fl300_id?: string;
+  description?: string;
+  notes?: string;
+}
+
+export interface CreateProofOfServiceRequest {
+  case_id: string;
+  served_form_id: string;
+  service_type: ServiceType;
+  served_to_name: string;
+  served_at_address?: string;
+  served_on_date: string;
+  served_by_name: string;
+  served_by_relationship?: string;
+  notes?: string;
+}
+
+export const courtFormsAPI = {
+  // ==================== Parent Form Submission ====================
+
+  /**
+   * Start FL-300 (Request for Order) submission
+   */
+  async startFL300(caseId: string, data?: CreateFormRequest): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/fl300/start/${caseId}`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  },
+
+  /**
+   * Start FL-311 (Child Custody Application) submission
+   */
+  async startFL311(caseId: string, data?: CreateFormRequest): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/fl311/start/${caseId}`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  },
+
+  /**
+   * Start FL-320 (Responsive Declaration) submission
+   */
+  async startFL320(caseId: string, data: CreateFL320Request): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/fl320/start/${caseId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update form data (only in draft status)
+   */
+  async updateForm(submissionId: string, formData: Record<string, any>): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/${submissionId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ form_data: formData }),
+    });
+  },
+
+  /**
+   * Submit form for court review
+   */
+  async submitForm(submissionId: string): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/${submissionId}/submit`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Resubmit form after making corrections (when edits were allowed by court)
+   */
+  async resubmitForm(submissionId: string): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/${submissionId}/resubmit`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Get a specific form submission
+   */
+  async getForm(submissionId: string): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/${submissionId}`);
+  },
+
+  /**
+   * List all forms for a case
+   */
+  async listCaseForms(caseId: string, formType?: CourtFormType): Promise<{
+    case_id: string;
+    forms: CourtFormSubmission[];
+    total: number;
+  }> {
+    const query = formType ? `?form_type=${formType}` : '';
+    return fetchAPI(`/court/forms/case/${caseId}${query}`);
+  },
+
+  /**
+   * Get workflow progress for a case
+   */
+  async getCaseProgress(caseId: string): Promise<CaseFormProgress> {
+    return fetchAPI<CaseFormProgress>(`/court/forms/case/${caseId}/progress`);
+  },
+
+  // ==================== Respondent Verification ====================
+
+  /**
+   * Verify respondent access code
+   */
+  async verifyRespondentAccess(caseId: string, accessCode: string): Promise<{
+    verified: boolean;
+    case_id: string | null;
+    message: string;
+  }> {
+    return fetchAPI(`/court/forms/respondent/verify`, {
+      method: 'POST',
+      body: JSON.stringify({ case_id: caseId, access_code: accessCode }),
+    });
+  },
+
+  // ==================== Proof of Service ====================
+
+  /**
+   * File proof of service
+   */
+  async fileProofOfService(data: CreateProofOfServiceRequest): Promise<ProofOfService> {
+    return fetchAPI<ProofOfService>(`/court/forms/proof-of-service`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // ==================== Court Staff Actions ====================
+
+  /**
+   * Approve a submitted form (court staff)
+   */
+  async approveForm(submissionId: string, notes?: string): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/${submissionId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  },
+
+  /**
+   * Reject a submitted form (court staff)
+   */
+  async rejectForm(submissionId: string, reason: string): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/${submissionId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  /**
+   * Request form resubmission (court staff)
+   */
+  async requestResubmission(submissionId: string, issues: string[], notes?: string): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/${submissionId}/request-resubmission`, {
+      method: 'POST',
+      body: JSON.stringify({ issues, notes }),
+    });
+  },
+
+  /**
+   * Mark FL-300 as served (court staff)
+   */
+  async markServed(submissionId: string, serviceType: ServiceType, servedOnDate: string, notes?: string): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/${submissionId}/mark-served`, {
+      method: 'POST',
+      body: JSON.stringify({ service_type: serviceType, served_on_date: servedOnDate, notes }),
+    });
+  },
+
+  // ==================== Hearing Management ====================
+
+  /**
+   * Schedule a court hearing
+   */
+  async scheduleHearing(data: CreateHearingRequest): Promise<CourtHearing> {
+    return fetchAPI<CourtHearing>(`/court/forms/hearings`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get a hearing
+   */
+  async getHearing(hearingId: string): Promise<CourtHearing> {
+    return fetchAPI<CourtHearing>(`/court/forms/hearings/${hearingId}`);
+  },
+
+  /**
+   * Update a hearing
+   */
+  async updateHearing(hearingId: string, data: Partial<CreateHearingRequest>): Promise<CourtHearing> {
+    return fetchAPI<CourtHearing>(`/court/forms/hearings/${hearingId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Record hearing outcome
+   */
+  async recordHearingOutcome(
+    hearingId: string,
+    outcome: HearingOutcome,
+    petitionerAttended: boolean,
+    respondentAttended: boolean,
+    outcomeNotes?: string
+  ): Promise<CourtHearing> {
+    return fetchAPI<CourtHearing>(`/court/forms/hearings/${hearingId}/record-outcome`, {
+      method: 'POST',
+      body: JSON.stringify({
+        outcome,
+        petitioner_attended: petitionerAttended,
+        respondent_attended: respondentAttended,
+        outcome_notes: outcomeNotes,
+      }),
+    });
+  },
+
+  /**
+   * Continue hearing to new date
+   */
+  async continueHearing(hearingId: string, newDate: string, newTime?: string, reason?: string): Promise<CourtHearing> {
+    return fetchAPI<CourtHearing>(`/court/forms/hearings/${hearingId}/continue`, {
+      method: 'POST',
+      body: JSON.stringify({ new_date: newDate, new_time: newTime, reason }),
+    });
+  },
+
+  // ==================== Court Order Entry ====================
+
+  /**
+   * Enter FL-340 order (court staff)
+   */
+  async enterFL340(caseId: string, hearingId: string, formData: Record<string, any>): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/orders/fl340`, {
+      method: 'POST',
+      body: JSON.stringify({ case_id: caseId, hearing_id: hearingId, form_data: formData }),
+    });
+  },
+
+  /**
+   * Attach FL-341 to FL-340 order
+   */
+  async attachFL341(fl340Id: string, formData: Record<string, any>): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/orders/fl340/${fl340Id}/attach-fl341`, {
+      method: 'POST',
+      body: JSON.stringify({ form_data: formData }),
+    });
+  },
+
+  /**
+   * Attach FL-342 to FL-340 order
+   */
+  async attachFL342(fl340Id: string, formData: Record<string, any>): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/orders/fl340/${fl340Id}/attach-fl342`, {
+      method: 'POST',
+      body: JSON.stringify({ form_data: formData }),
+    });
+  },
+
+  /**
+   * Finalize FL-340 and activate case
+   */
+  async finalizeFL340(fl340Id: string): Promise<CourtFormSubmission> {
+    return fetchAPI<CourtFormSubmission>(`/court/forms/orders/fl340/${fl340Id}/finalize`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Manually activate a case
+   */
+  async activateCase(caseId: string, notes?: string): Promise<{ case_id: string; status: string; message: string }> {
+    return fetchAPI(`/court/forms/case/${caseId}/activate`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  },
+};
+
+// ============================================================================
+// Court Events API (for Parents)
+// ============================================================================
+
+export const courtEventsAPI = {
+  /**
+   * Get court events for a case (parent view)
+   */
+  async listForCase(caseId: string): Promise<CourtEventsListResponse> {
+    return fetchAPI<CourtEventsListResponse>(`/schedule/cases/${caseId}/court-events`);
+  },
+
+  /**
+   * RSVP to a court event
+   */
+  async rsvp(eventId: string, data: CourtEventRSVPRequest): Promise<CourtEventRSVPResponse> {
+    return fetchAPI<CourtEventRSVPResponse>(`/schedule/court-events/${eventId}/rsvp`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 };
 

@@ -579,6 +579,16 @@ function CaseDetailsContent() {
                     <Button
                       variant="outline"
                       className="h-auto py-6 flex flex-col items-center gap-2"
+                      onClick={() => router.push(`/cases/${caseId}/court-forms`)}
+                    >
+                      <Scale className="h-8 w-8 text-indigo-600" />
+                      <span className="font-medium">Court Forms</span>
+                      <span className="text-xs text-muted-foreground">FL-300, FL-311, FL-320</span>
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="h-auto py-6 flex flex-col items-center gap-2"
                       onClick={() => router.push(`/cases/${caseId}/exports`)}
                     >
                       <Download className="h-8 w-8 text-cg-success" />

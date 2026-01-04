@@ -190,13 +190,43 @@ async def get_calendar_data(
         # Don't fail if exchanges can't be retrieved
         logging.error(f"Error fetching exchanges for calendar: {e}")
 
-    # Get court events
+    # Get court events - filtered for current user's required attendance
     court_events_list = []
     try:
+        # Determine if current user is petitioner or respondent
+        participant_result = await db.execute(
+            select(CaseParticipant).where(
+                CaseParticipant.case_id == case_id,
+                CaseParticipant.user_id == current_user.id,
+                CaseParticipant.is_active == True
+            )
+        )
+        participant = participant_result.scalar_one_or_none()
+        is_petitioner = participant.role == "petitioner" if participant else False
+
         court_event_service = CourtEventService(db)
         court_events = await court_event_service.get_events_for_case(case_id, include_past=False)
 
+        # Strip timezone from dates for comparison
+        start_date_naive = _strip_tz(start_date)
+        end_date_naive = _strip_tz(end_date)
+
         for ce in court_events:
+            # Filter by date range
+            if start_date_naive and ce.event_date < start_date_naive.date():
+                continue
+            if end_date_naive and ce.event_date > end_date_naive.date():
+                continue
+
+            # Check if this user is required for this event
+            my_required = ce.petitioner_required if is_petitioner else ce.respondent_required
+            if not my_required:
+                continue  # Skip events where this parent is not required
+
+            # Get RSVP info for current user
+            my_rsvp_status = ce.petitioner_rsvp_status if is_petitioner else ce.respondent_rsvp_status
+            other_rsvp_status = ce.respondent_rsvp_status if is_petitioner else ce.petitioner_rsvp_status
+
             court_events_list.append(CourtEventForCalendar(
                 id=str(ce.id),
                 event_type=ce.event_type,
@@ -210,8 +240,11 @@ async def get_calendar_data(
                 is_mandatory=ce.is_mandatory,
                 shared_notes=ce.shared_notes,
                 is_court_event=True,
+                my_rsvp_status=my_rsvp_status,
+                my_rsvp_required=my_required,
+                other_parent_rsvp_status=other_rsvp_status,
             ))
-        logging.info(f"[CALENDAR] Found {len(court_events_list)} court events for calendar")
+        logging.info(f"[CALENDAR] Found {len(court_events_list)} court events for calendar (user required)")
     except Exception as e:
         # Don't fail if court events can't be retrieved
         logging.error(f"Error fetching court events for calendar: {e}")

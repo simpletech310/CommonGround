@@ -256,11 +256,15 @@ class CalendarEvent(BaseModel):
     end: datetime
     all_day: bool
     event_type: str
-    custodial_parent: str
-    is_exchange: bool
-    location: Optional[str]
+    custodial_parent: Optional[str] = None  # None for court events
+    is_exchange: bool = False
+    location: Optional[str] = None
     status: str
-    child_names: List[str]
+    child_names: List[str] = []
+    # Court event specific fields
+    court_event: bool = False
+    is_mandatory: Optional[bool] = None
+    my_rsvp_status: Optional[str] = None
 
 
 class CalendarResponse(BaseModel):
@@ -362,6 +366,10 @@ class CourtEventForCalendar(BaseModel):
     is_mandatory: bool = True
     shared_notes: Optional[str] = None
     is_court_event: bool = True
+    # RSVP info for current user
+    my_rsvp_status: Optional[str] = None
+    my_rsvp_required: bool = True
+    other_parent_rsvp_status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

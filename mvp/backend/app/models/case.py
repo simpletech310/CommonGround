@@ -43,6 +43,16 @@ class Case(Base, UUIDMixin, TimestampMixin):
     filing_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     judgment_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # Court Form Workflow Status (extended case activation tracking)
+    activation_status: Mapped[str] = mapped_column(
+        String(50), default="pending"
+    )  # pending, fl300_required, fl300_submitted, fl300_approved, etc.
+    forms_workflow_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    forms_workflow_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    assigned_court_professional_id: Mapped[Optional[str]] = mapped_column(
+        String(36), nullable=True
+    )  # Court professional managing this case
+
     # Settings
     require_joint_approval: Mapped[bool] = mapped_column(
         Boolean, default=True

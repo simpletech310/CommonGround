@@ -3,14 +3,17 @@ Schedule endpoints for parenting time management.
 """
 
 from typing import List, Optional
-from datetime import datetime
-from fastapi import APIRouter, Depends, Query, status
+from datetime import datetime, date
+from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.child import Child
+from app.models.court import CourtEvent
+from app.models.case import Case, CaseParticipant
 from app.schemas.schedule import (
     ScheduleEventCreate,
     ScheduleEventUpdate,
@@ -22,9 +25,45 @@ from app.schemas.schedule import (
     CalendarResponse,
 )
 from app.services.schedule import ScheduleService
-from sqlalchemy import select
+from sqlalchemy import select, and_
 
 router = APIRouter()
+
+
+# RSVP Schemas
+class CourtEventRSVPRequest(BaseModel):
+    """Request schema for RSVP to court event."""
+    status: str  # "attending", "not_attending", "maybe"
+    notes: Optional[str] = None
+
+
+class CourtEventResponse(BaseModel):
+    """Response schema for court event."""
+    id: str
+    case_id: str
+    event_type: str
+    title: str
+    description: Optional[str]
+    event_date: date
+    start_time: Optional[str]
+    end_time: Optional[str]
+    location: Optional[str]
+    virtual_link: Optional[str]
+    is_mandatory: bool
+    status: str
+    shared_notes: Optional[str]
+    # RSVP info for current user
+    my_rsvp_status: Optional[str]
+    my_rsvp_required: bool
+    my_rsvp_notes: Optional[str]
+    # Other parent RSVP (visible to court)
+    other_parent_rsvp_status: Optional[str]
+
+
+class CourtEventListResponse(BaseModel):
+    """List of court events for parent."""
+    events: List[CourtEventResponse]
+    total: int
 
 
 @router.post("/events", status_code=status.HTTP_201_CREATED, response_model=ScheduleEventResponse)
@@ -48,23 +87,21 @@ async def create_event(
     return ScheduleEventResponse(
         id=event.id,
         case_id=event.case_id,
+        collection_id=event.collection_id,
+        created_by=event.created_by,
         event_type=event.event_type,
         start_time=event.start_time,
         end_time=event.end_time,
         all_day=event.all_day,
-        custodial_parent_id=event.custodial_parent_id,
-        transition_from_id=event.transition_from_id,
-        transition_to_id=event.transition_to_id,
         child_ids=event.child_ids,
         title=event.title,
         description=event.description,
         location=event.location,
-        is_exchange=event.is_exchange,
-        exchange_location=event.exchange_location,
-        grace_period_minutes=event.grace_period_minutes,
+        visibility=event.visibility or "co_parent",
         status=event.status,
-        is_agreement_derived=event.is_agreement_derived,
-        is_modification=event.is_modification,
+        is_owner=event.created_by == current_user.id if event.created_by else True,
+        event_category=event.event_category or "general",
+        category_data=event.category_data,
         created_at=event.created_at,
         updated_at=event.updated_at,
     )
@@ -107,23 +144,21 @@ async def get_case_events(
         ScheduleEventResponse(
             id=e.id,
             case_id=e.case_id,
+            collection_id=e.collection_id,
+            created_by=e.created_by,
             event_type=e.event_type,
             start_time=e.start_time,
             end_time=e.end_time,
             all_day=e.all_day,
-            custodial_parent_id=e.custodial_parent_id,
-            transition_from_id=e.transition_from_id,
-            transition_to_id=e.transition_to_id,
             child_ids=e.child_ids,
             title=e.title,
             description=e.description,
             location=e.location,
-            is_exchange=e.is_exchange,
-            exchange_location=e.exchange_location,
-            grace_period_minutes=e.grace_period_minutes,
+            visibility=e.visibility or "co_parent",
             status=e.status,
-            is_agreement_derived=e.is_agreement_derived,
-            is_modification=e.is_modification,
+            is_owner=e.created_by == current_user.id if e.created_by else False,
+            event_category=e.event_category or "general",
+            category_data=e.category_data,
             created_at=e.created_at,
             updated_at=e.updated_at,
         )
@@ -154,23 +189,21 @@ async def update_event(
     return ScheduleEventResponse(
         id=event.id,
         case_id=event.case_id,
+        collection_id=event.collection_id,
+        created_by=event.created_by,
         event_type=event.event_type,
         start_time=event.start_time,
         end_time=event.end_time,
         all_day=event.all_day,
-        custodial_parent_id=event.custodial_parent_id,
-        transition_from_id=event.transition_from_id,
-        transition_to_id=event.transition_to_id,
         child_ids=event.child_ids,
         title=event.title,
         description=event.description,
         location=event.location,
-        is_exchange=event.is_exchange,
-        exchange_location=event.exchange_location,
-        grace_period_minutes=event.grace_period_minutes,
+        visibility=event.visibility or "co_parent",
         status=event.status,
-        is_agreement_derived=event.is_agreement_derived,
-        is_modification=event.is_modification,
+        is_owner=event.created_by == current_user.id if event.created_by else True,
+        event_category=event.event_category or "general",
+        category_data=event.category_data,
         created_at=event.created_at,
         updated_at=event.updated_at,
     )
@@ -344,9 +377,233 @@ async def get_calendar_data(
         )
         calendar_events.append(calendar_event)
 
+    # Also fetch court events for this case and date range
+    # Determine user's role in the case
+    participant_result = await db.execute(
+        select(CaseParticipant).where(
+            and_(
+                CaseParticipant.case_id == case_id,
+                CaseParticipant.user_id == current_user.id
+            )
+        )
+    )
+    participant = participant_result.scalar_one_or_none()
+
+    if participant:
+        is_petitioner = participant.role == "petitioner"
+
+        # Query court events for this case and date range
+        court_events_result = await db.execute(
+            select(CourtEvent).where(
+                and_(
+                    CourtEvent.case_id == case_id,
+                    CourtEvent.event_date >= start_date.date() if hasattr(start_date, 'date') else start_date,
+                    CourtEvent.event_date <= end_date.date() if hasattr(end_date, 'date') else end_date,
+                    CourtEvent.status != "cancelled"
+                )
+            )
+        )
+        court_events = court_events_result.scalars().all()
+
+        # Filter to events this parent is required for
+        for ce in court_events:
+            if (is_petitioner and ce.petitioner_required) or (not is_petitioner and ce.respondent_required):
+                # Create datetime from date and time
+                if ce.start_time:
+                    event_start = datetime.combine(ce.event_date, ce.start_time)
+                else:
+                    event_start = datetime.combine(ce.event_date, datetime.min.time())
+
+                if ce.end_time:
+                    event_end = datetime.combine(ce.event_date, ce.end_time)
+                else:
+                    event_end = event_start
+
+                # Get RSVP status for this parent
+                my_rsvp = ce.petitioner_rsvp_status if is_petitioner else ce.respondent_rsvp_status
+
+                court_calendar_event = CalendarEvent(
+                    id=ce.id,
+                    title=f"[Court] {ce.title}",
+                    start=event_start,
+                    end=event_end,
+                    all_day=False,
+                    event_type=f"court_{ce.event_type}",
+                    custodial_parent=None,
+                    is_exchange=False,
+                    location=ce.location or ce.virtual_link,
+                    status=ce.status,
+                    child_names=[],  # Court events don't have specific children
+                    court_event=True,  # Extra field to identify court events
+                    is_mandatory=ce.is_mandatory,
+                    my_rsvp_status=my_rsvp,
+                )
+                calendar_events.append(court_calendar_event)
+
     return CalendarResponse(
         case_id=case_id,
         events=calendar_events,
         start_date=start_date,
         end_date=end_date,
     )
+
+
+# ============================================================================
+# Court Event Endpoints for Parents
+# ============================================================================
+
+@router.get("/cases/{case_id}/court-events", response_model=CourtEventListResponse)
+async def get_court_events_for_parent(
+    case_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all court events for a case that this parent is required to attend.
+
+    Returns court events with RSVP status and ability to respond.
+    """
+    # Verify user is participant in case
+    participant_result = await db.execute(
+        select(CaseParticipant).where(
+            and_(
+                CaseParticipant.case_id == case_id,
+                CaseParticipant.user_id == current_user.id
+            )
+        )
+    )
+    participant = participant_result.scalar_one_or_none()
+
+    if not participant:
+        raise HTTPException(status_code=403, detail="Not a participant in this case")
+
+    is_petitioner = participant.role == "petitioner"
+
+    # Query court events for this case
+    court_events_result = await db.execute(
+        select(CourtEvent).where(
+            and_(
+                CourtEvent.case_id == case_id,
+                CourtEvent.status != "cancelled"
+            )
+        ).order_by(CourtEvent.event_date.desc())
+    )
+    court_events = court_events_result.scalars().all()
+
+    # Build response with appropriate RSVP info
+    events = []
+    for ce in court_events:
+        # Only include events this parent is required for
+        my_required = ce.petitioner_required if is_petitioner else ce.respondent_required
+        if not my_required:
+            continue
+
+        my_rsvp_status = ce.petitioner_rsvp_status if is_petitioner else ce.respondent_rsvp_status
+        my_rsvp_notes = ce.petitioner_rsvp_notes if is_petitioner else ce.respondent_rsvp_notes
+        other_rsvp_status = ce.respondent_rsvp_status if is_petitioner else ce.petitioner_rsvp_status
+
+        events.append(CourtEventResponse(
+            id=ce.id,
+            case_id=ce.case_id,
+            event_type=ce.event_type,
+            title=ce.title,
+            description=ce.description,
+            event_date=ce.event_date,
+            start_time=str(ce.start_time) if ce.start_time else None,
+            end_time=str(ce.end_time) if ce.end_time else None,
+            location=ce.location,
+            virtual_link=ce.virtual_link,
+            is_mandatory=ce.is_mandatory,
+            status=ce.status,
+            shared_notes=ce.shared_notes,
+            my_rsvp_status=my_rsvp_status,
+            my_rsvp_required=my_required,
+            my_rsvp_notes=my_rsvp_notes,
+            other_parent_rsvp_status=other_rsvp_status,
+        ))
+
+    return CourtEventListResponse(events=events, total=len(events))
+
+
+@router.post("/court-events/{event_id}/rsvp")
+async def rsvp_to_court_event(
+    event_id: str,
+    rsvp_data: CourtEventRSVPRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    RSVP to a court event.
+
+    Parents can respond with:
+    - "attending": Will attend the event
+    - "not_attending": Cannot attend (requires reason/notes)
+    - "maybe": Uncertain, will confirm later
+    """
+    # Validate RSVP status
+    valid_statuses = ["attending", "not_attending", "maybe"]
+    if rsvp_data.status not in valid_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid RSVP status. Must be one of: {', '.join(valid_statuses)}"
+        )
+
+    # Get the court event
+    event_result = await db.execute(
+        select(CourtEvent).where(CourtEvent.id == event_id)
+    )
+    event = event_result.scalar_one_or_none()
+
+    if not event:
+        raise HTTPException(status_code=404, detail="Court event not found")
+
+    # Verify user is participant in the case
+    participant_result = await db.execute(
+        select(CaseParticipant).where(
+            and_(
+                CaseParticipant.case_id == event.case_id,
+                CaseParticipant.user_id == current_user.id
+            )
+        )
+    )
+    participant = participant_result.scalar_one_or_none()
+
+    if not participant:
+        raise HTTPException(status_code=403, detail="Not a participant in this case")
+
+    is_petitioner = participant.role == "petitioner"
+
+    # Check if this parent is required for this event
+    if is_petitioner and not event.petitioner_required:
+        raise HTTPException(status_code=400, detail="You are not required to attend this event")
+    if not is_petitioner and not event.respondent_required:
+        raise HTTPException(status_code=400, detail="You are not required to attend this event")
+
+    # Require notes if not attending a mandatory event
+    if event.is_mandatory and rsvp_data.status == "not_attending" and not rsvp_data.notes:
+        raise HTTPException(
+            status_code=400,
+            detail="Notes are required when declining a mandatory court event"
+        )
+
+    # Update RSVP status
+    now = datetime.utcnow()
+    if is_petitioner:
+        event.petitioner_rsvp_status = rsvp_data.status
+        event.petitioner_rsvp_at = now
+        event.petitioner_rsvp_notes = rsvp_data.notes
+    else:
+        event.respondent_rsvp_status = rsvp_data.status
+        event.respondent_rsvp_at = now
+        event.respondent_rsvp_notes = rsvp_data.notes
+
+    await db.commit()
+    await db.refresh(event)
+
+    return {
+        "success": True,
+        "message": f"RSVP recorded: {rsvp_data.status}",
+        "event_id": event_id,
+        "rsvp_status": rsvp_data.status,
+        "rsvp_at": now.isoformat()
+    }

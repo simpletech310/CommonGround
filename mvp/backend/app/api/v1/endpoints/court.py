@@ -7,8 +7,10 @@ Endpoints for court professional access, settings, events, and reports.
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Form, BackgroundTasks
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
+import hashlib
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -64,6 +66,16 @@ from app.schemas.court import (
     CourtLoginResponse,
     # Summary
     CaseCourtSummary,
+    # Compliance
+    ComplianceSnapshot,
+    CategoryCompliance,
+    # Templates
+    CourtEventTemplate,
+    CourtEventTemplateList,
+    COURT_EVENT_TEMPLATES,
+    PredefinedReportType,
+    PredefinedReportTypeList,
+    PREDEFINED_REPORT_TYPES,
 )
 from app.services.court import (
     CourtProfessionalService,
@@ -75,6 +87,9 @@ from app.services.court import (
     ReportService,
     ARIACourtService,
 )
+from app.models.message import Message, MessageFlag
+from sqlalchemy import select, and_, func
+from sqlalchemy.orm import selectinload
 
 router = APIRouter()
 
@@ -221,10 +236,15 @@ async def list_professional_cases(
     For MVP, returns all cases in the system.
     In production, would filter by grants.
     """
-    from sqlalchemy import select
+    from sqlalchemy import select, or_
     from app.models.case import Case
 
-    result = await db.execute(select(Case).where(Case.status == "active"))
+    # Include both active and pending cases for court staff
+    result = await db.execute(
+        select(Case).where(
+            or_(Case.status == "active", Case.status == "pending")
+        ).order_by(Case.created_at.desc())
+    )
     cases = result.scalars().all()
 
     return [
@@ -851,27 +871,50 @@ async def get_public_settings(
 async def create_court_event(
     data: CourtEventCreate,
     request: Request,
-    professional_id: str,
-    grant_id: str,
+    professional_id: Optional[str] = None,
+    grant_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
 ):
     """
     Create a court event (hearing, mediation, deadline, etc.).
 
     Court events appear on both parents' calendars and cannot be modified by them.
+
+    MVP Demo: If professional_id/grant_id not provided, uses token's subject ID.
     """
-    grant = await get_professional_from_grant(db, grant_id, professional_id)
+    from jose import jwt
+    from app.core.config import settings
+
+    # Extract professional ID from token
+    token = credentials.credentials
+    try:
+        secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
+        payload = jwt.decode(token, secret_key, algorithms=[settings.JWT_ALGORITHM])
+        token_subject_id = payload.get("sub")
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    # MVP Demo mode: use token subject if no professional/grant provided
+    if professional_id and grant_id:
+        grant = await get_professional_from_grant(db, grant_id, professional_id)
+    else:
+        # Demo mode: use the subject ID from token
+        professional_id = token_subject_id
+        grant_id = "demo-grant"
 
     service = CourtEventService(db)
     event = await service.create_event(data, professional_id)
 
-    await log_court_action(
-        db, request, grant_id, professional_id, data.case_id,
-        action="create_event",
-        resource_type="court_event",
-        resource_id=event.id,
-        details={"title": data.title, "date": str(data.event_date)},
-    )
+    # Skip logging in demo mode (no real grant)
+    if grant_id != "demo-grant":
+        await log_court_action(
+            db, request, grant_id, professional_id, data.case_id,
+            action="create_event",
+            resource_type="court_event",
+            resource_id=event.id,
+            details={"title": data.title, "date": str(data.event_date)},
+        )
 
     return CourtEventResponse(
         id=event.id,
@@ -896,6 +939,13 @@ async def create_court_event(
         attendance_summary=event.attendance_summary,
         is_past=event.is_past,
         reminder_sent=event.reminder_sent,
+        # RSVP tracking (empty for new events)
+        petitioner_rsvp_status=event.petitioner_rsvp_status,
+        respondent_rsvp_status=event.respondent_rsvp_status,
+        petitioner_rsvp_at=event.petitioner_rsvp_at,
+        respondent_rsvp_at=event.respondent_rsvp_at,
+        petitioner_rsvp_notes=event.petitioner_rsvp_notes,
+        respondent_rsvp_notes=event.respondent_rsvp_notes,
         created_at=event.created_at,
         updated_at=event.updated_at,
     )
@@ -939,6 +989,13 @@ async def list_court_events(
             attendance_summary=e.attendance_summary,
             is_past=e.is_past,
             reminder_sent=e.reminder_sent,
+            # RSVP tracking
+            petitioner_rsvp_status=e.petitioner_rsvp_status,
+            respondent_rsvp_status=e.respondent_rsvp_status,
+            petitioner_rsvp_at=e.petitioner_rsvp_at,
+            respondent_rsvp_at=e.respondent_rsvp_at,
+            petitioner_rsvp_notes=e.petitioner_rsvp_notes,
+            respondent_rsvp_notes=e.respondent_rsvp_notes,
             created_at=e.created_at,
             updated_at=e.updated_at,
         )
@@ -1002,6 +1059,13 @@ async def update_court_event(
         attendance_summary=updated.attendance_summary,
         is_past=updated.is_past,
         reminder_sent=updated.reminder_sent,
+        # RSVP tracking
+        petitioner_rsvp_status=updated.petitioner_rsvp_status,
+        respondent_rsvp_status=updated.respondent_rsvp_status,
+        petitioner_rsvp_at=updated.petitioner_rsvp_at,
+        respondent_rsvp_at=updated.respondent_rsvp_at,
+        petitioner_rsvp_notes=updated.petitioner_rsvp_notes,
+        respondent_rsvp_notes=updated.respondent_rsvp_notes,
         created_at=updated.created_at,
         updated_at=updated.updated_at,
     )
@@ -1064,6 +1128,13 @@ async def record_attendance(
         attendance_summary=updated.attendance_summary,
         is_past=updated.is_past,
         reminder_sent=updated.reminder_sent,
+        # RSVP tracking
+        petitioner_rsvp_status=updated.petitioner_rsvp_status,
+        respondent_rsvp_status=updated.respondent_rsvp_status,
+        petitioner_rsvp_at=updated.petitioner_rsvp_at,
+        respondent_rsvp_at=updated.respondent_rsvp_at,
+        petitioner_rsvp_notes=updated.petitioner_rsvp_notes,
+        respondent_rsvp_notes=updated.respondent_rsvp_notes,
         created_at=updated.created_at,
         updated_at=updated.updated_at,
     )
@@ -1147,6 +1218,430 @@ async def mark_message_read(
     user_role = await get_user_case_role(db, current_user.id, message.case_id)
     updated = await service.mark_read(message_id, user_role)
     return updated
+
+
+# =============================================================================
+# Parent-to-Parent Messages (Court View)
+# =============================================================================
+
+from pydantic import BaseModel
+from typing import List, Optional as Opt
+
+
+class ParentMessageResponse(BaseModel):
+    """Response schema for parent-to-parent messages viewed by court."""
+    id: str
+    sender_id: str
+    sender_name: str
+    sender_role: str  # petitioner or respondent
+    recipient_id: str
+    recipient_name: str
+    content: str
+    sent_at: datetime
+    was_flagged: bool
+    original_content: Opt[str] = None
+    aria_score: Opt[float] = None
+    aria_categories: Opt[List[str]] = None
+    suggestion_accepted: Opt[bool] = None
+
+
+@router.get(
+    "/parent-messages/{case_id}",
+    response_model=List[ParentMessageResponse],
+    summary="Get parent-to-parent messages for a case",
+)
+async def get_parent_messages(
+    case_id: str,
+    limit: int = 100,
+    offset: int = 0,
+    flagged_only: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get parent-to-parent messages for a case (for court professional view).
+
+    Returns messages with ARIA analysis data including:
+    - Original content if flagged
+    - Toxicity scores
+    - Categories flagged
+    - Whether suggestions were accepted
+    """
+    # Build query
+    query = (
+        select(Message)
+        .options(selectinload(Message.flags))
+        .where(Message.case_id == case_id)
+        .order_by(Message.sent_at.desc())
+    )
+
+    if flagged_only:
+        query = query.where(Message.was_flagged == True)
+
+    query = query.limit(limit).offset(offset)
+
+    result = await db.execute(query)
+    messages = result.scalars().all()
+
+    # Get participant info to map IDs to names and roles
+    participants_result = await db.execute(
+        select(CaseParticipant)
+        .where(CaseParticipant.case_id == case_id)
+    )
+    participants = {p.user_id: p for p in participants_result.scalars().all()}
+
+    # Get user names
+    from app.models.user import User as UserModel, UserProfile
+
+    user_ids = set()
+    for msg in messages:
+        user_ids.add(msg.sender_id)
+        user_ids.add(msg.recipient_id)
+
+    users_result = await db.execute(
+        select(UserModel, UserProfile)
+        .outerjoin(UserProfile, UserModel.id == UserProfile.user_id)
+        .where(UserModel.id.in_(user_ids))
+    )
+    users = {}
+    for user, profile in users_result.all():
+        name = f"{user.first_name or ''} {user.last_name or ''}".strip()
+        if not name:
+            name = user.email.split('@')[0]
+        users[user.id] = name
+
+    # Build response
+    response = []
+    for msg in messages:
+        sender_participant = participants.get(msg.sender_id)
+        recipient_participant = participants.get(msg.recipient_id)
+
+        # Get ARIA flag data if exists
+        aria_score = None
+        aria_categories = None
+        suggestion_accepted = None
+
+        if msg.flags:
+            flag = msg.flags[0]  # Get first flag
+            aria_score = flag.toxicity_score
+            aria_categories = flag.categories
+            suggestion_accepted = flag.user_action in ["accepted", "modified"]
+
+        response.append(ParentMessageResponse(
+            id=msg.id,
+            sender_id=msg.sender_id,
+            sender_name=users.get(msg.sender_id, "Unknown"),
+            sender_role=sender_participant.role if sender_participant else "unknown",
+            recipient_id=msg.recipient_id,
+            recipient_name=users.get(msg.recipient_id, "Unknown"),
+            content=msg.content,
+            sent_at=msg.sent_at,
+            was_flagged=msg.was_flagged,
+            original_content=msg.original_content,
+            aria_score=aria_score,
+            aria_categories=aria_categories,
+            suggestion_accepted=suggestion_accepted,
+        ))
+
+    return response
+
+
+# =============================================================================
+# Court Forms & Hearings (Court Portal Access)
+# =============================================================================
+
+from app.models.court_form import CourtFormSubmission, CourtHearing, CourtFormType, CourtFormStatus, FormSubmissionSource
+
+
+class CourtFormSummary(BaseModel):
+    """Summary of a court form submission for court portal."""
+    id: str
+    case_id: str
+    parent_id: Opt[str] = None
+    form_type: str
+    status: str
+    submission_source: str
+    form_data: dict
+    pdf_url: Opt[str] = None
+    aria_assisted: bool
+    review_notes: Opt[str] = None
+    submitted_at: Opt[datetime] = None
+    reviewed_at: Opt[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CaseFormsResponse(BaseModel):
+    """Response for case forms list."""
+    case_id: str
+    forms: List[CourtFormSummary]
+    total: int
+
+
+class CaseFormProgressResponse(BaseModel):
+    """Workflow progress for a case."""
+    case_id: str
+    activation_status: str
+    total_forms: int
+    pending_forms: int
+    approved_forms: int
+    has_fl300: bool
+    has_fl300_approved: bool
+    has_fl311: bool
+    has_fl320: bool
+    has_fl340: bool
+    next_action: Opt[str] = None
+    fl300_id: Opt[str] = None
+
+
+class CourtHearingResponse(BaseModel):
+    """Response for a court hearing."""
+    id: str
+    case_id: str
+    hearing_type: str
+    scheduled_date: datetime
+    scheduled_time: Opt[str] = None
+    department: Opt[str] = None
+    judge_name: Opt[str] = None
+    outcome: Opt[str] = None
+    petitioner_attended: Opt[bool] = None
+    respondent_attended: Opt[bool] = None
+
+
+@router.get(
+    "/forms/case/{case_id}",
+    response_model=CaseFormsResponse,
+    summary="List court form submissions for a case (Court Portal)",
+)
+async def list_court_forms_for_case(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """List all court form submissions for a case (accessible by court portal)."""
+    result = await db.execute(
+        select(CourtFormSubmission)
+        .where(CourtFormSubmission.case_id == case_id)
+        .order_by(CourtFormSubmission.created_at.desc())
+    )
+    forms = result.scalars().all()
+
+    return CaseFormsResponse(
+        case_id=case_id,
+        forms=[
+            CourtFormSummary(
+                id=f.id,
+                case_id=f.case_id,
+                parent_id=f.parent_id,
+                form_type=f.form_type.value if hasattr(f.form_type, 'value') else str(f.form_type),
+                status=f.status.value if hasattr(f.status, 'value') else str(f.status),
+                submission_source=f.submission_source.value if hasattr(f.submission_source, 'value') else str(f.submission_source),
+                form_data=f.form_data or {},
+                pdf_url=f.pdf_url,
+                aria_assisted=f.aria_assisted,
+                review_notes=f.review_notes,
+                submitted_at=f.submitted_at,
+                reviewed_at=f.reviewed_at,
+                created_at=f.created_at,
+                updated_at=f.updated_at,
+            )
+            for f in forms
+        ],
+        total=len(forms),
+    )
+
+
+class CourtFormDetailResponse(BaseModel):
+    """Detailed response for a single court form (for court portal)."""
+    id: str
+    case_id: str
+    parent_id: Opt[str] = None
+    form_type: str
+    status: str
+    submission_source: str
+    form_data: dict
+    pdf_url: Opt[str] = None
+    pdf_hash: Opt[str] = None
+    aria_assisted: bool
+    aria_conversation_id: Opt[str] = None
+    responds_to_form_id: Opt[str] = None
+    parent_form_id: Opt[str] = None
+    hearing_id: Opt[str] = None
+    court_notes: Opt[str] = None  # Mapped from review_notes for frontend compatibility
+    review_notes: Opt[str] = None
+    resubmission_issues: Opt[List[str]] = None  # Derived from rejection_reason
+    status_history: Opt[list] = None
+    submitted_at: Opt[datetime] = None
+    reviewed_at: Opt[datetime] = None
+    approved_at: Opt[datetime] = None  # Alias for reviewed_at when status is approved
+    # Edit permission fields
+    edits_allowed: bool = False
+    edits_allowed_by: Opt[str] = None
+    edits_allowed_at: Opt[datetime] = None
+    edits_allowed_notes: Opt[str] = None
+    edits_allowed_sections: Opt[list] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+@router.get(
+    "/forms/{form_id}",
+    response_model=CourtFormDetailResponse,
+    summary="Get a single court form submission by ID (Court Portal)",
+)
+async def get_court_form_by_id(
+    form_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single court form submission by ID (accessible by court portal)."""
+    result = await db.execute(
+        select(CourtFormSubmission).where(CourtFormSubmission.id == form_id)
+    )
+    form = result.scalar_one_or_none()
+
+    if not form:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Form not found"
+        )
+
+    # Derive resubmission issues from rejection_reason if present
+    resubmission_issues = None
+    if form.rejection_reason:
+        # Split rejection_reason by newlines if multiple issues
+        resubmission_issues = [issue.strip() for issue in form.rejection_reason.split('\n') if issue.strip()]
+
+    # For approved status, use reviewed_at as approved_at
+    approved_at = form.reviewed_at if form.status in ['approved', 'served', 'entered'] else None
+
+    return CourtFormDetailResponse(
+        id=form.id,
+        case_id=form.case_id,
+        parent_id=form.parent_id,
+        form_type=form.form_type.value if hasattr(form.form_type, 'value') else str(form.form_type),
+        status=form.status.value if hasattr(form.status, 'value') else str(form.status),
+        submission_source=form.submission_source.value if hasattr(form.submission_source, 'value') else str(form.submission_source),
+        form_data=form.form_data or {},
+        pdf_url=form.pdf_url,
+        pdf_hash=form.pdf_hash,
+        aria_assisted=form.aria_assisted,
+        aria_conversation_id=form.aria_conversation_id,
+        responds_to_form_id=form.responds_to_form_id,
+        parent_form_id=form.parent_form_id,
+        hearing_id=form.hearing_id,
+        court_notes=form.review_notes,  # Map review_notes to court_notes for frontend
+        review_notes=form.review_notes,
+        resubmission_issues=resubmission_issues,
+        status_history=form.status_history,
+        submitted_at=form.submitted_at,
+        reviewed_at=form.reviewed_at,
+        approved_at=approved_at,
+        edits_allowed=form.edits_allowed,
+        edits_allowed_by=form.edits_allowed_by,
+        edits_allowed_at=form.edits_allowed_at,
+        edits_allowed_notes=form.edits_allowed_notes,
+        edits_allowed_sections=form.edits_allowed_sections,
+        created_at=form.created_at,
+        updated_at=form.updated_at,
+    )
+
+
+@router.get(
+    "/forms/case/{case_id}/progress",
+    response_model=CaseFormProgressResponse,
+    summary="Get form workflow progress for a case (Court Portal)",
+)
+async def get_court_form_progress(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get workflow progress for a case (accessible by court portal)."""
+    result = await db.execute(
+        select(CourtFormSubmission)
+        .where(CourtFormSubmission.case_id == case_id)
+    )
+    forms = result.scalars().all()
+
+    # Calculate progress
+    has_fl300 = any(f.form_type == CourtFormType.FL_300 for f in forms)
+    has_fl300_approved = any(
+        f.form_type == CourtFormType.FL_300 and f.status == CourtFormStatus.APPROVED
+        for f in forms
+    )
+    has_fl311 = any(f.form_type == CourtFormType.FL_311 for f in forms)
+    has_fl320 = any(f.form_type == CourtFormType.FL_320 for f in forms)
+    has_fl340 = any(f.form_type == CourtFormType.FL_340 for f in forms)
+
+    pending_forms = sum(1 for f in forms if f.status in [CourtFormStatus.SUBMITTED, CourtFormStatus.UNDER_COURT_REVIEW])
+    approved_forms = sum(1 for f in forms if f.status == CourtFormStatus.APPROVED)
+
+    # Determine next action
+    next_action = None
+    activation_status = "pending"
+
+    if not has_fl300:
+        next_action = "Petitioner needs to submit FL-300 Request for Order"
+        activation_status = "fl300_required"
+    elif not has_fl300_approved:
+        next_action = "Court needs to review and approve FL-300"
+        activation_status = "fl300_submitted"
+    elif not has_fl320:
+        next_action = "Respondent needs to submit FL-320 Response"
+        activation_status = "fl320_required"
+    elif not has_fl340:
+        next_action = "Awaiting hearing and court order (FL-340)"
+        activation_status = "awaiting_hearing"
+    else:
+        activation_status = "active"
+
+    fl300_id = next((f.id for f in forms if f.form_type == CourtFormType.FL_300), None)
+
+    return CaseFormProgressResponse(
+        case_id=case_id,
+        activation_status=activation_status,
+        total_forms=len(forms),
+        pending_forms=pending_forms,
+        approved_forms=approved_forms,
+        has_fl300=has_fl300,
+        has_fl300_approved=has_fl300_approved,
+        has_fl311=has_fl311,
+        has_fl320=has_fl320,
+        has_fl340=has_fl340,
+        next_action=next_action,
+        fl300_id=fl300_id,
+    )
+
+
+@router.get(
+    "/hearings/case/{case_id}",
+    response_model=List[CourtHearingResponse],
+    summary="List hearings for a case (Court Portal)",
+)
+async def list_court_hearings_for_case(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """List all court hearings for a case (accessible by court portal)."""
+    result = await db.execute(
+        select(CourtHearing)
+        .where(CourtHearing.case_id == case_id)
+        .order_by(CourtHearing.scheduled_date.desc())
+    )
+    hearings = result.scalars().all()
+
+    return [
+        CourtHearingResponse(
+            id=h.id,
+            case_id=h.case_id,
+            hearing_type=h.hearing_type.value if hasattr(h.hearing_type, 'value') else str(h.hearing_type),
+            scheduled_date=h.scheduled_date,
+            scheduled_time=h.scheduled_time,
+            department=h.department,
+            judge_name=h.judge_name,
+            outcome=h.outcome.value if hasattr(h.outcome, 'value') else str(h.outcome) if h.outcome else None,
+            petitioner_attended=h.petitioner_attended,
+            respondent_attended=h.respondent_attended,
+        )
+        for h in hearings
+    ]
 
 
 # =============================================================================
@@ -1425,7 +1920,8 @@ async def get_case_obligations(
 
     service = ClearFundService(db)
     filters = ObligationFilters()
-    result = await service.list_obligations(case_id, filters, page, page_size)
+    # list_obligations returns (obligations, total) tuple
+    obligations, total = await service.list_obligations(case_id, filters, page, page_size)
 
     return {
         "items": [
@@ -1446,12 +1942,12 @@ async def get_case_obligations(
                 "created_by": str(ob.created_by),
                 "created_at": ob.created_at.isoformat(),
             }
-            for ob in result["items"]
+            for ob in obligations
         ],
-        "total": result["total"],
+        "total": total,
         "page": page,
         "page_size": page_size,
-        "has_more": result["has_more"],
+        "has_more": (page * page_size) < total,
     }
 
 
@@ -1919,4 +2415,1450 @@ async def get_case_cubbie_summary(
         "total_transfers": total_transfers,
         "disputed_items": disputed_items,
         "condition_issues": condition_issues,
+    }
+
+
+# =============================================================================
+# Compliance Snapshot Endpoints
+# =============================================================================
+
+@router.get(
+    "/compliance/snapshot/{case_id}",
+    response_model=ComplianceSnapshot,
+    summary="Get compliance snapshot for case",
+)
+async def get_compliance_snapshot(
+    case_id: str,
+    days: int = 30,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate a comprehensive compliance snapshot for court dashboard.
+
+    Aggregates data from:
+    - Schedule: Exchange on-time rates, missed exchanges
+    - Communication: Flagged messages, response times
+    - Financial: Overdue obligations, payment compliance
+    - Items: Disputed transfers, condition issues
+
+    Returns a unified compliance view with status indicators:
+    - 🟢 GREEN: Good standing (score >= 80)
+    - 🟡 AMBER: Needs attention (score 60-79)
+    - 🔴 RED: Serious issues (score < 60)
+    """
+    from datetime import timedelta
+    from sqlalchemy import select, func, and_
+    from app.models.case import Case
+    from app.models.message import Message
+    from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
+    from app.models.child import Child
+
+    now = datetime.utcnow()
+    start_date = now - timedelta(days=days)
+
+    # Verify case exists
+    case_result = await db.execute(
+        select(Case).where(Case.id == case_id)
+    )
+    case = case_result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Case not found"
+        )
+
+    # Calculate days since case creation
+    days_monitored = (now - case.created_at).days if case.created_at else days
+
+    # =========================================================================
+    # 1. Schedule Compliance
+    # =========================================================================
+    exchanges_result = await db.execute(
+        select(CustodyExchange.id).where(CustodyExchange.case_id == case_id)
+    )
+    exchange_ids = [r[0] for r in exchanges_result.all()]
+
+    total_exchanges = 0
+    on_time_count = 0
+    late_count = 0
+    missed_count = 0
+    schedule_issues = []
+
+    if exchange_ids:
+        # Get completed instances in date range
+        instances_result = await db.execute(
+            select(CustodyExchangeInstance)
+            .where(
+                and_(
+                    CustodyExchangeInstance.exchange_id.in_(exchange_ids),
+                    CustodyExchangeInstance.scheduled_time >= start_date,
+                    CustodyExchangeInstance.status.in_(["completed", "cancelled", "missed"]),
+                )
+            )
+        )
+        instances = instances_result.scalars().all()
+        total_exchanges = len(instances)
+
+        for inst in instances:
+            if inst.status == "completed":
+                # Check if on time (within 15 min grace period)
+                if inst.completed_at and inst.scheduled_time:
+                    diff = (inst.completed_at - inst.scheduled_time).total_seconds()
+                    if diff <= 900:  # 15 minutes grace
+                        on_time_count += 1
+                    else:
+                        late_count += 1
+                else:
+                    on_time_count += 1  # Assume on-time if no times recorded
+            elif inst.status == "missed":
+                missed_count += 1
+
+        if missed_count > 0:
+            schedule_issues.append(f"{missed_count} missed exchange(s) in last {days} days")
+        if late_count > 2:
+            schedule_issues.append(f"{late_count} late arrivals in last {days} days")
+
+    on_time_rate = (on_time_count / total_exchanges * 100) if total_exchanges > 0 else 100.0
+
+    # Calculate schedule score
+    if on_time_rate >= 90:
+        schedule_status = "green"
+        schedule_score = 90 + (on_time_rate - 90)
+    elif on_time_rate >= 70:
+        schedule_status = "amber"
+        schedule_score = 60 + (on_time_rate - 70)
+    else:
+        schedule_status = "red"
+        schedule_score = on_time_rate * 0.8
+
+    schedule_compliance = CategoryCompliance(
+        status=schedule_status,
+        score=round(schedule_score, 1),
+        metrics={
+            "total_exchanges": total_exchanges,
+            "on_time": on_time_count,
+            "late": late_count,
+            "missed": missed_count,
+            "on_time_rate": round(on_time_rate, 1),
+        },
+        issues=schedule_issues,
+    )
+
+    # =========================================================================
+    # 2. Communication Compliance
+    # =========================================================================
+    messages_result = await db.execute(
+        select(
+            func.count(Message.id),
+            func.count(Message.id).filter(Message.was_flagged == True),
+        )
+        .where(
+            and_(
+                Message.case_id == case_id,
+                Message.sent_at >= start_date,
+            )
+        )
+    )
+    msg_stats = messages_result.one()
+    total_messages = msg_stats[0] or 0
+    flagged_messages = msg_stats[1] or 0
+
+    flagged_rate = (flagged_messages / total_messages * 100) if total_messages > 0 else 0.0
+    comm_issues = []
+
+    if flagged_rate > 15:
+        comm_issues.append(f"High flagged message rate: {flagged_rate:.1f}%")
+    elif flagged_rate > 5:
+        comm_issues.append(f"Elevated flagged message rate: {flagged_rate:.1f}%")
+
+    # Calculate communication score
+    if flagged_rate <= 5:
+        comm_status = "green"
+        comm_score = 100 - flagged_rate
+    elif flagged_rate <= 15:
+        comm_status = "amber"
+        comm_score = 80 - (flagged_rate - 5) * 2
+    else:
+        comm_status = "red"
+        comm_score = max(0, 60 - (flagged_rate - 15) * 2)
+
+    communication_compliance = CategoryCompliance(
+        status=comm_status,
+        score=round(comm_score, 1),
+        metrics={
+            "total_messages": total_messages,
+            "flagged_messages": flagged_messages,
+            "flagged_rate": round(flagged_rate, 1),
+        },
+        issues=comm_issues,
+    )
+
+    # =========================================================================
+    # 3. Financial Compliance
+    # =========================================================================
+    overdue_obligations = 0
+    total_obligations = 0
+    financial_issues = []
+
+    try:
+        from app.models.clearfund import Obligation
+
+        obligations_result = await db.execute(
+            select(
+                func.count(Obligation.id),
+                func.count(Obligation.id).filter(Obligation.is_overdue == True),
+            )
+            .where(Obligation.case_id == case_id)
+        )
+        ob_stats = obligations_result.one()
+        total_obligations = ob_stats[0] or 0
+        overdue_obligations = ob_stats[1] or 0
+
+        if overdue_obligations > 0:
+            financial_issues.append(f"{overdue_obligations} overdue obligation(s)")
+    except Exception:
+        # ClearFund may not be set up
+        pass
+
+    # Calculate financial score
+    if overdue_obligations == 0:
+        financial_status = "green"
+        financial_score = 100
+    elif overdue_obligations <= 2:
+        financial_status = "amber"
+        financial_score = 80 - (overdue_obligations * 10)
+    else:
+        financial_status = "red"
+        financial_score = max(0, 60 - (overdue_obligations - 2) * 15)
+
+    financial_compliance = CategoryCompliance(
+        status=financial_status,
+        score=round(financial_score, 1),
+        metrics={
+            "total_obligations": total_obligations,
+            "overdue_obligations": overdue_obligations,
+        },
+        issues=financial_issues,
+    )
+
+    # =========================================================================
+    # 4. Item Compliance (KidsCubbie)
+    # =========================================================================
+    disputed_items = 0
+    condition_issues_count = 0
+    item_issues = []
+
+    try:
+        from app.models.cubbie import CubbieItem, CubbieExchangeItem
+
+        # Get children IDs
+        children_ids_result = await db.execute(
+            select(Child.id).where(Child.case_id == case_id)
+        )
+        child_ids = [r[0] for r in children_ids_result.all()]
+
+        if child_ids and exchange_ids:
+            # Get instances
+            instances_result = await db.execute(
+                select(CustodyExchangeInstance.id)
+                .where(CustodyExchangeInstance.exchange_id.in_(exchange_ids))
+            )
+            instance_ids = [r[0] for r in instances_result.all()]
+
+            if instance_ids:
+                # Count disputes and condition issues
+                items_result = await db.execute(
+                    select(
+                        func.count(CubbieExchangeItem.id).filter(CubbieExchangeItem.is_disputed == True),
+                        func.count(CubbieExchangeItem.id).filter(
+                            and_(
+                                CubbieExchangeItem.condition_sent.isnot(None),
+                                CubbieExchangeItem.condition_received.isnot(None),
+                                CubbieExchangeItem.condition_sent != CubbieExchangeItem.condition_received,
+                            )
+                        ),
+                    )
+                    .where(CubbieExchangeItem.exchange_id.in_(instance_ids))
+                )
+                item_stats = items_result.one()
+                disputed_items = item_stats[0] or 0
+                condition_issues_count = item_stats[1] or 0
+
+                if disputed_items > 0:
+                    item_issues.append(f"{disputed_items} disputed item transfer(s)")
+                if condition_issues_count > 0:
+                    item_issues.append(f"{condition_issues_count} condition discrepancy report(s)")
+    except Exception:
+        # Cubbie may not be set up
+        pass
+
+    # Calculate item score
+    total_item_issues = disputed_items + condition_issues_count
+    if total_item_issues == 0:
+        item_status = "green"
+        item_score = 100
+    elif total_item_issues <= 1:
+        item_status = "amber"
+        item_score = 75
+    else:
+        item_status = "red"
+        item_score = max(0, 50 - (total_item_issues - 1) * 10)
+
+    item_compliance = CategoryCompliance(
+        status=item_status,
+        score=round(item_score, 1),
+        metrics={
+            "disputed_items": disputed_items,
+            "condition_issues": condition_issues_count,
+        },
+        issues=item_issues,
+    )
+
+    # =========================================================================
+    # Calculate Overall Score and Status
+    # =========================================================================
+    # Weighted average: Schedule 40%, Communication 30%, Financial 20%, Items 10%
+    overall_score = (
+        schedule_compliance.score * 0.4 +
+        communication_compliance.score * 0.3 +
+        financial_compliance.score * 0.2 +
+        item_compliance.score * 0.1
+    )
+
+    # Determine overall status
+    if overall_score >= 80:
+        overall_status = "green"
+    elif overall_score >= 60:
+        overall_status = "amber"
+    else:
+        overall_status = "red"
+
+    # If any category is red, overall cannot be green
+    if "red" in [schedule_compliance.status, communication_compliance.status,
+                 financial_compliance.status, item_compliance.status]:
+        if overall_status == "green":
+            overall_status = "amber"
+
+    return ComplianceSnapshot(
+        case_id=case_id,
+        generated_at=now,
+        overall_status=overall_status,
+        overall_score=round(overall_score, 1),
+        schedule_compliance=schedule_compliance,
+        communication_compliance=communication_compliance,
+        financial_compliance=financial_compliance,
+        item_compliance=item_compliance,
+        days_monitored=days_monitored,
+        total_exchanges=total_exchanges,
+        on_time_rate=round(on_time_rate, 1),
+        flagged_messages_count=flagged_messages,
+        overdue_obligations=overdue_obligations,
+        disputed_items=disputed_items,
+    )
+
+
+# =============================================================================
+# Court Event Templates
+# =============================================================================
+
+@router.get(
+    "/templates/events",
+    response_model=CourtEventTemplateList,
+    summary="Get court event templates",
+)
+async def get_event_templates():
+    """
+    Get predefined court event templates for quick event creation.
+
+    Templates include:
+    - Custody Hearing
+    - Modification Hearing
+    - Mediation Session
+    - Status Conference
+    - Settlement Conference
+    - Review Hearing
+    - Filing Deadline
+    - Response Deadline
+    - Parenting Class
+    - GAL Interview
+    - Custody Evaluation
+    """
+    return CourtEventTemplateList(templates=COURT_EVENT_TEMPLATES)
+
+
+@router.get(
+    "/templates/events/{template_id}",
+    response_model=CourtEventTemplate,
+    summary="Get a specific event template",
+)
+async def get_event_template(template_id: str):
+    """Get a specific court event template by ID."""
+    template = next(
+        (t for t in COURT_EVENT_TEMPLATES if t.id == template_id),
+        None
+    )
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Event template '{template_id}' not found"
+        )
+    return template
+
+
+# =============================================================================
+# Predefined Report Types
+# =============================================================================
+
+@router.get(
+    "/templates/reports",
+    response_model=PredefinedReportTypeList,
+    summary="Get predefined report types",
+)
+async def get_report_types():
+    """
+    Get predefined report types for quick report generation.
+
+    Report types include:
+    - Attendance Compliance Report
+    - Financial Summary Report
+    - Communication Analysis Report
+    - Missed Exchanges Report
+    - Complete Case Packet
+    - Item Transfer Log
+    - ARIA Communication Summary
+    - Investigation Report
+    """
+    return PredefinedReportTypeList(report_types=PREDEFINED_REPORT_TYPES)
+
+
+@router.get(
+    "/templates/reports/{report_type_id}",
+    response_model=PredefinedReportType,
+    summary="Get a specific report type",
+)
+async def get_report_type(report_type_id: str):
+    """Get a specific predefined report type by ID."""
+    report_type = next(
+        (r for r in PREDEFINED_REPORT_TYPES if r.id == report_type_id),
+        None
+    )
+    if not report_type:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report type '{report_type_id}' not found"
+        )
+    return report_type
+
+
+# =============================================================================
+# Custody Agreement Upload & Extraction Endpoints
+# =============================================================================
+
+from fastapi import UploadFile, File, BackgroundTasks
+from app.services.custody_extraction import CustodyExtractionService, compute_file_hash
+from app.schemas.custody_order import (
+    AgreementUploadResponse,
+    ExtractionStatusResponse,
+    CustodyOrderResponse,
+    CustodyOrderFullResponse,
+    CustodyOrderDetailResponse,
+    CustodyOrderChildResponse,
+    VisitationScheduleResponse,
+    HolidayScheduleResponse,
+    SupervisedVisitationResponse,
+    ExchangeRulesResponse,
+    CustodyOrderReview,
+)
+from app.models.custody_order import (
+    CustodyOrder,
+    CustodyOrderChild,
+    VisitationSchedule,
+    SupervisedVisitation,
+    ExchangeRules,
+    HolidaySchedule,
+    AgreementUpload,
+)
+
+
+@router.post(
+    "/agreements/upload/{case_id}",
+    response_model=AgreementUploadResponse,
+    summary="Upload custody agreement for extraction",
+)
+async def upload_custody_agreement(
+    case_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    professional_id: str,
+    grant_id: str,
+    file: UploadFile = File(...),
+    document_type: str = "custody_order",
+    form_type: Optional[str] = None,
+    state: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Upload a custody agreement PDF for AI extraction.
+
+    The extraction will run in the background. Use the extraction status
+    endpoint to check progress and retrieve results.
+    """
+    # Verify access
+    await get_professional_from_grant(db, grant_id, professional_id)
+
+    # Validate file type
+    if not file.content_type or not file.content_type.startswith("application/pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PDF files are supported"
+        )
+
+    # Read file content
+    content = await file.read()
+    file_hash = compute_file_hash(content)
+    file_size = len(content)
+
+    # For now, store in a temporary location (in production, use Supabase Storage)
+    # We'll store the base64 content in the database for simplicity
+    import base64
+    file_url = f"data:application/pdf;base64,{base64.b64encode(content).decode()}"
+
+    # Create upload record
+    service = CustodyExtractionService(db)
+    upload = await service.create_upload(
+        case_id=case_id,
+        uploaded_by=professional_id,
+        uploaded_by_type="court_professional",
+        filename=file.filename or "custody_agreement.pdf",
+        file_url=file_url,
+        file_size=file_size,
+        file_hash=file_hash,
+        document_type=document_type,
+        form_type=form_type,
+        state=state,
+    )
+
+    # Log the action
+    await log_court_action(
+        db, request, grant_id, professional_id, case_id,
+        action="agreement_upload",
+        resource_type="agreement_upload",
+        resource_id=upload.id,
+        details={
+            "filename": file.filename,
+            "file_size": file_size,
+            "document_type": document_type,
+        },
+    )
+
+    # Start extraction in background
+    async def run_extraction():
+        from app.core.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            extraction_service = CustodyExtractionService(session)
+            try:
+                await extraction_service.extract_from_pdf(upload.id, content)
+            except Exception as e:
+                # Error is logged in the service
+                print(f"Extraction error for {upload.id}: {e}")
+
+    background_tasks.add_task(run_extraction)
+
+    return AgreementUploadResponse(
+        id=upload.id,
+        case_id=case_id,
+        filename=file.filename or "custody_agreement.pdf",
+        file_url=upload.file_url,
+        extraction_status="processing",
+        message="File uploaded. Extraction started in background.",
+    )
+
+
+@router.get(
+    "/agreements/upload/{upload_id}/status",
+    response_model=ExtractionStatusResponse,
+    summary="Get extraction status",
+)
+async def get_extraction_status(
+    upload_id: str,
+    professional_id: str,
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the status of a custody agreement extraction."""
+    await get_professional_from_grant(db, grant_id, professional_id)
+
+    service = CustodyExtractionService(db)
+    upload = await service.get_upload(upload_id)
+
+    if not upload:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Upload not found"
+        )
+
+    # Calculate progress (rough estimate)
+    progress = None
+    if upload.extraction_status == "pending":
+        progress = 0
+    elif upload.extraction_status == "processing":
+        progress = 50
+    elif upload.extraction_status == "completed":
+        progress = 100
+    elif upload.extraction_status == "failed":
+        progress = 0
+
+    return ExtractionStatusResponse(
+        upload_id=upload.id,
+        status=upload.extraction_status,
+        progress_percent=progress,
+        error=upload.extraction_error,
+        custody_order_id=upload.custody_order_id,
+        extraction_confidence=float(upload.extraction_confidence) if upload.extraction_confidence else None,
+        requires_review=upload.requires_review,
+    )
+
+
+@router.get(
+    "/agreements/uploads/case/{case_id}",
+    summary="List uploads for a case",
+)
+async def list_case_uploads(
+    case_id: str,
+    professional_id: str,
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """List all agreement uploads for a case."""
+    await get_professional_from_grant(db, grant_id, professional_id)
+
+    service = CustodyExtractionService(db)
+    uploads = await service.get_uploads_for_case(case_id)
+
+    return {
+        "uploads": [
+            {
+                "id": u.id,
+                "filename": u.original_filename,
+                "document_type": u.document_type,
+                "form_type": u.form_type,
+                "extraction_status": u.extraction_status,
+                "custody_order_id": u.custody_order_id,
+                "extraction_confidence": float(u.extraction_confidence) if u.extraction_confidence else None,
+                "requires_review": u.requires_review,
+                "uploaded_at": u.created_at.isoformat(),
+            }
+            for u in uploads
+        ]
+    }
+
+
+@router.get(
+    "/custody-orders/case/{case_id}",
+    summary="List custody orders for a case",
+)
+async def list_case_custody_orders(
+    case_id: str,
+    professional_id: str,
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """List all extracted custody orders for a case."""
+    await get_professional_from_grant(db, grant_id, professional_id)
+
+    service = CustodyExtractionService(db)
+    orders = await service.get_custody_orders_for_case(case_id)
+
+    return {
+        "custody_orders": [
+            CustodyOrderResponse(
+                id=o.id,
+                case_id=o.case_id,
+                form_type=o.form_type,
+                form_state=o.form_state,
+                physical_custody=o.physical_custody,
+                legal_custody=o.legal_custody,
+                visitation_type=o.visitation_type,
+                has_abuse_allegations=o.has_abuse_allegations,
+                has_substance_abuse_allegations=o.has_substance_abuse_allegations,
+                abduction_risk=o.abduction_risk,
+                mediation_required=o.mediation_required,
+                travel_restriction_state=o.travel_restriction_state,
+                is_court_ordered=o.is_court_ordered,
+                requires_review=o.requires_review,
+                extraction_confidence=float(o.extraction_confidence) if o.extraction_confidence else None,
+                children_count=len(o.children) if o.children else 0,
+                created_at=o.created_at,
+                extracted_at=o.extracted_at,
+            )
+            for o in orders
+        ]
+    }
+
+
+@router.get(
+    "/custody-orders/{order_id}",
+    response_model=CustodyOrderFullResponse,
+    summary="Get custody order details",
+)
+async def get_custody_order_details(
+    order_id: str,
+    request: Request,
+    professional_id: str,
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get full details of an extracted custody order."""
+    await get_professional_from_grant(db, grant_id, professional_id)
+
+    # Get order with relationships
+    result = await db.execute(
+        select(CustodyOrder)
+        .where(CustodyOrder.id == order_id)
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Custody order not found"
+        )
+
+    # Get children
+    children_result = await db.execute(
+        select(CustodyOrderChild)
+        .where(CustodyOrderChild.custody_order_id == order_id)
+    )
+    children = children_result.scalars().all()
+
+    # Get visitation schedules
+    schedules_result = await db.execute(
+        select(VisitationSchedule)
+        .where(VisitationSchedule.custody_order_id == order_id)
+    )
+    schedules = schedules_result.scalars().all()
+
+    # Get holiday schedule
+    holidays_result = await db.execute(
+        select(HolidaySchedule)
+        .where(HolidaySchedule.custody_order_id == order_id)
+    )
+    holidays = holidays_result.scalars().all()
+
+    # Get supervised visitation
+    supervised_result = await db.execute(
+        select(SupervisedVisitation)
+        .where(SupervisedVisitation.custody_order_id == order_id)
+    )
+    supervised = supervised_result.scalar_one_or_none()
+
+    # Get exchange rules
+    exchange_result = await db.execute(
+        select(ExchangeRules)
+        .where(ExchangeRules.custody_order_id == order_id)
+    )
+    exchange = exchange_result.scalar_one_or_none()
+
+    # Log access
+    await log_court_action(
+        db, request, grant_id, professional_id, order.case_id,
+        action="view_custody_order",
+        resource_type="custody_order",
+        resource_id=order_id,
+    )
+
+    return CustodyOrderFullResponse(
+        order=CustodyOrderDetailResponse(
+            id=order.id,
+            case_id=order.case_id,
+            form_type=order.form_type,
+            form_state=order.form_state,
+            court_case_number=order.court_case_number,
+            physical_custody=order.physical_custody,
+            legal_custody=order.legal_custody,
+            visitation_type=order.visitation_type,
+            has_abuse_allegations=order.has_abuse_allegations,
+            abuse_alleged_against=order.abuse_alleged_against,
+            has_substance_abuse_allegations=order.has_substance_abuse_allegations,
+            substance_abuse_alleged_against=order.substance_abuse_alleged_against,
+            abuse_allegation_details=order.abuse_allegation_details,
+            travel_restriction_state=order.travel_restriction_state,
+            travel_restriction_counties=order.travel_restriction_counties,
+            travel_restriction_other=order.travel_restriction_other,
+            requires_written_permission=order.requires_written_permission,
+            abduction_risk=order.abduction_risk,
+            abduction_prevention_orders=order.abduction_prevention_orders,
+            mediation_required=order.mediation_required,
+            mediation_location=order.mediation_location,
+            other_provisions=order.other_provisions,
+            is_court_ordered=order.is_court_ordered,
+            order_date=order.order_date,
+            effective_date=order.effective_date,
+            source_pdf_url=order.source_pdf_url,
+            extraction_confidence=float(order.extraction_confidence) if order.extraction_confidence else None,
+            extraction_notes=order.extraction_notes,
+            requires_review=order.requires_review,
+            reviewed_at=order.reviewed_at,
+            raw_extracted_data=order.raw_extracted_data,
+            created_at=order.created_at,
+            updated_at=order.updated_at,
+        ),
+        children=[
+            CustodyOrderChildResponse(
+                id=c.id,
+                child_name=c.child_name,
+                birth_date=c.birth_date,
+                age_at_filing=c.age_at_filing,
+                physical_custody=c.physical_custody,
+                legal_custody=c.legal_custody,
+                special_needs=c.special_needs,
+                school_info=c.school_info,
+            )
+            for c in children
+        ],
+        visitation_schedules=[
+            VisitationScheduleResponse(
+                id=s.id,
+                parent_type=s.parent_type,
+                schedule_type=s.schedule_type,
+                weekend_number=s.weekend_number,
+                start_day=s.start_day,
+                end_day=s.end_day,
+                start_time=s.start_time,
+                end_time=s.end_time,
+                start_at_school=s.start_at_school,
+                start_after_school=s.start_after_school,
+                is_virtual=s.is_virtual,
+                notes=s.notes,
+            )
+            for s in schedules
+        ],
+        holiday_schedule=[
+            HolidayScheduleResponse(
+                id=h.id,
+                holiday_name=h.holiday_name,
+                holiday_type=h.holiday_type,
+                assigned_to=h.assigned_to,
+                odd_years_to=h.odd_years_to,
+                even_years_to=h.even_years_to,
+                start_day=h.start_day,
+                end_day=h.end_day,
+                duration_days=h.duration_days,
+                notes=h.notes,
+            )
+            for h in holidays
+        ],
+        supervised_visitation=SupervisedVisitationResponse(
+            id=supervised.id,
+            supervised_parent=supervised.supervised_parent,
+            supervision_reason=supervised.supervision_reason,
+            supervisor_name=supervised.supervisor_name,
+            supervisor_phone=supervised.supervisor_phone,
+            supervisor_type=supervised.supervisor_type,
+            supervisor_agency=supervised.supervisor_agency,
+            petitioner_cost_percent=supervised.petitioner_cost_percent,
+            respondent_cost_percent=supervised.respondent_cost_percent,
+            location_type=supervised.location_type,
+            location_address=supervised.location_address,
+            frequency=supervised.frequency,
+            hours_per_visit=supervised.hours_per_visit,
+        ) if supervised else None,
+        exchange_rules=ExchangeRulesResponse(
+            id=exchange.id,
+            require_licensed_driver=exchange.require_licensed_driver,
+            require_insured_driver=exchange.require_insured_driver,
+            require_registered_vehicle=exchange.require_registered_vehicle,
+            require_child_restraints=exchange.require_child_restraints,
+            transport_to_provider=exchange.transport_to_provider,
+            transport_from_provider=exchange.transport_from_provider,
+            exchange_start_address=exchange.exchange_start_address,
+            exchange_end_address=exchange.exchange_end_address,
+            exchange_protocol=exchange.exchange_protocol,
+            curbside_exchange=exchange.curbside_exchange,
+            other_rules=exchange.other_rules,
+        ) if exchange else None,
+    )
+
+
+@router.post(
+    "/custody-orders/{order_id}/review",
+    summary="Mark custody order as reviewed",
+)
+async def review_custody_order(
+    order_id: str,
+    request: Request,
+    data: CustodyOrderReview,
+    professional_id: str,
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark an extracted custody order as reviewed by court professional."""
+    await get_professional_from_grant(db, grant_id, professional_id)
+
+    service = CustodyExtractionService(db)
+    order = await service.mark_reviewed(
+        order_id=order_id,
+        reviewed_by=professional_id,
+        review_notes=data.review_notes,
+    )
+
+    # Log action
+    await log_court_action(
+        db, request, grant_id, professional_id, order.case_id,
+        action="review_custody_order",
+        resource_type="custody_order",
+        resource_id=order_id,
+        details={"approved": data.approved, "notes": data.review_notes},
+    )
+
+    return {
+        "success": True,
+        "message": "Custody order marked as reviewed",
+        "order_id": order_id,
+        "reviewed_at": order.reviewed_at.isoformat(),
+    }
+
+
+@router.post(
+    "/custody-orders/{order_id}/apply-to-case",
+    summary="Apply custody order to case schedule",
+)
+async def apply_custody_order_to_case(
+    order_id: str,
+    request: Request,
+    professional_id: str,
+    grant_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Apply extracted custody order data to the case.
+
+    This will:
+    - Update case custody settings
+    - Generate schedule events from visitation schedules
+    - Apply exchange rules
+    - Set up holiday schedules
+    """
+    await get_professional_from_grant(db, grant_id, professional_id)
+
+    # Get the custody order
+    result = await db.execute(
+        select(CustodyOrder).where(CustodyOrder.id == order_id)
+    )
+    order = result.scalar_one_or_none()
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Custody order not found"
+        )
+
+    if order.requires_review:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Custody order must be reviewed before applying to case"
+        )
+
+    # TODO: Implement the logic to:
+    # 1. Update case settings from custody order
+    # 2. Generate recurring schedule events from visitation schedules
+    # 3. Create exchange rules in the case
+    # 4. Set up holiday schedule events
+
+    # For now, return a success message indicating this is a future feature
+    await log_court_action(
+        db, request, grant_id, professional_id, order.case_id,
+        action="apply_custody_order",
+        resource_type="custody_order",
+        resource_id=order_id,
+    )
+
+    return {
+        "success": True,
+        "message": "Custody order applied to case (schedule generation coming soon)",
+        "order_id": order_id,
+        "case_id": order.case_id,
+    }
+
+
+# =============================================================================
+# Case Creation from Court Forms (FL-300, FL-311)
+# =============================================================================
+
+@router.post(
+    "/cases/extract-from-forms",
+    summary="Extract case data from FL-300 and FL-311 forms",
+)
+async def extract_case_from_forms(
+    fl300: UploadFile = File(..., description="FL-300 Request for Order PDF"),
+    fl311: UploadFile = File(None, description="FL-311 Child Custody Application PDF (optional)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Extract case and party information from uploaded court forms.
+
+    This endpoint:
+    1. Uses ARIA/Claude to extract structured data from PDF forms
+    2. Returns extracted data for review/editing
+    3. Does NOT create the case - that's done in a separate step
+
+    Supported forms:
+    - FL-300: Request for Order (required)
+    - FL-311: Child Custody and Visitation Application (optional, provides more detail)
+    """
+    import anthropic
+    import base64
+    import json
+    import os
+
+    # Read PDF files
+    fl300_content = await fl300.read()
+    fl311_content = await fl311.read() if fl311 else None
+
+    # Check file types
+    if not fl300.filename.lower().endswith('.pdf'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="FL-300 must be a PDF file"
+        )
+
+    if fl311 and not fl311.filename.lower().endswith('.pdf'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="FL-311 must be a PDF file"
+        )
+
+    # Build extraction prompt
+    extraction_prompt = """You are an expert at extracting structured data from California Judicial Council family law forms.
+
+Extract the following information from the provided FL-300 (Request for Order) and optionally FL-311 (Child Custody Application) PDF forms:
+
+Return a JSON object with this exact structure:
+{
+    "case_number": "string or null - the court case number if present",
+    "court_county": "string - the California county",
+    "filing_date": "string in YYYY-MM-DD format or null",
+    "petitioner_name": "string - full name of petitioner/requesting party",
+    "petitioner_email": "string or null - email if present",
+    "petitioner_address": "string or null - address if present",
+    "respondent_name": "string - full name of respondent/other party",
+    "respondent_email": "string or null - email if present",
+    "respondent_address": "string or null - address if present",
+    "children": [
+        {
+            "name": "string - child's full name",
+            "date_of_birth": "string in YYYY-MM-DD format or null",
+            "age": number or null
+        }
+    ],
+    "legal_custody_request": "string describing legal custody arrangement requested",
+    "physical_custody_request": "string describing physical custody arrangement requested",
+    "visitation_schedule": "string describing visitation schedule if specified",
+    "additional_requests": "string with any other requests or orders sought"
+}
+
+Be precise and extract exactly what's in the forms. If information is not present or unclear, use null.
+For children, extract all children listed in the forms.
+"""
+
+    try:
+        # Try using Claude to extract data
+        from app.core.config import settings
+        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+        # Build message content with PDFs
+        content = []
+
+        # Add FL-300 PDF
+        content.append({
+            "type": "document",
+            "source": {
+                "type": "base64",
+                "media_type": "application/pdf",
+                "data": base64.standard_b64encode(fl300_content).decode("utf-8"),
+            },
+        })
+        content.append({
+            "type": "text",
+            "text": "This is the FL-300 (Request for Order) form."
+        })
+
+        # Add FL-311 if provided
+        if fl311_content:
+            content.append({
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": base64.standard_b64encode(fl311_content).decode("utf-8"),
+                },
+            })
+            content.append({
+                "type": "text",
+                "text": "This is the FL-311 (Child Custody and Visitation Application) form."
+            })
+
+        content.append({
+            "type": "text",
+            "text": extraction_prompt
+        })
+
+        # Call Claude
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            messages=[
+                {
+                    "role": "user",
+                    "content": content
+                }
+            ]
+        )
+
+        # Parse response
+        response_text = response.content[0].text
+
+        # Try to extract JSON from response
+        # Handle cases where Claude wraps JSON in markdown code blocks
+        if "```json" in response_text:
+            json_start = response_text.find("```json") + 7
+            json_end = response_text.find("```", json_start)
+            response_text = response_text[json_start:json_end].strip()
+        elif "```" in response_text:
+            json_start = response_text.find("```") + 3
+            json_end = response_text.find("```", json_start)
+            response_text = response_text[json_start:json_end].strip()
+
+        extracted_data = json.loads(response_text)
+
+        return {
+            "success": True,
+            "extraction_method": "aria",
+            "data": extracted_data,
+        }
+
+    except Exception as e:
+        # Log the error but try PDF form field extraction as fallback
+        import traceback
+        print(f"ARIA extraction failed: {e}")
+        traceback.print_exc()
+
+        # Try to extract from PDF form fields directly using pypdf
+        try:
+            from pypdf import PdfReader
+            import io
+            import re
+
+            def convert_date_format(date_str):
+                """Convert MM/DD/YYYY to YYYY-MM-DD format for HTML date inputs"""
+                if not date_str:
+                    return None
+                date_str = str(date_str).strip()
+                # Try MM/DD/YYYY format
+                match = re.match(r'(\d{1,2})/(\d{1,2})/(\d{4})', date_str)
+                if match:
+                    month, day, year = match.groups()
+                    return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                # Already in YYYY-MM-DD format
+                if re.match(r'\d{4}-\d{2}-\d{2}', date_str):
+                    return date_str
+                return date_str
+
+            extracted_data = {
+                "case_number": None,
+                "court_county": "California",
+                "filing_date": None,
+                "petitioner_name": "",
+                "petitioner_email": None,
+                "petitioner_address": None,
+                "respondent_name": "",
+                "respondent_email": None,
+                "respondent_address": None,
+                "children": [],
+                "legal_custody_request": None,
+                "physical_custody_request": None,
+                "visitation_schedule": None,
+                "additional_requests": None,
+            }
+
+            # Extract from FL-300
+            pdf_reader = PdfReader(io.BytesIO(fl300_content))
+            fields = pdf_reader.get_fields() or {}
+
+            # Map PDF field names to our data structure
+            field_mapping = {
+                # Case info
+                "FL-300[0].Page1[0].CaseNumber[0].CaseNumber_ft[0]": "case_number",
+                "FL-300[0].Page1[0].CourtInfo[0].CrtCounty_ft[0]": "court_county",
+                # Petitioner
+                "FL-300[0].Page1[0].TitlePartyName[0].Petitioner_1_ft[0]": "petitioner_name",
+                "FL-300[0].Page1[0].AttyInfo[0].Email_ft[0]": "petitioner_email",
+                "FL-300[0].Page1[0].AttyInfo[0].AttyStreet_ft[0]": "petitioner_address",
+                # Respondent
+                "FL-300[0].Page1[0].TitlePartyName[0].Respondent_ft[0]": "respondent_name",
+            }
+
+            for pdf_field, data_field in field_mapping.items():
+                if pdf_field in fields:
+                    value = fields[pdf_field].get('/V', '')
+                    if value:
+                        extracted_data[data_field] = str(value)
+
+            # Extract children from FL-300 Page 2
+            children = []
+            child_fields = [
+                ("FL-300[0].Page2[0].List2[0].Li1[0].Child1Name_ft[0]", "FL-300[0].Page2[0].List2[0].Li1[0].Child1BirthDate_dt[0]"),
+                ("FL-300[0].Page2[0].List2[0].Li1[0].Child2Name_ft[0]", "FL-300[0].Page2[0].List2[0].Li1[0].Child2BirthDate_dt[0]"),
+                ("FL-300[0].Page2[0].List2[0].Li1[0].Child3Name_ft[0]", "FL-300[0].Page2[0].List2[0].Li1[0].Child3BirthDate_dt[0]"),
+                ("FL-300[0].Page2[0].List2[0].Li1[0].Child4Name_ft[0]", "FL-300[0].Page2[0].List2[0].Li1[0].Child4BirthDate_dt[0]"),
+            ]
+
+            for name_field, dob_field in child_fields:
+                if name_field in fields:
+                    name = fields[name_field].get('/V', '')
+                    if name:
+                        dob = fields.get(dob_field, {}).get('/V', '') if dob_field in fields else ''
+                        children.append({
+                            "name": str(name),
+                            "date_of_birth": convert_date_format(dob) if dob else None,
+                        })
+
+            extracted_data["children"] = children
+
+            # If FL-311 was provided, extract additional custody info
+            if fl311_content:
+                pdf_reader_311 = PdfReader(io.BytesIO(fl311_content))
+                fields_311 = pdf_reader_311.get_fields() or {}
+
+                # Also try to get children from FL-311 if not found in FL-300
+                if not children:
+                    fl311_child_fields = [
+                        ("FL-311[0].Page1[0].List1[0].Li1[0].tblMinorChildren[0].child1[0].Child1Name[0]",
+                         "FL-311[0].Page1[0].List1[0].Li1[0].tblMinorChildren[0].child1[0].Child1Birthdate_dt[0]"),
+                        ("FL-311[0].Page1[0].List1[0].Li1[0].tblMinorChildren[0].child2[0].Child2Name[0]",
+                         "FL-311[0].Page1[0].List1[0].Li1[0].tblMinorChildren[0].child2[0].Child2Birthdate_dt[0]"),
+                    ]
+
+                    for name_field, dob_field in fl311_child_fields:
+                        if name_field in fields_311:
+                            name = fields_311[name_field].get('/V', '')
+                            if name:
+                                dob = fields_311.get(dob_field, {}).get('/V', '') if dob_field in fields_311 else ''
+                                children.append({
+                                    "name": str(name),
+                                    "date_of_birth": convert_date_format(dob) if dob else None,
+                                })
+
+                    extracted_data["children"] = children
+
+                # Check custody checkboxes
+                if "FL-311[0].Page1[0].List2[0].Li1[0].ToPetitioner_cb[0]" in fields_311:
+                    val = fields_311["FL-311[0].Page1[0].List2[0].Li1[0].ToPetitioner_cb[0]"].get('/V', '')
+                    if val and val != '/Off':
+                        extracted_data["physical_custody_request"] = "Primary physical custody to Petitioner"
+
+                if "FL-311[0].Page1[0].List2[0].Li2[0].ToBothJointly_cb[0]" in fields_311:
+                    val = fields_311["FL-311[0].Page1[0].List2[0].Li2[0].ToBothJointly_cb[0]"].get('/V', '')
+                    if val and val != '/Off':
+                        extracted_data["legal_custody_request"] = "Joint legal custody to both parents"
+
+            print(f"PDF form field extraction successful: {extracted_data}")
+
+            return {
+                "success": True,
+                "extraction_method": "pdf_fields",
+                "data": extracted_data,
+            }
+
+        except Exception as pdf_err:
+            print(f"PDF field extraction also failed: {pdf_err}")
+            traceback.print_exc()
+
+            return {
+                "success": False,
+                "extraction_method": "manual",
+                "error": str(e),
+                "data": {
+                    "case_number": None,
+                    "court_county": "California",
+                    "filing_date": None,
+                    "petitioner_name": "",
+                    "petitioner_email": None,
+                    "petitioner_address": None,
+                    "respondent_name": "",
+                    "respondent_email": None,
+                    "respondent_address": None,
+                    "children": [],
+                    "legal_custody_request": None,
+                    "physical_custody_request": None,
+                    "visitation_schedule": None,
+                    "additional_requests": None,
+                },
+            }
+
+
+@router.post(
+    "/cases/create-from-extraction",
+    summary="Create a new case from extracted form data",
+)
+async def create_case_from_extraction(
+    request: Request,
+    case_number: Optional[str] = Form(None),
+    court_county: str = Form(...),
+    petitioner_name: str = Form(...),
+    petitioner_email: str = Form(...),
+    respondent_name: str = Form(...),
+    respondent_email: str = Form(...),
+    children: str = Form("[]"),  # JSON array of children
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a new case from form extraction data.
+
+    This endpoint:
+    1. Creates the case record
+    2. Creates placeholder users for petitioner and respondent (if not existing)
+    3. Generates invite links for both parents to join the platform
+    4. Returns the case ID and invite URLs
+    """
+    import json
+    import uuid
+    import secrets
+    import os
+    from datetime import date
+    from app.models.case import Case
+    from app.models.child import Child
+
+    # Parse children JSON
+    try:
+        children_list = json.loads(children)
+    except:
+        children_list = []
+
+    # Generate case name
+    petitioner_last = petitioner_name.split()[-1] if petitioner_name else "Unknown"
+    respondent_last = respondent_name.split()[-1] if respondent_name else "Unknown"
+    case_name = f"{petitioner_last} v. {respondent_last}"
+
+    # Generate invite tokens
+    petitioner_invite_token = secrets.token_urlsafe(32)
+    respondent_invite_token = secrets.token_urlsafe(32)
+
+    # Create the case
+    # Note: CaseParticipant records are created when users register with invite links
+    # This allows cases to be created before users join the platform
+    case = Case(
+        id=str(uuid.uuid4()),
+        case_name=case_name,
+        case_number=case_number,
+        state="CA",
+        county=court_county,
+        status="pending",  # Will become active when both parents join
+    )
+    db.add(case)
+
+    # Add children
+    for child_data in children_list:
+        # Parse date_of_birth if provided
+        dob = None
+        dob_str = child_data.get("date_of_birth")
+        if dob_str:
+            try:
+                dob = date.fromisoformat(dob_str)
+            except:
+                pass
+
+        child = Child(
+            id=str(uuid.uuid4()),
+            case_id=case.id,
+            first_name=child_data.get("name", "").split()[0] if child_data.get("name") else "Unknown",
+            last_name=child_data.get("name", "").split()[-1] if child_data.get("name") and len(child_data.get("name", "").split()) > 1 else "",
+            date_of_birth=dob,
+        )
+        db.add(child)
+
+    # Create FL-300 form submission (court-uploaded)
+    fl300_submission = CourtFormSubmission(
+        id=str(uuid.uuid4()),
+        case_id=case.id,
+        parent_id=None,  # Court-uploaded, no parent yet
+        form_type=CourtFormType.FL_300.value,
+        form_state="CA",
+        status=CourtFormStatus.SUBMITTED.value,
+        submission_source=FormSubmissionSource.COURT_UPLOAD.value,
+        submitted_at=datetime.utcnow(),
+        form_data={
+            "petitioner_name": petitioner_name,
+            "petitioner_email": petitioner_email,
+            "respondent_name": respondent_name,
+            "respondent_email": respondent_email,
+            "children": children_list,
+            "court_county": court_county,
+            "case_number": case_number,
+        },
+        aria_assisted=False,
+        requires_review=True,
+        status_history=[{
+            "status": CourtFormStatus.SUBMITTED.value,
+            "timestamp": datetime.utcnow().isoformat(),
+            "source": "court_upload",
+        }],
+    )
+    db.add(fl300_submission)
+
+    # Create FL-311 form submission if we have custody data
+    fl311_submission = CourtFormSubmission(
+        id=str(uuid.uuid4()),
+        case_id=case.id,
+        parent_id=None,  # Court-uploaded
+        form_type=CourtFormType.FL_311.value,
+        form_state="CA",
+        status=CourtFormStatus.SUBMITTED.value,
+        submission_source=FormSubmissionSource.COURT_UPLOAD.value,
+        submitted_at=datetime.utcnow(),
+        parent_form_id=fl300_submission.id,  # Links to FL-300
+        form_data={
+            "children": children_list,
+        },
+        aria_assisted=False,
+        requires_review=True,
+        status_history=[{
+            "status": CourtFormStatus.SUBMITTED.value,
+            "timestamp": datetime.utcnow().isoformat(),
+            "source": "court_upload",
+        }],
+    )
+    db.add(fl311_submission)
+
+    await db.commit()
+    await db.refresh(case)
+
+    # Generate invite URLs (frontend will handle these routes)
+    base_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+    # Encode invite data in URL
+    import base64
+    petitioner_invite_data = base64.urlsafe_b64encode(json.dumps({
+        "case_id": case.id,
+        "role": "petitioner",
+        "name": petitioner_name,
+        "email": petitioner_email,
+        "token": petitioner_invite_token,
+    }).encode()).decode()
+
+    respondent_invite_data = base64.urlsafe_b64encode(json.dumps({
+        "case_id": case.id,
+        "role": "respondent",
+        "name": respondent_name,
+        "email": respondent_email,
+        "token": respondent_invite_token,
+    }).encode()).decode()
+
+    return {
+        "success": True,
+        "case_id": case.id,
+        "case_name": case.case_name,
+        "case_number": case.case_number,
+        "petitioner_invite_url": f"{base_url}/register?invite={petitioner_invite_data}",
+        "respondent_invite_url": f"{base_url}/register?invite={respondent_invite_data}",
     }
