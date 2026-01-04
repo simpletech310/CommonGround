@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Calendar, Clock, FolderOpen, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { casesAPI, Case, MyTimeCollection, EventV2 } from '@/lib/api';
+import { casesAPI, exchangesAPI, Case, MyTimeCollection, EventV2, ExchangeInstanceForCalendar, CustodyExchangeInstance } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +19,7 @@ import CalendarView from '@/components/schedule/calendar-view';
 import EventForm from '@/components/schedule/event-form';
 import EventDetails from '@/components/schedule/event-details';
 import ExchangeForm from '@/components/schedule/exchange-form';
+import SilentHandoffCheckIn from '@/components/schedule/silent-handoff-checkin';
 
 function ScheduleContent() {
   const router = useRouter();
@@ -34,6 +35,7 @@ function ScheduleContent() {
   const [calendarKey, setCalendarKey] = useState(0); // For refreshing calendar
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedExchangeInstance, setSelectedExchangeInstance] = useState<CustodyExchangeInstance | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -88,6 +90,40 @@ function ScheduleContent() {
   const handleCollectionSelect = (collection: MyTimeCollection) => {
     setSelectedCollection(collection);
     setActiveTab('blocks');
+  };
+
+  const handleExchangeClick = async (exchange: ExchangeInstanceForCalendar) => {
+    if (!selectedCase) return;
+
+    try {
+      // Get a date range around the exchange time to ensure we find it
+      const exchangeDate = new Date(exchange.scheduled_time);
+      const startDate = new Date(exchangeDate);
+      startDate.setDate(startDate.getDate() - 1);
+      const endDate = new Date(exchangeDate);
+      endDate.setDate(endDate.getDate() + 1);
+
+      // Fetch full instance details with date range
+      const instances = await exchangesAPI.getUpcoming(
+        selectedCase.id,
+        startDate.toISOString(),
+        endDate.toISOString()
+      );
+      const fullInstance = instances.find(inst => inst.id === exchange.id);
+
+      if (fullInstance) {
+        setSelectedExchangeInstance(fullInstance);
+      } else {
+        console.error('Exchange instance not found:', exchange.id);
+      }
+    } catch (err: any) {
+      console.error('Failed to load exchange details:', err);
+    }
+  };
+
+  const handleCheckInComplete = (updatedInstance: CustodyExchangeInstance) => {
+    setSelectedExchangeInstance(updatedInstance);
+    setCalendarKey(prev => prev + 1); // Refresh calendar
   };
 
   if (!user) {
@@ -234,6 +270,7 @@ function ScheduleContent() {
               caseId={selectedCase.id}
               onCreateEvent={handleCreateEvent}
               onEventClick={handleEventClick}
+              onExchangeClick={handleExchangeClick}
             />
           )}
           {activeTab === 'collections' && (
@@ -274,6 +311,14 @@ function ScheduleContent() {
           caseId={selectedCase.id}
           onClose={() => setShowExchangeForm(false)}
           onSuccess={handleExchangeCreated}
+        />
+      )}
+
+      {selectedExchangeInstance && (
+        <SilentHandoffCheckIn
+          instance={selectedExchangeInstance}
+          onCheckInComplete={handleCheckInComplete}
+          onClose={() => setSelectedExchangeInstance(null)}
         />
       )}
     </div>

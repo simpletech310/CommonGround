@@ -175,6 +175,7 @@ class SectionGeneratorRegistry:
                 "agreement_overview",
                 "compliance_summary",
                 "parenting_time",
+                "exchange_gps_verification",
                 "communication_compliance",
                 "intervention_log",
                 "chain_of_custody",

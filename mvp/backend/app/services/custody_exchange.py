@@ -5,14 +5,16 @@ Handles creation, recurrence generation, and check-in logic.
 """
 
 import uuid
+import secrets
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
 from app.models.case import Case, CaseParticipant
+from app.services.geolocation import GeolocationService
 
 
 def _strip_tz(dt: Optional[datetime]) -> Optional[datetime]:
@@ -51,6 +53,14 @@ class CustodyExchangeService:
         items_to_bring: Optional[str] = None,
         special_instructions: Optional[str] = None,
         notes_visible_to_coparent: bool = True,
+        # Silent Handoff settings
+        location_lat: Optional[float] = None,
+        location_lng: Optional[float] = None,
+        geofence_radius_meters: int = 100,
+        check_in_window_before_minutes: int = 30,
+        check_in_window_after_minutes: int = 30,
+        silent_handoff_enabled: bool = False,
+        qr_confirmation_required: bool = False,
     ) -> CustodyExchange:
         """Create a new custody exchange (pickup/dropoff)."""
 
@@ -103,6 +113,14 @@ class CustodyExchangeService:
             special_instructions=special_instructions,
             notes_visible_to_coparent=notes_visible_to_coparent,
             status="active",
+            # Silent Handoff settings
+            location_lat=location_lat,
+            location_lng=location_lng,
+            geofence_radius_meters=geofence_radius_meters,
+            check_in_window_before_minutes=check_in_window_before_minutes,
+            check_in_window_after_minutes=check_in_window_after_minutes,
+            silent_handoff_enabled=silent_handoff_enabled,
+            qr_confirmation_required=qr_confirmation_required,
         )
 
         db.add(exchange)
@@ -519,4 +537,320 @@ class CustodyExchangeService:
         else:
             data["next_occurrence"] = None
 
+        # Include Silent Handoff settings
+        data["location_lat"] = exchange.location_lat
+        data["location_lng"] = exchange.location_lng
+        data["geofence_radius_meters"] = exchange.geofence_radius_meters
+        data["check_in_window_before_minutes"] = exchange.check_in_window_before_minutes
+        data["check_in_window_after_minutes"] = exchange.check_in_window_after_minutes
+        data["silent_handoff_enabled"] = exchange.silent_handoff_enabled
+        data["qr_confirmation_required"] = exchange.qr_confirmation_required
+
         return data
+
+    # ============================================================
+    # Silent Handoff Methods
+    # ============================================================
+
+    @staticmethod
+    def calculate_exchange_window(
+        scheduled_time: datetime,
+        before_minutes: int,
+        after_minutes: int
+    ) -> Tuple[datetime, datetime]:
+        """
+        Calculate the check-in window boundaries for an exchange.
+
+        Args:
+            scheduled_time: The scheduled exchange time
+            before_minutes: How many minutes before exchange to allow check-in
+            after_minutes: How many minutes after exchange to allow check-in
+
+        Returns:
+            Tuple of (window_start, window_end)
+        """
+        window_start = scheduled_time - timedelta(minutes=before_minutes)
+        window_end = scheduled_time + timedelta(minutes=after_minutes)
+        return window_start, window_end
+
+    @staticmethod
+    def is_within_exchange_window(
+        current_time: datetime,
+        scheduled_time: datetime,
+        before_minutes: int,
+        after_minutes: int
+    ) -> bool:
+        """Check if current time is within the exchange window."""
+        window_start, window_end = CustodyExchangeService.calculate_exchange_window(
+            scheduled_time, before_minutes, after_minutes
+        )
+        return window_start <= current_time <= window_end
+
+    @staticmethod
+    async def check_in_with_gps(
+        db: AsyncSession,
+        instance_id: str,
+        user_id: str,
+        latitude: float,
+        longitude: float,
+        device_accuracy: float,
+        notes: Optional[str] = None
+    ) -> Optional[CustodyExchangeInstance]:
+        """
+        GPS-verified check-in for Silent Handoff.
+
+        Records GPS coordinates, calculates distance from exchange location,
+        and determines if user is within geofence.
+
+        Privacy: This captures a single GPS fix at check-in time only,
+        not continuous tracking.
+
+        Args:
+            db: Database session
+            instance_id: Exchange instance ID
+            user_id: User checking in
+            latitude: User's GPS latitude
+            longitude: User's GPS longitude
+            device_accuracy: Device-reported GPS accuracy in meters
+            notes: Optional check-in notes
+
+        Returns:
+            Updated CustodyExchangeInstance or None if not found
+        """
+        result = await db.execute(
+            select(CustodyExchangeInstance)
+            .options(selectinload(CustodyExchangeInstance.exchange))
+            .where(CustodyExchangeInstance.id == instance_id)
+        )
+        instance = result.scalar_one_or_none()
+
+        if not instance:
+            return None
+
+        exchange = instance.exchange
+        now = datetime.utcnow()
+
+        # Calculate exchange window if not set
+        if not instance.window_start or not instance.window_end:
+            window_start, window_end = CustodyExchangeService.calculate_exchange_window(
+                instance.scheduled_time,
+                exchange.check_in_window_before_minutes,
+                exchange.check_in_window_after_minutes
+            )
+            instance.window_start = window_start
+            instance.window_end = window_end
+
+        # Calculate distance and geofence status
+        in_geofence = None
+        distance_meters = None
+
+        if exchange.location_lat is not None and exchange.location_lng is not None:
+            in_geofence, distance_meters = GeolocationService.is_within_geofence(
+                user_lat=latitude,
+                user_lng=longitude,
+                geofence_lat=exchange.location_lat,
+                geofence_lng=exchange.location_lng,
+                radius_meters=exchange.geofence_radius_meters,
+                device_accuracy_meters=device_accuracy
+            )
+
+        # Determine which parent is checking in and record GPS data
+        if user_id == exchange.from_parent_id:
+            instance.from_parent_checked_in = True
+            instance.from_parent_check_in_time = now
+            instance.from_parent_check_in_lat = latitude
+            instance.from_parent_check_in_lng = longitude
+            instance.from_parent_device_accuracy = device_accuracy
+            instance.from_parent_distance_meters = distance_meters
+            instance.from_parent_in_geofence = in_geofence
+        elif user_id == exchange.to_parent_id:
+            instance.to_parent_checked_in = True
+            instance.to_parent_check_in_time = now
+            instance.to_parent_check_in_lat = latitude
+            instance.to_parent_check_in_lng = longitude
+            instance.to_parent_device_accuracy = device_accuracy
+            instance.to_parent_distance_meters = distance_meters
+            instance.to_parent_in_geofence = in_geofence
+        else:
+            # Fallback for unassigned parents - fill in order
+            if not instance.from_parent_checked_in:
+                instance.from_parent_checked_in = True
+                instance.from_parent_check_in_time = now
+                instance.from_parent_check_in_lat = latitude
+                instance.from_parent_check_in_lng = longitude
+                instance.from_parent_device_accuracy = device_accuracy
+                instance.from_parent_distance_meters = distance_meters
+                instance.from_parent_in_geofence = in_geofence
+            elif not instance.to_parent_checked_in:
+                instance.to_parent_checked_in = True
+                instance.to_parent_check_in_time = now
+                instance.to_parent_check_in_lat = latitude
+                instance.to_parent_check_in_lng = longitude
+                instance.to_parent_device_accuracy = device_accuracy
+                instance.to_parent_distance_meters = distance_meters
+                instance.to_parent_in_geofence = in_geofence
+
+        if notes:
+            if instance.notes:
+                instance.notes = f"{instance.notes}\n{notes}"
+            else:
+                instance.notes = notes
+
+        # Generate QR token if both parents checked in and QR required
+        if (exchange.qr_confirmation_required and
+            instance.from_parent_checked_in and
+            instance.to_parent_checked_in and
+            not instance.qr_confirmation_token):
+            instance.qr_confirmation_token = secrets.token_urlsafe(32)
+
+        # Update handoff outcome
+        instance.handoff_outcome = CustodyExchangeService._determine_handoff_outcome(
+            instance, exchange
+        )
+
+        # Auto-complete if both checked in and QR not required
+        if (instance.from_parent_checked_in and
+            instance.to_parent_checked_in and
+            not exchange.qr_confirmation_required):
+            instance.status = "completed"
+            instance.completed_at = now
+
+        instance.updated_at = now
+        await db.commit()
+        await db.refresh(instance)
+
+        return instance
+
+    @staticmethod
+    def _determine_handoff_outcome(
+        instance: CustodyExchangeInstance,
+        exchange: CustodyExchange
+    ) -> str:
+        """Determine the handoff outcome based on check-in status."""
+        both_checked_in = instance.from_parent_checked_in and instance.to_parent_checked_in
+
+        if both_checked_in:
+            if exchange.qr_confirmation_required and not instance.qr_confirmed_at:
+                return "pending_qr"
+            return "completed"
+        elif instance.from_parent_checked_in or instance.to_parent_checked_in:
+            return "one_party_present"
+        else:
+            return "pending"
+
+    @staticmethod
+    async def confirm_qr(
+        db: AsyncSession,
+        instance_id: str,
+        user_id: str,
+        confirmation_token: str
+    ) -> Optional[CustodyExchangeInstance]:
+        """
+        Confirm exchange via QR code scan.
+
+        The confirming parent scans the QR code displayed by the other parent
+        to mutually verify presence at the exchange location.
+
+        Args:
+            db: Database session
+            instance_id: Exchange instance ID
+            user_id: User scanning the QR code
+            confirmation_token: Token from the QR code
+
+        Returns:
+            Updated CustodyExchangeInstance or None
+
+        Raises:
+            ValueError: If token is invalid
+        """
+        result = await db.execute(
+            select(CustodyExchangeInstance)
+            .options(selectinload(CustodyExchangeInstance.exchange))
+            .where(CustodyExchangeInstance.id == instance_id)
+        )
+        instance = result.scalar_one_or_none()
+
+        if not instance:
+            return None
+
+        # Verify token matches
+        if instance.qr_confirmation_token != confirmation_token:
+            raise ValueError("Invalid confirmation token")
+
+        # Record confirmation
+        now = datetime.utcnow()
+        instance.qr_confirmed_at = now
+        instance.qr_confirmed_by = user_id
+        instance.status = "completed"
+        instance.completed_at = now
+        instance.handoff_outcome = "completed"
+        instance.updated_at = now
+
+        await db.commit()
+        await db.refresh(instance)
+
+        return instance
+
+    @staticmethod
+    async def get_instance_with_exchange(
+        db: AsyncSession,
+        instance_id: str
+    ) -> Optional[CustodyExchangeInstance]:
+        """Get an instance with its parent exchange loaded."""
+        result = await db.execute(
+            select(CustodyExchangeInstance)
+            .options(selectinload(CustodyExchangeInstance.exchange))
+            .where(CustodyExchangeInstance.id == instance_id)
+        )
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def auto_close_expired_windows(db: AsyncSession) -> int:
+        """
+        Auto-close exchange instances where the window has expired.
+
+        This should be run as a background task (e.g., every 5 minutes).
+
+        Returns:
+            Count of instances closed
+        """
+        now = datetime.utcnow()
+
+        result = await db.execute(
+            select(CustodyExchangeInstance)
+            .options(selectinload(CustodyExchangeInstance.exchange))
+            .where(
+                and_(
+                    CustodyExchangeInstance.status == "scheduled",
+                    CustodyExchangeInstance.window_end < now,
+                    CustodyExchangeInstance.auto_closed == False
+                )
+            )
+        )
+        instances = result.scalars().all()
+
+        closed_count = 0
+        for instance in instances:
+            exchange = instance.exchange
+
+            # Determine final outcome
+            if instance.from_parent_checked_in and instance.to_parent_checked_in:
+                if exchange.qr_confirmation_required and not instance.qr_confirmed_at:
+                    instance.handoff_outcome = "disputed"  # Both present but no QR confirm
+                else:
+                    instance.handoff_outcome = "completed"
+                    instance.status = "completed"
+            elif instance.from_parent_checked_in or instance.to_parent_checked_in:
+                instance.handoff_outcome = "one_party_present"
+                instance.status = "missed"
+            else:
+                instance.handoff_outcome = "missed"
+                instance.status = "missed"
+
+            instance.auto_closed = True
+            instance.auto_closed_at = now
+            instance.updated_at = now
+            closed_count += 1
+
+        await db.commit()
+        return closed_count

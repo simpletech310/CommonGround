@@ -38,6 +38,7 @@ class SectionType(str, Enum):
     INTERVENTION_LOG = "intervention_log"
     PARENT_IMPACT = "parent_impact"
     CHAIN_OF_CUSTODY = "chain_of_custody"
+    EXCHANGE_GPS_VERIFICATION = "exchange_gps_verification"
 
 
 class ExportStatus(str, Enum):
