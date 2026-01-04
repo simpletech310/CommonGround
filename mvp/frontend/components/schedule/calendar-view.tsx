@@ -11,12 +11,14 @@ interface CalendarViewProps {
   caseId: string;
   onCreateEvent?: (date: Date) => void;
   onEventClick?: (event: EventV2) => void;
+  onExchangeClick?: (exchange: ExchangeInstanceForCalendar) => void;
 }
 
 export default function CalendarView({
   caseId,
   onCreateEvent,
   onEventClick,
+  onExchangeClick,
 }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarData, setCalendarData] = useState<CalendarDataV2 | null>(null);
@@ -310,16 +312,17 @@ export default function CalendarView({
 
                   {/* Exchanges (Pickup/Dropoff) */}
                   {exchanges.slice(0, 2).map(exchange => (
-                    <div
+                    <button
                       key={exchange.id}
-                      className="w-full px-2 py-1 rounded text-xs bg-purple-500 text-white truncate flex items-center gap-1"
-                      title={`${exchange.title} - ${exchange.location || 'No location'}`}
+                      onClick={() => onExchangeClick?.(exchange)}
+                      className="w-full px-2 py-1 rounded text-xs bg-purple-500 text-white truncate flex items-center gap-1 hover:bg-purple-600 transition-colors text-left cursor-pointer"
+                      title={`${exchange.title} - ${exchange.location || 'No location'} - Click to check in`}
                     >
                       <RefreshCw className="h-3 w-3 flex-shrink-0" />
                       <span className="truncate">
                         {formatEventTime(exchange.scheduled_time)} {exchange.title}
                       </span>
-                    </div>
+                    </button>
                   ))}
 
                   {/* Court Events */}

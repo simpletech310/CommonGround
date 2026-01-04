@@ -11,9 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFi
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 import hashlib
+import jwt
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.config import settings
 from app.models.user import User
 from app.models.case import CaseParticipant
 from app.models.court import (
@@ -69,6 +71,10 @@ from app.schemas.court import (
     # Compliance
     ComplianceSnapshot,
     CategoryCompliance,
+    # Exchange Compliance (Silent Handoff)
+    ExchangeComplianceResponse,
+    ExchangeComplianceMetrics,
+    ParentExchangeMetrics,
     # Templates
     CourtEventTemplate,
     CourtEventTemplateList,
@@ -87,6 +93,7 @@ from app.services.court import (
     ReportService,
     ARIACourtService,
 )
+from app.services.exchange_compliance import ExchangeComplianceService
 from app.models.message import Message, MessageFlag
 from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
@@ -3862,3 +3869,321 @@ async def create_case_from_extraction(
         "petitioner_invite_url": f"{base_url}/register?invite={petitioner_invite_data}",
         "respondent_invite_url": f"{base_url}/register?invite={respondent_invite_data}",
     }
+
+
+# =============================================================================
+# Exchange Compliance Endpoints (Silent Handoff Integration)
+# =============================================================================
+
+# Bearer scheme for exchange endpoints
+exchange_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def get_user_or_court_professional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(exchange_bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> tuple[Optional[User], Optional[str]]:
+    """
+    Authenticate either a regular user or a court professional.
+
+    Returns:
+        tuple: (user, professional_id) - one will be set, the other None
+    """
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization token",
+        )
+
+    try:
+        secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY
+        payload = jwt.decode(
+            credentials.credentials,
+            secret_key,
+            algorithms=[settings.JWT_ALGORITHM]
+        )
+
+        subject = payload.get("sub")
+        if not subject:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token - missing subject",
+            )
+
+        # Check if this is a court professional token
+        role = payload.get("role", "")
+        court_roles = ["court_clerk", "gal", "mediator", "judge", "attorney", "evaluator",
+                       "attorney_petitioner", "attorney_respondent"]
+        token_type = payload.get("type", "")
+        is_court_token = token_type == "court" or role in court_roles
+
+        if is_court_token:
+            # Return professional ID
+            return None, subject
+        else:
+            # Try to get regular user
+            from sqlalchemy import select
+            result = await db.execute(
+                select(User).where(User.id == subject)
+            )
+            user = result.scalar_one_or_none()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                )
+            return user, None
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired",
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        )
+
+
+@router.get(
+    "/cases/{case_id}/exchange-compliance",
+    response_model=ExchangeComplianceResponse,
+    summary="Get exchange compliance metrics",
+    description="Get GPS-verified exchange compliance data for court review.",
+)
+async def get_exchange_compliance(
+    case_id: str,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple = Depends(get_user_or_court_professional),
+):
+    """
+    Get exchange compliance metrics from Silent Handoff GPS verification.
+
+    This endpoint provides objective evidence of custody exchange compliance:
+    - Total exchanges and outcomes (completed, missed, disputed)
+    - GPS verification rates
+    - Geofence compliance rates
+    - Per-parent metrics (petitioner vs respondent)
+
+    Can be accessed by:
+    - Parents who are case participants
+    - Court professionals with active access grants including 'schedule' or 'checkins' scope
+
+    Returns:
+        ExchangeComplianceResponse with metrics, recent exchanges, and overall status.
+    """
+    from datetime import timedelta, timezone
+
+    current_user, professional_id = auth_result
+
+    # Strip timezone if present
+    if start_date and start_date.tzinfo:
+        start_date = start_date.replace(tzinfo=None)
+    if end_date and end_date.tzinfo:
+        end_date = end_date.replace(tzinfo=None)
+
+    # Default to last 30 days if no dates provided
+    if end_date is None:
+        end_date = datetime.utcnow()
+    if start_date is None:
+        start_date = end_date - timedelta(days=30)
+
+    # Authorize based on user type
+    if current_user:
+        # Check if user is a case participant (parent)
+        try:
+            await get_user_case_role(db, current_user.id, case_id)
+        except HTTPException:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this case. Must be a case participant.",
+            )
+    elif professional_id:
+        # Check for active access grant with schedule/checkins scope
+        grant_service = AccessGrantService(db)
+        grants = await grant_service.get_grants_for_case(case_id, active_only=True)
+        has_access = False
+        for grant in grants:
+            if str(grant.professional_id) == str(professional_id):
+                # Check if grant includes schedule or checkins scope
+                if isinstance(grant.access_scope, dict):
+                    has_access = grant.access_scope.get("schedule", False) or grant.access_scope.get("checkins", False)
+                elif isinstance(grant.access_scope, list):
+                    has_access = "schedule" in grant.access_scope or "checkins" in grant.access_scope
+                else:
+                    has_access = AccessScope.SCHEDULE in grant.access_scope or AccessScope.CHECKINS in grant.access_scope
+                if has_access:
+                    break
+
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No active access grant for this case with schedule/checkins scope.",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    # Get compliance data
+    summary = await ExchangeComplianceService.get_compliance_summary(
+        db=db,
+        case_id=case_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    metrics = summary["metrics"]
+
+    return ExchangeComplianceResponse(
+        case_id=case_id,
+        metrics=ExchangeComplianceMetrics(
+            total_exchanges=metrics["total_exchanges"],
+            completed=metrics["completed"],
+            missed=metrics["missed"],
+            one_party_only=metrics["one_party_only"],
+            disputed=metrics["disputed"],
+            gps_verified_rate=metrics["gps_verified_rate"],
+            geofence_compliance_rate=metrics["geofence_compliance_rate"],
+            on_time_rate=metrics["on_time_rate"],
+            petitioner_metrics=ParentExchangeMetrics(
+                check_ins=metrics["petitioner_metrics"]["check_ins"],
+                avg_distance_meters=metrics["petitioner_metrics"]["avg_distance_meters"],
+                geofence_hit_rate=metrics["petitioner_metrics"]["geofence_hit_rate"],
+                on_time_rate=metrics["petitioner_metrics"]["on_time_rate"],
+            ),
+            respondent_metrics=ParentExchangeMetrics(
+                check_ins=metrics["respondent_metrics"]["check_ins"],
+                avg_distance_meters=metrics["respondent_metrics"]["avg_distance_meters"],
+                geofence_hit_rate=metrics["respondent_metrics"]["geofence_hit_rate"],
+                on_time_rate=metrics["respondent_metrics"]["on_time_rate"],
+            ),
+            date_range=metrics["date_range"],
+        ),
+        recent_exchanges=summary["recent_exchanges"],
+        overall_status=summary["overall_status"],
+        generated_at=summary["generated_at"],
+    )
+
+
+@router.get(
+    "/cases/{case_id}/exchange-details",
+    response_model=list[dict],
+    summary="Get detailed exchange data for export",
+    description="Get detailed GPS verification data for each exchange (for court exports).",
+)
+async def get_exchange_details(
+    case_id: str,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    include_maps: bool = True,
+    db: AsyncSession = Depends(get_db),
+    auth_result: tuple = Depends(get_user_or_court_professional),
+):
+    """
+    Get detailed exchange data suitable for court exports.
+
+    Includes full GPS verification data, timestamps, and optional static map URLs.
+    Primarily used by court professionals for evidence packages.
+    """
+    from datetime import timedelta
+    from app.services.geolocation import GeolocationService
+
+    current_user, professional_id = auth_result
+
+    # Strip timezone if present
+    if start_date and start_date.tzinfo:
+        start_date = start_date.replace(tzinfo=None)
+    if end_date and end_date.tzinfo:
+        end_date = end_date.replace(tzinfo=None)
+
+    # Default to last 30 days
+    if end_date is None:
+        end_date = datetime.utcnow()
+    if start_date is None:
+        start_date = end_date - timedelta(days=30)
+
+    # Authorize based on user type
+    if current_user:
+        # Check if user is a case participant (parent)
+        try:
+            await get_user_case_role(db, current_user.id, case_id)
+        except HTTPException:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this case. Must be a case participant.",
+            )
+    elif professional_id:
+        # Check for active access grant with schedule/checkins scope
+        grant_service = AccessGrantService(db)
+        grants = await grant_service.get_grants_for_case(case_id, active_only=True)
+        has_access = False
+        for grant in grants:
+            if str(grant.professional_id) == str(professional_id):
+                # Check if grant includes schedule or checkins scope
+                if isinstance(grant.access_scope, dict):
+                    has_access = grant.access_scope.get("schedule", False) or grant.access_scope.get("checkins", False)
+                elif isinstance(grant.access_scope, list):
+                    has_access = "schedule" in grant.access_scope or "checkins" in grant.access_scope
+                else:
+                    has_access = AccessScope.SCHEDULE in grant.access_scope or AccessScope.CHECKINS in grant.access_scope
+                if has_access:
+                    break
+
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No active access grant for this case with schedule/checkins scope.",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
+
+    # Get detailed exchange data
+    details = await ExchangeComplianceService.get_exchange_details_for_export(
+        db=db,
+        case_id=case_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    # Optionally add static map URLs
+    if include_maps:
+        for detail in details:
+            location = detail.get("location", {})
+            if location.get("lat") and location.get("lng"):
+                from_gps = detail.get("from_parent", {}).get("gps")
+                to_gps = detail.get("to_parent", {}).get("gps")
+
+                from_lat = from_gps.get("lat") if from_gps else None
+                from_lng = from_gps.get("lng") if from_gps else None
+                from_in_geo = from_gps.get("in_geofence") if from_gps else None
+
+                to_lat = to_gps.get("lat") if to_gps else None
+                to_lng = to_gps.get("lng") if to_gps else None
+                to_in_geo = to_gps.get("in_geofence") if to_gps else None
+
+                # Determine if petitioner is from_parent
+                petitioner_is_from = detail.get("from_parent", {}).get("role") == "petitioner"
+
+                map_url = GeolocationService.generate_exchange_map(
+                    exchange_location_lat=location["lat"],
+                    exchange_location_lng=location["lng"],
+                    geofence_radius=location.get("geofence_radius_meters", 100),
+                    from_parent_lat=from_lat,
+                    from_parent_lng=from_lng,
+                    from_parent_in_geofence=from_in_geo,
+                    to_parent_lat=to_lat,
+                    to_parent_lng=to_lng,
+                    to_parent_in_geofence=to_in_geo,
+                    petitioner_is_from=petitioner_is_from,
+                )
+                detail["static_map_url"] = map_url
+
+    return details

@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     STRIPE_PUBLISHABLE_KEY: str
     STRIPE_WEBHOOK_SECRET: str
 
+    # Mapbox (for geocoding in Silent Handoff)
+    MAPBOX_API_KEY: str = "pk.eyJ1IjoidGVlamF5MzEwIiwiYSI6ImNtano1aGIzeTdidTYzZHB5ZWtkYTZoOHEifQ.ZIGoggSuBeAEIzeHaTk6tA"
+
     # File Upload
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB
 

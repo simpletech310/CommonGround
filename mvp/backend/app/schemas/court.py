@@ -599,6 +599,89 @@ class ComplianceThresholds(BaseModel):
 
 
 # =============================================================================
+# Exchange Compliance Schemas (Silent Handoff Integration)
+# =============================================================================
+
+class ParentExchangeMetrics(BaseModel):
+    """Metrics for a single parent's exchange compliance."""
+    check_ins: int = 0
+    avg_distance_meters: Optional[float] = None
+    geofence_hit_rate: float = 0  # 0-100 percentage
+    on_time_rate: float = 0  # 0-100 percentage
+
+
+class ExchangeComplianceMetrics(BaseModel):
+    """
+    Detailed exchange compliance metrics from Silent Handoff GPS verification.
+
+    Used by courts/GALs to view objective custody exchange evidence.
+    """
+    total_exchanges: int = 0
+    completed: int = 0
+    missed: int = 0
+    one_party_only: int = 0
+    disputed: int = 0
+    gps_verified_rate: float = 0  # % of exchanges with GPS check-in
+    geofence_compliance_rate: float = 0  # % within designated geofence
+    on_time_rate: float = 0  # % within check-in window
+    petitioner_metrics: ParentExchangeMetrics
+    respondent_metrics: ParentExchangeMetrics
+    date_range: Optional[dict] = None  # {start, end}
+
+
+class ExchangeGPSData(BaseModel):
+    """GPS check-in data for a parent."""
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    accuracy_meters: Optional[float] = None
+    distance_meters: Optional[float] = None
+    in_geofence: Optional[bool] = None
+
+
+class ExchangeParentDetail(BaseModel):
+    """Detailed check-in info for a parent in an exchange."""
+    role: str  # petitioner, respondent, unassigned
+    checked_in: bool = False
+    check_in_time: Optional[str] = None
+    gps: Optional[ExchangeGPSData] = None
+
+
+class ExchangeLocationDetail(BaseModel):
+    """Location details for an exchange."""
+    address: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    geofence_radius_meters: Optional[int] = None
+
+
+class ExchangeDetail(BaseModel):
+    """Detailed exchange instance data for court export."""
+    id: str
+    exchange_id: str
+    title: str
+    scheduled_time: str
+    status: str
+    outcome: Optional[str] = None
+    location: ExchangeLocationDetail
+    from_parent: ExchangeParentDetail
+    to_parent: ExchangeParentDetail
+    qr_confirmation: dict  # {required, confirmed_at}
+    window: dict  # {start, end, auto_closed}
+    silent_handoff_enabled: bool = False
+    notes: Optional[str] = None
+    static_map_url: Optional[str] = None  # Mapbox Static API URL
+
+
+class ExchangeComplianceResponse(BaseModel):
+    """Response for exchange compliance endpoint."""
+    case_id: str
+    metrics: ExchangeComplianceMetrics
+    recent_exchanges: list[dict]  # Last 5 exchanges for quick view
+    overall_status: str  # excellent, good, needs_improvement, concerning, no_data
+    generated_at: str
+
+
+# =============================================================================
 # Court Event Template Schemas
 # =============================================================================
 

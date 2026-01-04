@@ -228,6 +228,7 @@ export default function CaseDetailPage() {
         <NavButton href={`/court-portal/cases/${params.id}/settings`} icon={<Settings className="h-4 w-4" />}>Settings</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/forms`} icon={<Scale className="h-4 w-4" />}>Court Forms</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/events`} icon={<Calendar className="h-4 w-4" />}>Events</NavButton>
+        <NavButton href={`/court-portal/cases/${params.id}/exchanges`} icon={<MapPin className="h-4 w-4" />}>Exchanges</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/messages`} icon={<MessageSquare className="h-4 w-4" />}>Messages</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/payments`} icon={<DollarSign className="h-4 w-4" />}>Payments</NavButton>
         <NavButton href={`/court-portal/cases/${params.id}/items`} icon={<Package className="h-4 w-4" />}>Items</NavButton>

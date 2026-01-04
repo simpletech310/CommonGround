@@ -19,6 +19,7 @@ from app.services.export.generators.intervention_log import InterventionLogGener
 from app.services.export.generators.parent_impact import ParentImpactGenerator
 from app.services.export.generators.chain_of_custody import ChainOfCustodyGenerator
 from app.services.export.generators.item_tracking import ItemTrackingGenerator
+from app.services.export.generators.exchange_gps_verification import ExchangeGPSVerificationGenerator
 
 # Create and populate the default registry
 registry = SectionGeneratorRegistry()
@@ -33,6 +34,7 @@ registry.register(InterventionLogGenerator())
 registry.register(ParentImpactGenerator())
 registry.register(ChainOfCustodyGenerator())
 registry.register(ItemTrackingGenerator())
+registry.register(ExchangeGPSVerificationGenerator())
 
 
 def get_registry() -> SectionGeneratorRegistry:
@@ -55,4 +57,5 @@ __all__ = [
     "ParentImpactGenerator",
     "ChainOfCustodyGenerator",
     "ItemTrackingGenerator",
+    "ExchangeGPSVerificationGenerator",
 ]

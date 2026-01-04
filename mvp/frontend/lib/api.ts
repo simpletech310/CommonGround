@@ -1653,6 +1653,14 @@ export interface CustodyExchange {
   status: ExchangeStatus;
   is_owner: boolean;
   next_occurrence?: string;
+  // Silent Handoff settings
+  location_lat?: number;
+  location_lng?: number;
+  geofence_radius_meters: number;
+  check_in_window_before_minutes: number;
+  check_in_window_after_minutes: number;
+  silent_handoff_enabled: boolean;
+  qr_confirmation_required: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -1670,6 +1678,25 @@ export interface CustodyExchangeInstance {
   notes?: string;
   override_location?: string;
   override_time?: string;
+  // Silent Handoff - GPS verification data
+  from_parent_check_in_lat?: number;
+  from_parent_check_in_lng?: number;
+  from_parent_device_accuracy?: number;
+  from_parent_distance_meters?: number;
+  from_parent_in_geofence?: boolean;
+  to_parent_check_in_lat?: number;
+  to_parent_check_in_lng?: number;
+  to_parent_device_accuracy?: number;
+  to_parent_distance_meters?: number;
+  to_parent_in_geofence?: boolean;
+  // QR confirmation
+  qr_confirmed_at?: string;
+  // Handoff outcome
+  handoff_outcome?: 'completed' | 'missed' | 'one_party_present' | 'disputed' | 'pending_qr' | 'pending';
+  // Exchange window
+  window_start?: string;
+  window_end?: string;
+  auto_closed: boolean;
   exchange?: CustodyExchange;
   created_at: string;
   updated_at: string;
@@ -1693,6 +1720,14 @@ export interface CreateCustodyExchangeRequest {
   items_to_bring?: string;
   special_instructions?: string;
   notes_visible_to_coparent?: boolean;
+  // Silent Handoff settings
+  location_lat?: number;
+  location_lng?: number;
+  geofence_radius_meters?: number;
+  check_in_window_before_minutes?: number;
+  check_in_window_after_minutes?: number;
+  silent_handoff_enabled?: boolean;
+  qr_confirmation_required?: boolean;
 }
 
 export interface UpdateCustodyExchangeRequest {
@@ -1798,7 +1833,90 @@ export const exchangesAPI = {
       method: 'POST',
     });
   },
+
+  // ==================== SILENT HANDOFF METHODS ====================
+
+  /**
+   * GPS-verified check-in for Silent Handoff
+   * Privacy: GPS is captured only at this moment, not continuously tracked
+   */
+  async checkInWithGPS(
+    instanceId: string,
+    data: SilentHandoffCheckInRequest
+  ): Promise<CustodyExchangeInstance> {
+    return fetchAPI<CustodyExchangeInstance>(`/exchanges/instances/${instanceId}/check-in/gps`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get exchange window status
+   */
+  async getWindowStatus(instanceId: string): Promise<WindowStatusResponse> {
+    return fetchAPI<WindowStatusResponse>(`/exchanges/instances/${instanceId}/window-status`);
+  },
+
+  /**
+   * Get QR token for mutual confirmation
+   */
+  async getQRToken(instanceId: string): Promise<QRTokenResponse> {
+    return fetchAPI<QRTokenResponse>(`/exchanges/instances/${instanceId}/qr-token`);
+  },
+
+  /**
+   * Confirm exchange via QR code scan
+   */
+  async confirmQR(instanceId: string, token: string): Promise<CustodyExchangeInstance> {
+    return fetchAPI<CustodyExchangeInstance>(`/exchanges/instances/${instanceId}/confirm-qr`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmation_token: token }),
+    });
+  },
+
+  /**
+   * Geocode an address to GPS coordinates
+   */
+  async geocodeAddress(address: string): Promise<GeocodeAddressResponse> {
+    return fetchAPI<GeocodeAddressResponse>('/exchanges/geocode', {
+      method: 'POST',
+      body: JSON.stringify({ address }),
+    });
+  },
 };
+
+// ==================== SILENT HANDOFF TYPES ====================
+
+export interface SilentHandoffCheckInRequest {
+  latitude: number;
+  longitude: number;
+  device_accuracy_meters: number;
+  notes?: string;
+}
+
+export interface WindowStatusResponse {
+  instance_id: string;
+  scheduled_time: string;
+  window_start: string;
+  window_end: string;
+  is_within_window: boolean;
+  is_before_window: boolean;
+  is_after_window: boolean;
+  minutes_until_window: number;
+  minutes_remaining: number;
+}
+
+export interface QRTokenResponse {
+  token: string;
+  instance_id: string;
+}
+
+export interface GeocodeAddressResponse {
+  latitude: number;
+  longitude: number;
+  formatted_address: string;
+  accuracy: 'exact' | 'approximate' | 'fallback';
+}
 
 // ============================================================================
 // ClearFund API - Purpose-Locked Financial Obligations
@@ -3525,6 +3643,131 @@ export const courtFormsAPI = {
       method: 'POST',
       body: JSON.stringify({ notes }),
     });
+  },
+};
+
+// ============================================================================
+// Exchange Compliance API (Silent Handoff GPS Verification for Court Portal)
+// ============================================================================
+
+export interface ParentExchangeMetrics {
+  check_ins: number;
+  avg_distance_meters: number | null;
+  geofence_hit_rate: number;
+  on_time_rate: number;
+}
+
+export interface ExchangeComplianceMetrics {
+  total_exchanges: number;
+  completed: number;
+  missed: number;
+  one_party_only: number;
+  disputed: number;
+  gps_verified_rate: number;
+  geofence_compliance_rate: number;
+  on_time_rate: number;
+  petitioner_metrics: ParentExchangeMetrics;
+  respondent_metrics: ParentExchangeMetrics;
+  date_range: {
+    start: string | null;
+    end: string | null;
+  };
+}
+
+export interface RecentExchange {
+  id: string;
+  title: string;
+  scheduled_time: string;
+  status: string;
+  outcome: string | null;
+  from_parent_checked_in: boolean;
+  from_parent_in_geofence: boolean | null;
+  to_parent_checked_in: boolean;
+  to_parent_in_geofence: boolean | null;
+}
+
+export interface ExchangeComplianceResponse {
+  case_id: string;
+  metrics: ExchangeComplianceMetrics;
+  recent_exchanges: RecentExchange[];
+  overall_status: 'no_data' | 'excellent' | 'good' | 'needs_improvement' | 'concerning';
+  generated_at: string;
+}
+
+export interface ExchangeGPSData {
+  lat: number | null;
+  lng: number | null;
+  accuracy_meters: number | null;
+  distance_meters: number | null;
+  in_geofence: boolean | null;
+}
+
+export interface ExchangeDetailParent {
+  role: string;
+  checked_in: boolean;
+  check_in_time: string | null;
+  gps: ExchangeGPSData | null;
+}
+
+export interface ExchangeDetail {
+  id: string;
+  exchange_id: string;
+  title: string;
+  scheduled_time: string;
+  status: string;
+  outcome: string | null;
+  location: {
+    address: string | null;
+    lat: number | null;
+    lng: number | null;
+    geofence_radius_meters: number | null;
+  };
+  from_parent: ExchangeDetailParent;
+  to_parent: ExchangeDetailParent;
+  qr_confirmation: {
+    required: boolean;
+    confirmed_at: string | null;
+  };
+  window: {
+    start: string | null;
+    end: string | null;
+    auto_closed: boolean;
+  };
+  silent_handoff_enabled: boolean;
+  notes: string | null;
+  static_map_url?: string;
+}
+
+export const exchangeComplianceAPI = {
+  /**
+   * Get exchange compliance metrics for a case (Silent Handoff GPS verification data)
+   */
+  async getCompliance(
+    caseId: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<ExchangeComplianceResponse> {
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    return fetchAPI<ExchangeComplianceResponse>(`/court/cases/${caseId}/exchange-compliance${queryString}`);
+  },
+
+  /**
+   * Get detailed exchange data with GPS verification for court exports
+   */
+  async getDetails(
+    caseId: string,
+    startDate?: string,
+    endDate?: string,
+    includeMaps: boolean = true
+  ): Promise<ExchangeDetail[]> {
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    params.append('include_maps', includeMaps.toString());
+    return fetchAPI<ExchangeDetail[]>(`/court/cases/${caseId}/exchange-details?${params.toString()}`);
   },
 };
 

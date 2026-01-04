@@ -44,6 +44,15 @@ class CustodyExchangeCreate(BaseModel):
     special_instructions: Optional[str] = None
     notes_visible_to_coparent: bool = True
 
+    # Silent Handoff settings
+    location_lat: Optional[float] = None
+    location_lng: Optional[float] = None
+    geofence_radius_meters: int = Field(default=100, ge=25, le=500)
+    check_in_window_before_minutes: int = Field(default=30, ge=5, le=120)
+    check_in_window_after_minutes: int = Field(default=30, ge=5, le=120)
+    silent_handoff_enabled: bool = False
+    qr_confirmation_required: bool = False
+
 
 class CustodyExchangeUpdate(BaseModel):
     """Schema for updating a custody exchange."""
@@ -74,6 +83,15 @@ class CustodyExchangeUpdate(BaseModel):
         pattern=r"^(active|paused|cancelled)$"
     )
 
+    # Silent Handoff settings
+    location_lat: Optional[float] = None
+    location_lng: Optional[float] = None
+    geofence_radius_meters: Optional[int] = Field(default=None, ge=25, le=500)
+    check_in_window_before_minutes: Optional[int] = Field(default=None, ge=5, le=120)
+    check_in_window_after_minutes: Optional[int] = Field(default=None, ge=5, le=120)
+    silent_handoff_enabled: Optional[bool] = None
+    qr_confirmation_required: Optional[bool] = None
+
 
 class CustodyExchangeResponse(BaseModel):
     """Schema for custody exchange response."""
@@ -103,6 +121,15 @@ class CustodyExchangeResponse(BaseModel):
     notes_visible_to_coparent: bool
 
     status: str
+
+    # Silent Handoff settings
+    location_lat: Optional[float] = None
+    location_lng: Optional[float] = None
+    geofence_radius_meters: int = 100
+    check_in_window_before_minutes: int = 30
+    check_in_window_after_minutes: int = 30
+    silent_handoff_enabled: bool = False
+    qr_confirmation_required: bool = False
 
     # Computed fields
     is_owner: bool = False
@@ -152,6 +179,30 @@ class CustodyExchangeInstanceResponse(BaseModel):
     override_location: Optional[str] = None
     override_time: Optional[datetime] = None
 
+    # Silent Handoff - GPS verification data
+    from_parent_check_in_lat: Optional[float] = None
+    from_parent_check_in_lng: Optional[float] = None
+    from_parent_device_accuracy: Optional[float] = None
+    from_parent_distance_meters: Optional[float] = None
+    from_parent_in_geofence: Optional[bool] = None
+
+    to_parent_check_in_lat: Optional[float] = None
+    to_parent_check_in_lng: Optional[float] = None
+    to_parent_device_accuracy: Optional[float] = None
+    to_parent_distance_meters: Optional[float] = None
+    to_parent_in_geofence: Optional[bool] = None
+
+    # QR confirmation
+    qr_confirmed_at: Optional[datetime] = None
+
+    # Handoff outcome
+    handoff_outcome: Optional[str] = None
+
+    # Exchange window
+    window_start: Optional[datetime] = None
+    window_end: Optional[datetime] = None
+    auto_closed: bool = False
+
     # Include parent exchange details for context
     exchange: Optional[CustodyExchangeResponse] = None
 
@@ -173,3 +224,56 @@ class UpcomingExchangesRequest(BaseModel):
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     limit: int = 20
+
+
+# ============================================================
+# Silent Handoff Schemas
+# ============================================================
+
+class SilentHandoffCheckInRequest(BaseModel):
+    """
+    GPS-verified check-in request for Silent Handoff.
+
+    Privacy: GPS is captured only at this moment, not continuously tracked.
+    """
+    latitude: float = Field(..., ge=-90, le=90, description="GPS latitude")
+    longitude: float = Field(..., ge=-180, le=180, description="GPS longitude")
+    device_accuracy_meters: float = Field(..., ge=0, description="Device-reported GPS accuracy")
+    notes: Optional[str] = None
+
+
+class QRConfirmationRequest(BaseModel):
+    """Request to confirm exchange via QR code scan."""
+    confirmation_token: str = Field(..., min_length=1, description="Token from QR code")
+
+
+class GeocodeAddressRequest(BaseModel):
+    """Request to geocode an address to lat/lng coordinates."""
+    address: str = Field(..., min_length=5, description="Street address to geocode")
+
+
+class GeocodeAddressResponse(BaseModel):
+    """Response from geocoding an address."""
+    latitude: float
+    longitude: float
+    formatted_address: str
+    accuracy: str = Field(..., description="Geocoding accuracy: exact, approximate, or fallback")
+
+
+class WindowStatusResponse(BaseModel):
+    """Response for exchange window status check."""
+    instance_id: str
+    scheduled_time: datetime
+    window_start: datetime
+    window_end: datetime
+    is_within_window: bool
+    is_before_window: bool
+    is_after_window: bool
+    minutes_until_window: float
+    minutes_remaining: float
+
+
+class QRTokenResponse(BaseModel):
+    """Response containing QR confirmation token."""
+    token: str
+    instance_id: str
