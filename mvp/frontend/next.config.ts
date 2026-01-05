@@ -9,7 +9,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  // Tailwind + Google Fonts
       "img-src 'self' data: https:",
       "font-src 'self' https://fonts.gstatic.com",  // Google Fonts
-      "connect-src 'self' http://localhost:8000 ws://localhost:8000",  // Backend API
+      "connect-src 'self' http://localhost:8000 ws://localhost:8000 https://commonground-api-gdxg.onrender.com https://*.onrender.com",  // Backend API
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
