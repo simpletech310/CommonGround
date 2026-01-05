@@ -187,12 +187,12 @@ export default function CourtPortalLayout({
           </div>
         </header>
 
-        {/* Enhanced Navigation */}
+        {/* Main Navigation - Dashboard, Cases, Form Queue, Calendar, ARIA */}
         {professional && !isLoginPage && (
           <CourtNavigation pathname={pathname} activeGrant={activeGrant} />
         )}
 
-        {/* Active Grant Banner */}
+        {/* Active Grant Banner - Show directly under header when viewing a case */}
         {activeGrant && !isLoginPage && (
           <div className="bg-indigo-50 border-b border-indigo-100">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2">

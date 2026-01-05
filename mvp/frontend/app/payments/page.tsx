@@ -366,9 +366,10 @@ function PaymentsContent() {
       setError(null);
 
       try {
+        // Load all obligations for the family file (don't filter by agreement)
+        // This ensures consistency with metrics which also show all obligations
         const obligationsRes = await clearfundAPI.listObligations(
-          selectedFamilyFile.id,
-          selectedAgreement?.id
+          selectedFamilyFile.id
         );
         setObligations(obligationsRes.items);
       } catch (err: any) {
@@ -649,9 +650,9 @@ function PaymentsContent() {
         </div>
 
         {/* Content */}
-        <div className="cg-card">
+        <div className="cg-card p-4">
           {activeTab !== 'ledger' ? (
-            <div className="divide-y divide-border">
+            <div className="space-y-4">
               {isLoading ? (
                 <div className="p-8 text-center">
                   <div className="w-8 h-8 border-2 border-cg-sage border-t-transparent rounded-full animate-spin mx-auto" />

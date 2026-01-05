@@ -335,13 +335,18 @@ class ClearFundService:
 
         # Build query - use case_id or family_file_id based on type
         if is_family_file:
+            # Check both family_file_id and case_id for backwards compatibility
+            # (older obligations may have family file ID stored in case_id before migration)
             query = (
                 select(Obligation)
                 .options(
                     selectinload(Obligation.funding_records),
                     selectinload(Obligation.attestation),
                 )
-                .where(Obligation.family_file_id == case_id)
+                .where(or_(
+                    Obligation.family_file_id == case_id,
+                    Obligation.case_id == case_id
+                ))
             )
         else:
             query = (
@@ -818,7 +823,11 @@ class ClearFundService:
 
         # Build query filter based on case_id or family_file_id
         if is_family_file:
-            id_filter = Obligation.family_file_id == case_id
+            # Check both for backwards compatibility with older data
+            id_filter = or_(
+                Obligation.family_file_id == case_id,
+                Obligation.case_id == case_id
+            )
         else:
             id_filter = Obligation.case_id == effective_case_id
 
