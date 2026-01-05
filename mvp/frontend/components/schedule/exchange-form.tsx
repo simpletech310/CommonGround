@@ -826,7 +826,7 @@ export default function ExchangeForm({
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="flex-1 bg-cg-primary hover:bg-cg-primary/90"
+                className="flex-1 bg-cg-sage hover:bg-cg-sage-dark text-white"
               >
                 {isLoading ? 'Creating...' : formData.is_recurring ? 'Create Recurring Exchange' : 'Create Exchange'}
               </Button>

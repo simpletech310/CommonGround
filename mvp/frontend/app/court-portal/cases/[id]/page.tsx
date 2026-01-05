@@ -474,7 +474,7 @@ export default function CaseDetailPage() {
         <NavPill href={`/court-portal/cases/${caseId}`} active icon={<Eye className="h-3.5 w-3.5" />}>Overview</NavPill>
         <NavPill href={`/court-portal/cases/${caseId}/settings`} icon={<Settings className="h-3.5 w-3.5" />}>Settings</NavPill>
         <NavPill href={`/court-portal/cases/${caseId}/forms`} icon={<Scale className="h-3.5 w-3.5" />}>Court Forms</NavPill>
-        <NavPill href={`/court-portal/cases/${caseId}/events`} icon={<Calendar className="h-3.5 w-3.5" />}>Events</NavPill>
+        <NavPill href={`/court-portal/cases/${caseId}/events`} icon={<Calendar className="h-3.5 w-3.5" />}>Hearings</NavPill>
         <NavPill href={`/court-portal/cases/${caseId}/exchanges`} icon={<MapPin className="h-3.5 w-3.5" />}>Exchanges</NavPill>
         <NavPill href={`/court-portal/cases/${caseId}/messages`} icon={<MessageSquare className="h-3.5 w-3.5" />}>Messages</NavPill>
         <NavPill href={`/court-portal/cases/${caseId}/payments`} icon={<DollarSign className="h-3.5 w-3.5" />}>Payments</NavPill>
