@@ -39,6 +39,18 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     DATABASE_ECHO: bool = False
 
+    @property
+    def async_database_url(self) -> str:
+        """Convert DATABASE_URL to async driver format for SQLAlchemy."""
+        url = self.DATABASE_URL
+        # Render and other providers use postgres:// or postgresql://
+        # SQLAlchemy async requires postgresql+asyncpg://
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgresql://") and "+asyncpg" not in url:
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
+
     # Supabase
     SUPABASE_URL: str
     SUPABASE_ANON_KEY: str

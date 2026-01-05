@@ -14,7 +14,7 @@ from app.models.base import Base
 
 # Create async engine
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    settings.async_database_url,
     echo=settings.DATABASE_ECHO,
     future=True,
     poolclass=NullPool if settings.is_development else None,
