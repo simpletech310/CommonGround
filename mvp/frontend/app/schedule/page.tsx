@@ -2,17 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Calendar, Clock, FolderOpen, RefreshCw, Users, FileText } from 'lucide-react';
+import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { familyFilesAPI, agreementsAPI, exchangesAPI, FamilyFileDetail, Agreement, MyTimeCollection, EventV2, ExchangeInstanceForCalendar, CustodyExchangeInstance } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { familyFilesAPI, agreementsAPI, exchangesAPI, FamilyFile, FamilyFileDetail, Agreement, MyTimeCollection, EventV2, ExchangeInstanceForCalendar, CustodyExchangeInstance } from '@/lib/api';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
-import { PageContainer, EmptyState } from '@/components/layout';
-import { Select, SelectOption } from '@/components/ui/select';
+import { PageContainer } from '@/components/layout';
 import CollectionsManager from '@/components/schedule/collections-manager';
 import TimeBlocksManager from '@/components/schedule/time-blocks-manager';
 import CalendarView from '@/components/schedule/calendar-view';
@@ -20,17 +15,166 @@ import EventForm from '@/components/schedule/event-form';
 import EventDetails from '@/components/schedule/event-details';
 import ExchangeForm from '@/components/schedule/exchange-form';
 import SilentHandoffCheckIn from '@/components/schedule/silent-handoff-checkin';
+import {
+  Calendar,
+  Clock,
+  FolderOpen,
+  RefreshCw,
+  Users,
+  FileText,
+  Plus,
+  ChevronDown,
+  ArrowLeftRight,
+  MapPin,
+  CheckCircle2,
+  AlertCircle,
+} from 'lucide-react';
 
 interface FamilyFileWithAgreements {
-  familyFile: FamilyFileDetail;
+  familyFile: FamilyFile;
   agreements: Agreement[];
+}
+
+/**
+ * TimeBridge - Shared Calendar View
+ *
+ * Design Philosophy: "Google Calendar meets Airbnb"
+ * - Split view: Month + Agenda
+ * - Custody Ribbon showing mom/dad days
+ * - Clean, organized, clarity-first
+ */
+
+// Tab Button Component
+function TabButton({
+  active,
+  icon: Icon,
+  label,
+  badge,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  badge?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`relative flex items-center gap-2 px-4 py-3 text-sm font-medium rounded-xl transition-smooth ${
+        active
+          ? 'bg-cg-sage text-white'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      <span className="hidden sm:inline">{label}</span>
+      {badge && (
+        <span className={`text-xs px-1.5 py-0.5 rounded-md ${
+          active ? 'bg-white/20' : 'bg-muted'
+        }`}>
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// Quick Action Card
+function QuickActionCard({
+  icon: Icon,
+  title,
+  description,
+  color,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
+  color: 'sage' | 'purple' | 'amber';
+  onClick: () => void;
+}) {
+  const colorClasses = {
+    sage: 'bg-cg-sage-subtle text-cg-sage hover:border-cg-sage/30',
+    purple: 'bg-purple-50 text-purple-700 hover:border-purple-300',
+    amber: 'bg-cg-amber-subtle text-cg-amber hover:border-cg-amber/30',
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-3 p-4 rounded-xl border border-transparent transition-smooth ${colorClasses[color]}`}
+    >
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+        color === 'sage' ? 'bg-cg-sage/10' :
+        color === 'purple' ? 'bg-purple-100' :
+        'bg-cg-amber/10'
+      }`}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <div className="text-left">
+        <p className="font-medium">{title}</p>
+        <p className="text-xs opacity-70">{description}</p>
+      </div>
+    </button>
+  );
+}
+
+// Custody Legend
+function CustodyLegend() {
+  return (
+    <div className="flex items-center gap-4 text-xs">
+      <div className="flex items-center gap-1.5">
+        <div className="w-3 h-3 rounded-sm bg-cg-sage" />
+        <span className="text-muted-foreground">Mom's Time</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <div className="w-3 h-3 rounded-sm bg-cg-slate" />
+        <span className="text-muted-foreground">Dad's Time</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <div className="w-3 h-3 rounded-sm bg-purple-500" />
+        <span className="text-muted-foreground">Exchange</span>
+      </div>
+    </div>
+  );
+}
+
+// Family File Selector
+function FamilyFileSelector({
+  familyFiles,
+  selected,
+  onSelect,
+}: {
+  familyFiles: FamilyFileWithAgreements[];
+  selected: FamilyFile | null;
+  onSelect: (id: string) => void;
+}) {
+  if (familyFiles.length <= 1) return null;
+
+  return (
+    <div className="relative">
+      <select
+        value={selected?.id || ''}
+        onChange={(e) => onSelect(e.target.value)}
+        className="appearance-none bg-card border border-border rounded-xl px-4 py-2.5 pr-10 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-cg-sage/20 focus:border-cg-sage transition-smooth cursor-pointer"
+      >
+        {familyFiles.map((item) => (
+          <option key={item.familyFile.id} value={item.familyFile.id}>
+            {item.familyFile.title}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+    </div>
+  );
 }
 
 function ScheduleContent() {
   const router = useRouter();
   const { user } = useAuth();
   const [familyFilesWithAgreements, setFamilyFilesWithAgreements] = useState<FamilyFileWithAgreements[]>([]);
-  const [selectedFamilyFile, setSelectedFamilyFile] = useState<FamilyFileDetail | null>(null);
+  const [selectedFamilyFile, setSelectedFamilyFile] = useState<FamilyFile | null>(null);
   const [selectedAgreement, setSelectedAgreement] = useState<Agreement | null>(null);
   const [selectedCollection, setSelectedCollection] = useState<MyTimeCollection | null>(null);
   const [showEventForm, setShowEventForm] = useState(false);
@@ -64,7 +208,7 @@ function ScheduleContent() {
           const agreementsResponse = await agreementsAPI.listForFamilyFile(ff.id);
           filesWithAgreements.push({
             familyFile: ff,
-            agreements: agreementsResponse,
+            agreements: agreementsResponse.items || [],
           });
         } catch (err) {
           console.error(`Failed to load agreements for family file ${ff.id}:`, err);
@@ -77,7 +221,6 @@ function ScheduleContent() {
 
       setFamilyFilesWithAgreements(filesWithAgreements);
 
-      // Auto-select first family file with agreements
       if (filesWithAgreements.length > 0) {
         const firstWithAgreements = filesWithAgreements.find(f => f.agreements.length > 0);
         if (firstWithAgreements) {
@@ -135,7 +278,6 @@ function ScheduleContent() {
       const endDate = new Date(exchangeDate);
       endDate.setDate(endDate.getDate() + 1);
 
-      // Use family file ID for exchanges (they still use case_id which maps to family_file in the legacy system)
       const instances = await exchangesAPI.getUpcoming(
         selectedFamilyFile.id,
         startDate.toISOString(),
@@ -185,41 +327,46 @@ function ScheduleContent() {
     return null;
   }
 
+  // Loading State
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background pb-20 lg:pb-0">
         <Navigation />
-        <PageContainer>
-          <div className="flex items-center justify-center py-12">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent mx-auto" />
-              <p className="mt-4 text-muted-foreground">Loading schedule...</p>
-            </div>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="text-center">
+            <div className="w-12 h-12 border-2 border-cg-sage border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="mt-4 text-muted-foreground">Loading TimeBridge...</p>
           </div>
-        </PageContainer>
+        </div>
       </div>
     );
   }
 
+  // Empty State
   if (!selectedFamilyFile) {
     return (
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background pb-20 lg:pb-0">
         <Navigation />
-        <PageContainer>
-          <Card>
-            <CardContent className="py-12">
-              <EmptyState
-                icon={Calendar}
-                title="No Family Files Found"
-                description="You need to create or join a Family File to access the schedule."
-                action={{
-                  label: 'Go to Family Files',
-                  onClick: () => router.push('/family-files'),
-                }}
-              />
-            </CardContent>
-          </Card>
-        </PageContainer>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="text-center max-w-md px-6">
+            <div className="w-20 h-20 rounded-full bg-cg-sage-subtle flex items-center justify-center mx-auto mb-6">
+              <Calendar className="h-10 w-10 text-cg-sage" />
+            </div>
+            <h2 className="text-2xl font-semibold text-foreground mb-3">
+              Welcome to TimeBridge
+            </h2>
+            <p className="text-muted-foreground mb-6">
+              Create or join a Family File to start coordinating your co-parenting schedule.
+            </p>
+            <Link
+              href="/family-files"
+              className="cg-btn-primary inline-flex items-center gap-2"
+            >
+              <Users className="h-4 w-4" />
+              Go to Family Files
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
@@ -227,130 +374,125 @@ function ScheduleContent() {
   const currentFamilyFileData = familyFilesWithAgreements.find(f => f.familyFile.id === selectedFamilyFile.id);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-24 lg:pb-8">
       <Navigation />
 
       {/* Page Header */}
-      <div className="border-b border-border bg-card">
-        <PageContainer className="py-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <header className="border-b border-border bg-card">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Top Row */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">TimeBridge</h1>
-              <div className="flex items-center gap-2 text-muted-foreground mt-1">
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cg-sage-subtle flex items-center justify-center">
+                  <Calendar className="h-5 w-5 text-cg-sage" />
+                </div>
+                TimeBridge
+              </h1>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2">
                 <Users className="h-4 w-4" />
-                <span>{selectedFamilyFile.name}</span>
+                <span>{selectedFamilyFile.title}</span>
                 {selectedAgreement && (
                   <>
-                    <span className="text-border">/</span>
+                    <span className="text-border">•</span>
                     <FileText className="h-4 w-4" />
                     <span>{selectedAgreement.title}</span>
                   </>
                 )}
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button onClick={() => handleCreateEvent()} className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
-                New Event
-              </Button>
-              <Button
-                onClick={() => setShowExchangeForm(true)}
-                variant="outline"
-                className="flex items-center gap-2 border-purple-300 text-purple-700 hover:bg-purple-50"
-              >
-                <RefreshCw className="h-5 w-5" />
-                Pickup/Dropoff
-              </Button>
+
+            {/* Selectors */}
+            <div className="flex items-center gap-3">
+              <FamilyFileSelector
+                familyFiles={familyFilesWithAgreements}
+                selected={selectedFamilyFile}
+                onSelect={handleFamilyFileChange}
+              />
+              {currentFamilyFileData && currentFamilyFileData.agreements.length > 1 && (
+                <div className="relative">
+                  <select
+                    value={selectedAgreement?.id || ''}
+                    onChange={(e) => handleAgreementChange(e.target.value)}
+                    className="appearance-none bg-card border border-border rounded-xl px-4 py-2.5 pr-10 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-cg-sage/20 focus:border-cg-sage transition-smooth cursor-pointer"
+                  >
+                    <option value="">All Agreements</option>
+                    {currentFamilyFileData.agreements.map(agreement => (
+                      <option key={agreement.id} value={agreement.id}>
+                        {agreement.title}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Family File and Agreement Selectors */}
-          <div className="mt-4 flex flex-col sm:flex-row gap-4">
-            {familyFilesWithAgreements.length > 1 && (
-              <div className="flex-1 max-w-xs">
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Family File</label>
-                <Select
-                  value={selectedFamilyFile.id}
-                  onChange={(e) => handleFamilyFileChange(e.target.value)}
-                >
-                  {familyFilesWithAgreements.map(item => (
-                    <SelectOption key={item.familyFile.id} value={item.familyFile.id}>
-                      {item.familyFile.name}
-                    </SelectOption>
-                  ))}
-                </Select>
-              </div>
-            )}
-
-            {currentFamilyFileData && currentFamilyFileData.agreements.length > 0 && (
-              <div className="flex-1 max-w-xs">
-                <label className="block text-sm font-medium text-muted-foreground mb-1">SharedCare Agreement</label>
-                <Select
-                  value={selectedAgreement?.id || ''}
-                  onChange={(e) => handleAgreementChange(e.target.value)}
-                >
-                  <SelectOption value="">All Agreements</SelectOption>
-                  {currentFamilyFileData.agreements.map(agreement => (
-                    <SelectOption key={agreement.id} value={agreement.id}>
-                      {agreement.title}
-                    </SelectOption>
-                  ))}
-                </Select>
-              </div>
-            )}
+          {/* Quick Actions */}
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <QuickActionCard
+              icon={Plus}
+              title="New Event"
+              description="Add to shared calendar"
+              color="sage"
+              onClick={() => handleCreateEvent()}
+            />
+            <QuickActionCard
+              icon={ArrowLeftRight}
+              title="Schedule Exchange"
+              description="Plan pickup/dropoff"
+              color="purple"
+              onClick={() => setShowExchangeForm(true)}
+            />
+            <QuickActionCard
+              icon={FolderOpen}
+              title="My Collections"
+              description="Organize time blocks"
+              color="amber"
+              onClick={() => setActiveTab('collections')}
+            />
           </div>
-        </PageContainer>
-      </div>
+        </div>
+      </header>
 
-      <PageContainer className="py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+          <div className="mb-6 flex items-center gap-3 p-4 bg-cg-error-subtle border border-cg-error/20 rounded-xl">
+            <AlertCircle className="h-5 w-5 text-cg-error flex-shrink-0" />
+            <p className="text-sm text-cg-error">{error}</p>
+          </div>
         )}
 
         {/* Tabs */}
-        <div className="mb-6 border-b border-border overflow-x-auto">
-          <nav className="-mb-px flex space-x-4 sm:space-x-8 min-w-max">
-            <button
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2 p-1 bg-muted rounded-xl">
+            <TabButton
+              active={activeTab === 'calendar'}
+              icon={Calendar}
+              label="Calendar"
               onClick={() => setActiveTab('calendar')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-smooth ${
-                activeTab === 'calendar'
-                  ? 'border-cg-primary text-cg-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Calendar className="h-5 w-5" />
-              Calendar View
-            </button>
-            <button
+            />
+            <TabButton
+              active={activeTab === 'collections'}
+              icon={FolderOpen}
+              label="Collections"
               onClick={() => setActiveTab('collections')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-smooth ${
-                activeTab === 'collections'
-                  ? 'border-cg-primary text-cg-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <FolderOpen className="h-5 w-5" />
-              My Collections
-            </button>
-            <button
+            />
+            <TabButton
+              active={activeTab === 'blocks'}
+              icon={Clock}
+              label="Time Blocks"
+              badge="Private"
               onClick={() => setActiveTab('blocks')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 transition-smooth ${
-                activeTab === 'blocks'
-                  ? 'border-cg-primary text-cg-primary'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Clock className="h-5 w-5" />
-              Time Blocks
-              <Badge variant="secondary" size="sm">Private</Badge>
-            </button>
-          </nav>
+            />
+          </div>
+
+          {activeTab === 'calendar' && <CustodyLegend />}
         </div>
 
         {/* Tab Content */}
-        <div className="mt-6">
+        <div className="cg-card p-4 sm:p-6">
           {activeTab === 'calendar' && (
             <CalendarView
               key={calendarKey}
@@ -372,8 +514,9 @@ function ScheduleContent() {
             </div>
           )}
         </div>
-      </PageContainer>
+      </main>
 
+      {/* Modals */}
       {showEventForm && (
         <EventForm
           caseId={selectedFamilyFile.id}
@@ -407,6 +550,7 @@ function ScheduleContent() {
       {selectedExchangeInstance && (
         <SilentHandoffCheckIn
           instance={selectedExchangeInstance}
+          familyFileId={selectedFamilyFile?.id}
           onCheckInComplete={handleCheckInComplete}
           onClose={() => setSelectedExchangeInstance(null)}
         />

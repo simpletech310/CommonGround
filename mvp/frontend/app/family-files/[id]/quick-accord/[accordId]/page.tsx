@@ -59,10 +59,22 @@ function QuickAccordDetailContent() {
       setQuickAccord(accordData);
       setFamilyFile(fileData);
     } catch (err: any) {
+      if (err.message?.includes('401') || err.message?.includes('Unauthorized')) {
+        router.push('/login');
+        return;
+      }
       setError(err.message || 'Failed to load QuickAccord');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleAuthError = (err: any) => {
+    if (err.message?.includes('401') || err.message?.includes('Unauthorized')) {
+      router.push('/login');
+      return true;
+    }
+    return false;
   };
 
   const handleSubmit = async () => {
@@ -72,7 +84,9 @@ function QuickAccordDetailContent() {
       setQuickAccord(result);
       setActionMessage(result.message);
     } catch (err: any) {
-      setError(err.message || 'Failed to submit');
+      if (!handleAuthError(err)) {
+        setError(err.message || 'Failed to submit');
+      }
     } finally {
       setIsActioning(false);
     }
@@ -85,7 +99,9 @@ function QuickAccordDetailContent() {
       setQuickAccord(result);
       setActionMessage(result.message);
     } catch (err: any) {
-      setError(err.message || 'Failed to approve');
+      if (!handleAuthError(err)) {
+        setError(err.message || 'Failed to approve');
+      }
     } finally {
       setIsActioning(false);
     }
@@ -98,7 +114,9 @@ function QuickAccordDetailContent() {
       setQuickAccord(result);
       setActionMessage(result.message);
     } catch (err: any) {
-      setError(err.message || 'Failed to complete');
+      if (!handleAuthError(err)) {
+        setError(err.message || 'Failed to complete');
+      }
     } finally {
       setIsActioning(false);
     }
@@ -111,7 +129,9 @@ function QuickAccordDetailContent() {
       setQuickAccord(result);
       setActionMessage(result.message);
     } catch (err: any) {
-      setError(err.message || 'Failed to revoke');
+      if (!handleAuthError(err)) {
+        setError(err.message || 'Failed to revoke');
+      }
     } finally {
       setIsActioning(false);
     }
@@ -521,7 +541,7 @@ export default function QuickAccordDetailPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-background">
         <Navigation />
-        <PageContainer>
+        <PageContainer className="pb-32">
           <QuickAccordDetailContent />
         </PageContainer>
       </div>

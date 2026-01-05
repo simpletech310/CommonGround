@@ -18,7 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.child import Child, ChildProfileStatus
 from app.models.case import Case, CaseParticipant
+from app.models.family_file import FamilyFile
 from app.models.user import User
+from app.services.access_control import check_case_or_family_file_access
 from app.schemas.child import (
     ChildCreateBasic,
     ChildUpdateBasic,
@@ -57,6 +59,36 @@ class ChildService:
                 detail="You don't have access to this case",
             )
         return participant
+
+    async def _verify_child_access(
+        self, child: Child, user_id: str
+    ) -> bool:
+        """
+        Verify user has access to a child profile.
+
+        Checks both case_id and family_file_id for access.
+        """
+        # First check case_id if it exists
+        if child.case_id:
+            access = await check_case_or_family_file_access(
+                self.db, child.case_id, user_id
+            )
+            if access.has_access:
+                return True
+
+        # Then check family_file_id if it exists
+        if child.family_file_id:
+            access = await check_case_or_family_file_access(
+                self.db, child.family_file_id, user_id
+            )
+            if access.has_access:
+                return True
+
+        # No access found
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this child profile",
+        )
 
     async def _get_case(self, case_id: str) -> Case:
         """Get case by ID."""
@@ -173,8 +205,8 @@ class ChildService:
                 detail="Child profile not found",
             )
 
-        # Verify access
-        await self._verify_case_access(child.case_id, user.id)
+        # Verify access (checks both case_id and family_file_id)
+        await self._verify_child_access(child, user.id)
 
         # Check if already approved by this user
         if child.approved_by_a == user.id or child.approved_by_b == user.id:
@@ -238,8 +270,8 @@ class ChildService:
                 detail="Child profile not found",
             )
 
-        # Verify access
-        await self._verify_case_access(child.case_id, user.id)
+        # Verify access (checks both case_id and family_file_id)
+        await self._verify_child_access(child, user.id)
 
         # Apply court restrictions if user is restricted
         if child.restricted_parent_id == user.id:
@@ -562,8 +594,8 @@ class ChildService:
                 detail="Child profile not found",
             )
 
-        # Verify access
-        await self._verify_case_access(child.case_id, user.id)
+        # Verify access (checks both case_id and family_file_id)
+        await self._verify_child_access(child, user.id)
 
         # Check if editable
         if child.status == ChildProfileStatus.ARCHIVED.value:

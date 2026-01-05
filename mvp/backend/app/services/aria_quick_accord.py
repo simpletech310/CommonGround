@@ -124,21 +124,39 @@ QUICK_ACCORD_SCHEMA = {
 }
 
 
+# Module-level conversation store (persists across requests)
+# In production, use Redis or database for persistence across server restarts
+_conversation_store: Dict[str, Dict] = {}
+
+
 class AriaQuickAccordService:
     """Service for ARIA-powered conversational QuickAccord building."""
 
     def __init__(self, db: AsyncSession):
         self.db = db
-        # Support both Claude and OpenAI
-        if settings.ARIA_DEFAULT_PROVIDER == "claude" and hasattr(settings, 'ANTHROPIC_API_KEY'):
+        # Initialize both clients for fallback support
+        self.anthropic = None
+        self.openai = None
+
+        # Primary provider
+        if settings.ARIA_DEFAULT_PROVIDER == "claude" and settings.ANTHROPIC_API_KEY:
             self.provider = "claude"
-            self.anthropic = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+            try:
+                self.anthropic = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+            except Exception:
+                self.provider = "openai"
         else:
             self.provider = "openai"
-            self.openai = OpenAI(api_key=settings.OPENAI_API_KEY)
 
-        # In-memory conversation store (in production, use Redis or DB)
-        self._conversations: Dict[str, Dict] = {}
+        # Always initialize OpenAI as fallback
+        if settings.OPENAI_API_KEY:
+            try:
+                self.openai = OpenAI(api_key=settings.OPENAI_API_KEY)
+            except Exception:
+                pass
+
+        # Reference to module-level conversation store
+        self._conversations = _conversation_store
 
     def _get_system_prompt(self, family_file: FamilyFile, children: List[Child]) -> str:
         """Generate ARIA system prompt for QuickAccord conversations."""
@@ -196,7 +214,7 @@ Your role is to have a natural, helpful conversation to understand what arrangem
    - If something's missing: "One more thing - where should pickup happen?"
    - If unsure about category: Ask or make best guess
 
-**Important**: After each message, I need you to also extract structured data. Your response should be conversational, and separately you'll provide the extracted data in JSON format.
+**CRITICAL**: Your responses should ONLY contain conversational text. Do NOT include any JSON, structured data, code blocks, or technical formatting in your responses. Just speak naturally like a helpful assistant. The system will automatically extract the relevant data from the conversation separately.
 
 Start by asking what situation they need to handle."""
 
@@ -491,20 +509,32 @@ Return ONLY the JSON object, no other text."""
         messages: List[Dict],
         user_message: str
     ) -> str:
-        """Get response from Claude."""
-        try:
-            response = self.anthropic.messages.create(
-                model="claude-3-sonnet-20240229",
-                max_tokens=1024,
-                system=system_prompt,
-                messages=messages + [{"role": "user", "content": user_message}]
-                if user_message not in [m.get("content") for m in messages]
-                else messages
-            )
-            return response.content[0].text
-        except Exception as e:
-            # Fallback response
-            return "I'd be happy to help you create a QuickAccord. What situation do you need to document?"
+        """Get response from Claude with OpenAI fallback."""
+        # Try Claude first
+        if self.anthropic:
+            try:
+                response = self.anthropic.messages.create(
+                    model="claude-3-sonnet-20240229",
+                    max_tokens=1024,
+                    system=system_prompt,
+                    messages=messages + [{"role": "user", "content": user_message}]
+                    if user_message not in [m.get("content") for m in messages]
+                    else messages
+                )
+                return response.content[0].text
+            except Exception as e:
+                # Log the error and fall through to OpenAI
+                print(f"Claude API error, falling back to OpenAI: {e}")
+
+        # Fallback to OpenAI
+        if self.openai:
+            try:
+                return await self._get_openai_response(system_prompt, messages, user_message)
+            except Exception as e:
+                print(f"OpenAI API error: {e}")
+
+        # Ultimate fallback response
+        return "I'd be happy to help you create a QuickAccord. What situation do you need to document?"
 
     async def _get_openai_response(
         self,
@@ -533,11 +563,13 @@ Return ONLY the JSON object, no other text."""
         system_prompt: str,
         messages: List[Dict]
     ) -> Optional[Dict]:
-        """Extract structured data from conversation."""
+        """Extract structured data from conversation with fallback support."""
         extraction_prompt = self._get_extraction_prompt()
+        json_str = None
 
-        try:
-            if self.provider == "claude":
+        # Try Claude first if available
+        if self.anthropic:
+            try:
                 response = self.anthropic.messages.create(
                     model="claude-3-sonnet-20240229",
                     max_tokens=1024,
@@ -547,7 +579,12 @@ Return ONLY the JSON object, no other text."""
                     ]
                 )
                 json_str = response.content[0].text
-            else:
+            except Exception as e:
+                print(f"Claude extraction error, falling back to OpenAI: {e}")
+
+        # Fallback to OpenAI if Claude failed or unavailable
+        if json_str is None and self.openai:
+            try:
                 response = self.openai.chat.completions.create(
                     model="gpt-4",
                     messages=[
@@ -557,18 +594,24 @@ Return ONLY the JSON object, no other text."""
                     max_tokens=1024
                 )
                 json_str = response.choices[0].message.content
+            except Exception as e:
+                print(f"OpenAI extraction error: {e}")
 
-            # Parse JSON
-            # Handle markdown code blocks
-            if "```json" in json_str:
-                json_str = json_str.split("```json")[1].split("```")[0]
-            elif "```" in json_str:
-                json_str = json_str.split("```")[1].split("```")[0]
+        # Parse JSON if we got a response
+        if json_str:
+            try:
+                # Handle markdown code blocks
+                if "```json" in json_str:
+                    json_str = json_str.split("```json")[1].split("```")[0]
+                elif "```" in json_str:
+                    json_str = json_str.split("```")[1].split("```")[0]
 
-            return json.loads(json_str.strip())
-        except Exception as e:
-            # Return partial data if extraction fails
-            return {"is_ready_to_create": False, "missing_info": ["Unable to extract data"]}
+                return json.loads(json_str.strip())
+            except json.JSONDecodeError as e:
+                print(f"JSON parsing error: {e}")
+
+        # Return partial data if extraction fails
+        return {"is_ready_to_create": False, "missing_info": ["Unable to extract data"]}
 
     def _generate_summary(self, data: Dict) -> str:
         """Generate a human-readable summary of the QuickAccord."""

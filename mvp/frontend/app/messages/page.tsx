@@ -1,35 +1,320 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { familyFilesAPI, agreementsAPI, messagesAPI, FamilyFileDetail, Agreement, Message } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { familyFilesAPI, agreementsAPI, messagesAPI, FamilyFile, FamilyFileDetail, Agreement, Message } from '@/lib/api';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
-import { PageContainer, EmptyState } from '@/components/layout';
+import { PageContainer } from '@/components/layout';
 import { MessageCompose } from '@/components/messages/message-compose';
 import {
   MessageSquare,
-  Plus,
-  X,
-  Sparkles,
-  AlertTriangle,
+  Shield,
+  Send,
+  MoreVertical,
+  Phone,
+  Video,
+  Info,
+  ChevronLeft,
   Clock,
-  CheckCircle,
-  Lightbulb,
-  FileText,
-  ChevronRight,
+  CheckCheck,
+  AlertTriangle,
+  Sparkles,
   Users,
+  FileText,
+  Plus,
 } from 'lucide-react';
 
 interface FamilyFileWithAgreements {
-  familyFile: FamilyFileDetail;
+  familyFile: FamilyFile | FamilyFileDetail;
   agreements: Agreement[];
+}
+
+/**
+ * The Neutral Zone - ARIA-Protected Co-Parenting Chat
+ *
+ * Design Philosophy: Safe space for communication
+ * - User bubbles: Sage Green
+ * - Partner bubbles: Neutral Grey
+ * - ARIA Guardian: Glowing amber presence
+ */
+
+// ARIA Guardian indicator component
+function ARIAGuardianBadge() {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-cg-amber-subtle border border-cg-amber/20 rounded-full">
+      <div className="relative">
+        <div className="w-2 h-2 bg-cg-amber rounded-full" />
+        <div className="absolute inset-0 w-2 h-2 bg-cg-amber rounded-full animate-ping opacity-50" />
+      </div>
+      <span className="text-xs font-medium text-cg-amber">ARIA Protected</span>
+    </div>
+  );
+}
+
+// Message bubble component
+function MessageBubble({
+  message,
+  isOwn,
+  showAvatar = true,
+  userName
+}: {
+  message: Message;
+  isOwn: boolean;
+  showAvatar?: boolean;
+  userName?: string;
+}) {
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  };
+
+  return (
+    <div className={`flex gap-3 ${isOwn ? 'flex-row-reverse' : ''}`}>
+      {/* Avatar */}
+      {showAvatar && (
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+          isOwn ? 'bg-cg-sage' : 'bg-cg-slate'
+        }`}>
+          <span className="text-xs font-medium text-white">
+            {isOwn ? 'You' : (userName?.charAt(0) || 'P')}
+          </span>
+        </div>
+      )}
+      {!showAvatar && <div className="w-8" />}
+
+      {/* Bubble */}
+      <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'}`}>
+        <div className={`relative group ${
+          isOwn
+            ? 'chat-bubble-user'
+            : 'chat-bubble-other'
+        }`}>
+          {/* ARIA Review Badge */}
+          {message.was_flagged && (
+            <div className={`flex items-center gap-1.5 mb-2 pb-2 border-b ${
+              isOwn ? 'border-white/20' : 'border-border'
+            }`}>
+              <Sparkles className="h-3 w-3 text-cg-amber" />
+              <span className={`text-xs ${isOwn ? 'text-white/70' : 'text-muted-foreground'}`}>
+                Reviewed by ARIA
+              </span>
+            </div>
+          )}
+
+          {/* Message Content */}
+          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+            {message.content}
+          </p>
+
+          {/* Original Content (if ARIA modified) */}
+          {message.original_content && (
+            <details className={`mt-2 pt-2 border-t ${
+              isOwn ? 'border-white/20' : 'border-border'
+            }`}>
+              <summary className={`text-xs cursor-pointer ${
+                isOwn ? 'text-white/60' : 'text-muted-foreground'
+              }`}>
+                View original
+              </summary>
+              <p className={`text-xs mt-1 italic ${
+                isOwn ? 'text-white/50' : 'text-muted-foreground'
+              }`}>
+                "{message.original_content}"
+              </p>
+            </details>
+          )}
+        </div>
+
+        {/* Timestamp and Status */}
+        <div className={`flex items-center gap-1.5 mt-1 text-xs text-muted-foreground ${
+          isOwn ? 'justify-end' : 'justify-start'
+        }`}>
+          <span>{formatTime(message.sent_at)}</span>
+          {isOwn && <CheckCheck className="h-3 w-3 text-cg-sage" />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Empty chat state
+function EmptyChatState({ onCompose }: { onCompose: () => void }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+      <div className="w-20 h-20 rounded-full bg-cg-sage-subtle flex items-center justify-center mb-6">
+        <Shield className="h-10 w-10 text-cg-sage" />
+      </div>
+      <h3 className="text-xl font-semibold text-foreground mb-2">
+        The Neutral Zone
+      </h3>
+      <p className="text-muted-foreground max-w-sm mb-6">
+        This is a safe space for co-parenting communication. ARIA Guardian monitors conversations
+        to help maintain a constructive tone.
+      </p>
+      <button
+        onClick={onCompose}
+        className="cg-btn-primary flex items-center gap-2"
+      >
+        <Send className="h-4 w-4" />
+        Start Conversation
+      </button>
+    </div>
+  );
+}
+
+// Chat header component
+function ChatHeader({
+  familyFileName,
+  agreementTitle,
+  onBack
+}: {
+  familyFileName: string;
+  agreementTitle: string;
+  onBack?: () => void;
+}) {
+  return (
+    <div className="cg-glass border-b border-border sticky top-0 z-10">
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="lg:hidden p-2 -ml-2 rounded-xl hover:bg-cg-sage-subtle transition-smooth"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+          )}
+          <div className="w-10 h-10 rounded-full bg-cg-sage-subtle flex items-center justify-center">
+            <Users className="h-5 w-5 text-cg-sage" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-foreground">{familyFileName}</h2>
+            <p className="text-xs text-muted-foreground">{agreementTitle}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <ARIAGuardianBadge />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Conversation selector for sidebar
+function ConversationSelector({
+  familyFilesWithAgreements,
+  selectedFamilyFile,
+  selectedAgreement,
+  onSelectFamilyFile,
+  onSelectAgreement,
+  isLoading,
+}: {
+  familyFilesWithAgreements: FamilyFileWithAgreements[];
+  selectedFamilyFile: FamilyFile | FamilyFileDetail | null;
+  selectedAgreement: Agreement | null;
+  onSelectFamilyFile: (ff: FamilyFile | FamilyFileDetail) => void;
+  onSelectAgreement: (agreement: Agreement, ff?: FamilyFile | FamilyFileDetail) => void;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="w-8 h-8 border-2 border-cg-sage border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (familyFilesWithAgreements.length === 0) {
+    return (
+      <div className="text-center py-8 px-4">
+        <div className="w-16 h-16 rounded-full bg-cg-sage-subtle flex items-center justify-center mx-auto mb-4">
+          <Users className="h-8 w-8 text-cg-sage" />
+        </div>
+        <h3 className="font-medium text-foreground mb-2">No Family Files</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Create a family file to start messaging
+        </p>
+        <Link href="/family-files/new" className="cg-btn-primary text-sm py-2 px-4">
+          Create Family File
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 p-4">
+      {familyFilesWithAgreements.map((item) => (
+        <div key={item.familyFile.id}>
+          {/* Family File Header */}
+          <button
+            onClick={() => onSelectFamilyFile(item.familyFile)}
+            className={`w-full text-left p-3 rounded-xl transition-smooth ${
+              selectedFamilyFile?.id === item.familyFile.id && !selectedAgreement
+                ? 'bg-cg-sage-subtle border border-cg-sage/30'
+                : 'hover:bg-muted'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-cg-sage-subtle flex items-center justify-center flex-shrink-0">
+                <Users className="h-5 w-5 text-cg-sage" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-foreground truncate">{item.familyFile.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {item.agreements.length} agreement{item.agreements.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+          </button>
+
+          {/* Agreements under this family file */}
+          {selectedFamilyFile?.id === item.familyFile.id && item.agreements.length > 0 && (
+            <div className="ml-6 mt-2 space-y-1 border-l-2 border-border pl-3">
+              {item.agreements.map((agreement) => (
+                <button
+                  key={agreement.id}
+                  onClick={() => onSelectAgreement(agreement)}
+                  className={`w-full text-left p-2.5 rounded-lg transition-smooth flex items-center gap-2 ${
+                    selectedAgreement?.id === agreement.id
+                      ? 'bg-cg-sage text-white'
+                      : 'hover:bg-muted text-foreground'
+                  }`}
+                >
+                  <FileText className="h-4 w-4 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{agreement.title}</p>
+                    <span className={`text-xs ${
+                      selectedAgreement?.id === agreement.id ? 'text-white/70' : 'text-muted-foreground'
+                    }`}>
+                      {agreement.status === 'approved' || agreement.status === 'active' ? 'Active' : agreement.status}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* No agreements message */}
+          {selectedFamilyFile?.id === item.familyFile.id && item.agreements.length === 0 && (
+            <div className="ml-6 mt-2 border-l-2 border-border pl-3">
+              <div className="p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-2">No agreements yet</p>
+                <Link
+                  href={`/agreements?familyFileId=${item.familyFile.id}`}
+                  className="text-xs font-medium text-cg-sage hover:underline"
+                >
+                  Create Agreement
+                </Link>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function MessagesContent() {
@@ -37,23 +322,30 @@ function MessagesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const agreementIdParam = searchParams.get('agreement');
-  const familyFileIdParam = searchParams.get('familyFile');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [familyFilesWithAgreements, setFamilyFilesWithAgreements] = useState<FamilyFileWithAgreements[]>([]);
-  const [selectedFamilyFile, setSelectedFamilyFile] = useState<FamilyFileDetail | null>(null);
+  const [selectedFamilyFile, setSelectedFamilyFile] = useState<FamilyFile | FamilyFileDetail | null>(null);
   const [selectedAgreement, setSelectedAgreement] = useState<Agreement | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingFamilyFiles, setIsLoadingFamilyFiles] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCompose, setShowCompose] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   useEffect(() => {
     loadFamilyFilesAndAgreements();
   }, []);
 
   useEffect(() => {
-    // Handle URL params for pre-selecting agreement
     if (familyFilesWithAgreements.length > 0 && agreementIdParam) {
       for (const item of familyFilesWithAgreements) {
         const agreement = item.agreements.find(a => a.id === agreementIdParam);
@@ -71,11 +363,9 @@ function MessagesContent() {
       setIsLoadingFamilyFiles(true);
       setError(null);
 
-      // Load family files
       const familyFilesResponse = await familyFilesAPI.list();
       const familyFiles = familyFilesResponse.items || [];
 
-      // Load agreements for each family file
       const filesWithAgreements: FamilyFileWithAgreements[] = [];
 
       for (const ff of familyFiles) {
@@ -83,7 +373,7 @@ function MessagesContent() {
           const agreementsResponse = await agreementsAPI.listForFamilyFile(ff.id);
           filesWithAgreements.push({
             familyFile: ff,
-            agreements: agreementsResponse,
+            agreements: agreementsResponse.items || [],
           });
         } catch (err) {
           console.error(`Failed to load agreements for family file ${ff.id}:`, err);
@@ -96,7 +386,6 @@ function MessagesContent() {
 
       setFamilyFilesWithAgreements(filesWithAgreements);
 
-      // Auto-select first family file with agreements if available
       if (filesWithAgreements.length > 0 && !selectedFamilyFile) {
         const firstWithAgreements = filesWithAgreements.find(f => f.agreements.length > 0);
         if (firstWithAgreements) {
@@ -116,19 +405,20 @@ function MessagesContent() {
     }
   };
 
-  const handleSelectFamilyFile = (familyFile: FamilyFileDetail) => {
+  const handleSelectFamilyFile = (familyFile: FamilyFile | FamilyFileDetail) => {
     setSelectedFamilyFile(familyFile);
     setSelectedAgreement(null);
     setMessages([]);
     setShowCompose(false);
   };
 
-  const handleSelectAgreement = async (agreement: Agreement, familyFile?: FamilyFileDetail) => {
+  const handleSelectAgreement = async (agreement: Agreement, familyFile?: FamilyFile | FamilyFileDetail) => {
     if (familyFile) {
       setSelectedFamilyFile(familyFile);
     }
     setSelectedAgreement(agreement);
     setShowCompose(false);
+    setShowSidebar(false); // Hide sidebar on mobile when selecting
     await loadMessages(agreement.id);
   };
 
@@ -137,7 +427,7 @@ function MessagesContent() {
       setIsLoadingMessages(true);
       setError(null);
       const data = await messagesAPI.listByAgreement(agreementId);
-      setMessages(data.reverse()); // Reverse to show oldest first
+      setMessages(data.reverse());
     } catch (err: any) {
       console.error('Failed to load messages:', err);
       setError(err.message || 'Failed to load messages');
@@ -155,7 +445,6 @@ function MessagesContent() {
 
   const getOtherParentId = () => {
     if (!selectedFamilyFile || !user) return '';
-    // Get the other parent from the family file
     if (selectedFamilyFile.parent_a_id === user.id) {
       return selectedFamilyFile.parent_b_id || '';
     } else {
@@ -163,373 +452,176 @@ function MessagesContent() {
     }
   };
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-
-    if (diffInHours < 24) {
-      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    } else if (diffInHours < 48) {
-      return 'Yesterday ' + date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    } else {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
-        date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'active':
-      case 'approved':
-        return <Badge variant="success" size="sm">Active</Badge>;
-      case 'draft':
-        return <Badge variant="secondary" size="sm">Draft</Badge>;
-      case 'pending_approval':
-        return <Badge variant="warning" size="sm">Pending</Badge>;
-      default:
-        return <Badge variant="secondary" size="sm">{status}</Badge>;
-    }
-  };
-
-  // Get agreements for selected family file
-  const selectedFamilyFileData = familyFilesWithAgreements.find(
-    f => f.familyFile.id === selectedFamilyFile?.id
-  );
-
   return (
     <div className="min-h-screen bg-background">
       <Navigation />
 
-      <PageContainer className="max-w-7xl">
-        {/* Mobile Selector */}
-        <div className="lg:hidden mb-4 space-y-3">
-          <Card>
-            <CardContent className="py-3">
-              <label className="text-sm font-medium text-muted-foreground block mb-2">
-                Family File
-              </label>
-              {isLoadingFamilyFiles ? (
-                <div className="flex items-center justify-center py-2">
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary border-t-transparent" />
+      <div className="max-w-7xl mx-auto">
+        <div className="flex h-[calc(100vh-4rem)] lg:h-[calc(100vh-5rem)]">
+          {/* Sidebar - Conversations */}
+          <aside className={`
+            ${showSidebar ? 'flex' : 'hidden lg:flex'}
+            w-full lg:w-80 flex-col border-r border-border bg-card
+            absolute lg:relative inset-0 lg:inset-auto z-20 lg:z-auto
+          `}>
+            {/* Sidebar Header */}
+            <div className="p-4 border-b border-border">
+              <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-cg-sage" />
+                Comms
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">The Neutral Zone</p>
+            </div>
+
+            {/* Conversations List */}
+            <div className="flex-1 overflow-y-auto">
+              <ConversationSelector
+                familyFilesWithAgreements={familyFilesWithAgreements}
+                selectedFamilyFile={selectedFamilyFile}
+                selectedAgreement={selectedAgreement}
+                onSelectFamilyFile={handleSelectFamilyFile}
+                onSelectAgreement={handleSelectAgreement}
+                isLoading={isLoadingFamilyFiles}
+              />
+            </div>
+          </aside>
+
+          {/* Main Chat Area */}
+          <main className={`
+            ${!showSidebar || selectedAgreement ? 'flex' : 'hidden lg:flex'}
+            flex-1 flex flex-col bg-background pb-20 lg:pb-0
+          `}>
+            {!selectedAgreement ? (
+              /* No Agreement Selected */
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                <div className="w-24 h-24 rounded-full bg-cg-sage-subtle flex items-center justify-center mb-6">
+                  <Shield className="h-12 w-12 text-cg-sage" />
                 </div>
-              ) : familyFilesWithAgreements.length === 0 ? (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">No family files</span>
-                  <Link href="/family-files/new">
-                    <Button size="sm">Create Family File</Button>
-                  </Link>
-                </div>
-              ) : (
-                <select
-                  value={selectedFamilyFile?.id || ''}
-                  onChange={(e) => {
-                    const item = familyFilesWithAgreements.find(f => f.familyFile.id === e.target.value);
-                    if (item) handleSelectFamilyFile(item.familyFile);
-                  }}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                <h2 className="text-2xl font-semibold text-foreground mb-3">
+                  Welcome to The Neutral Zone
+                </h2>
+                <p className="text-muted-foreground max-w-md mb-2">
+                  A safe space for co-parenting communication, protected by ARIA Guardian.
+                </p>
+                <p className="text-sm text-muted-foreground max-w-md mb-6">
+                  Select a family file and agreement from the sidebar to start messaging.
+                </p>
+                <button
+                  onClick={() => setShowSidebar(true)}
+                  className="lg:hidden cg-btn-primary"
                 >
-                  <option value="">Select a family file...</option>
-                  {familyFilesWithAgreements.map((item) => (
-                    <option key={item.familyFile.id} value={item.familyFile.id}>
-                      {item.familyFile.name} ({item.agreements.length} agreements)
-                    </option>
-                  ))}
-                </select>
-              )}
-            </CardContent>
-          </Card>
+                  Select Conversation
+                </button>
+              </div>
+            ) : (
+              /* Chat View */
+              <>
+                {/* Chat Header */}
+                <ChatHeader
+                  familyFileName={selectedFamilyFile?.title || 'Family'}
+                  agreementTitle={selectedAgreement.title}
+                  onBack={() => setShowSidebar(true)}
+                />
 
-          {selectedFamilyFile && selectedFamilyFileData && (
-            <Card>
-              <CardContent className="py-3">
-                <label className="text-sm font-medium text-muted-foreground block mb-2">
-                  SharedCare Agreement
-                </label>
-                {selectedFamilyFileData.agreements.length === 0 ? (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">No agreements</span>
-                    <Link href={`/agreements?familyFileId=${selectedFamilyFile.id}`}>
-                      <Button size="sm">Create Agreement</Button>
-                    </Link>
-                  </div>
-                ) : (
-                  <select
-                    value={selectedAgreement?.id || ''}
-                    onChange={(e) => {
-                      const agreement = selectedFamilyFileData.agreements.find(a => a.id === e.target.value);
-                      if (agreement) handleSelectAgreement(agreement);
-                    }}
-                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                  >
-                    <option value="">Select an agreement...</option>
-                    {selectedFamilyFileData.agreements.map((agreement) => (
-                      <option key={agreement.id} value={agreement.id}>
-                        {agreement.title} ({agreement.status})
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Sidebar - Family Files & Agreements (Desktop only) */}
-          <div className="hidden lg:block w-80 flex-shrink-0">
-            <Card className="sticky top-24">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  Family Files
-                </CardTitle>
-                <CardDescription>Select an agreement to view messages</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 max-h-[calc(100vh-200px)] overflow-y-auto">
-                {isLoadingFamilyFiles && (
-                  <div className="text-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent mx-auto" />
-                  </div>
-                )}
-
-                {!isLoadingFamilyFiles && familyFilesWithAgreements.length === 0 && (
-                  <div className="text-center py-8">
-                    <p className="text-sm text-muted-foreground mb-4">No family files</p>
-                    <Link href="/family-files/new">
-                      <Button size="sm">Create Family File</Button>
-                    </Link>
-                  </div>
-                )}
-
-                {familyFilesWithAgreements.map((item) => (
-                  <div key={item.familyFile.id} className="space-y-2">
-                    <button
-                      onClick={() => handleSelectFamilyFile(item.familyFile)}
-                      className={`w-full text-left p-3 rounded-lg transition-smooth ${
-                        selectedFamilyFile?.id === item.familyFile.id && !selectedAgreement
-                          ? 'bg-cg-primary-subtle border-2 border-cg-primary/30'
-                          : 'bg-secondary/50 border-2 border-transparent hover:bg-secondary'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-foreground">{item.familyFile.name}</p>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {item.agreements.length} agreement{item.agreements.length !== 1 ? 's' : ''}
-                      </p>
-                    </button>
-
-                    {/* Show agreements when family file is selected */}
-                    {selectedFamilyFile?.id === item.familyFile.id && (
-                      <div className="ml-3 pl-3 border-l-2 border-border space-y-2">
-                        {item.agreements.length === 0 ? (
-                          <div className="py-2">
-                            <p className="text-xs text-muted-foreground mb-2">No agreements yet</p>
-                            <Link href={`/agreements?familyFileId=${item.familyFile.id}`}>
-                              <Button size="sm" variant="outline" className="w-full">
-                                <Plus className="h-3 w-3 mr-1" />
-                                Create Agreement
-                              </Button>
-                            </Link>
-                          </div>
-                        ) : (
-                          item.agreements.map((agreement) => (
-                            <button
-                              key={agreement.id}
-                              onClick={() => handleSelectAgreement(agreement)}
-                              className={`w-full text-left p-2 rounded-md transition-smooth ${
-                                selectedAgreement?.id === agreement.id
-                                  ? 'bg-cg-primary text-white'
-                                  : 'bg-background hover:bg-secondary'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2">
-                                <FileText className="h-4 w-4 flex-shrink-0" />
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium truncate">{agreement.title}</p>
-                                  <div className="mt-0.5">
-                                    {getStatusBadge(agreement.status)}
-                                  </div>
-                                </div>
-                              </div>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Main Area - Messages */}
-          <div className="flex-1 min-w-0">
-            {!selectedAgreement && (
-              <Card>
-                <CardContent className="py-12">
-                  <EmptyState
-                    icon={MessageSquare}
-                    title="Select an agreement to view messages"
-                    description="Choose a SharedCare Agreement from the sidebar to start communicating. Messages are organized by agreement so you can keep Summer Schedule and School Year Schedule conversations separate."
-                  />
-                </CardContent>
-              </Card>
-            )}
-
-            {selectedAgreement && selectedFamilyFile && (
-              <div className="space-y-6">
-                {/* Agreement Header */}
-                <Card>
-                  <CardHeader>
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                          <Users className="h-4 w-4" />
-                          {selectedFamilyFile.name}
-                        </div>
-                        <CardTitle className="truncate flex items-center gap-2">
-                          <FileText className="h-5 w-5" />
-                          {selectedAgreement.title}
-                        </CardTitle>
-                        <CardDescription className="hidden sm:flex items-center gap-2 mt-1">
-                          Messages for this SharedCare Agreement
-                          {getStatusBadge(selectedAgreement.status)}
-                        </CardDescription>
-                      </div>
-                      <Button
-                        onClick={() => setShowCompose(!showCompose)}
-                        disabled={!getOtherParentId()}
-                        title={!getOtherParentId() ? "Waiting for other parent to join" : ""}
-                        className="w-full sm:w-auto flex-shrink-0"
-                      >
-                        {showCompose ? (
-                          <>
-                            <X className="h-4 w-4 mr-2" />
-                            Cancel
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="h-4 w-4 mr-2" />
-                            New Message
-                          </>
-                        )}
-                      </Button>
+                {/* Messages Area */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {isLoadingMessages ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="w-8 h-8 border-2 border-cg-sage border-t-transparent rounded-full animate-spin" />
                     </div>
-                  </CardHeader>
-                </Card>
+                  ) : messages.length === 0 ? (
+                    <EmptyChatState onCompose={() => setShowCompose(true)} />
+                  ) : (
+                    <>
+                      {/* ARIA Welcome Message */}
+                      <div className="flex justify-center mb-6">
+                        <div className="aria-guardian px-4 py-3 flex items-center gap-3 max-w-md">
+                          <div className="w-8 h-8 rounded-full bg-cg-amber/20 flex items-center justify-center flex-shrink-0 aria-glow">
+                            <Sparkles className="h-4 w-4 text-cg-amber" />
+                          </div>
+                          <p className="text-sm text-foreground">
+                            ARIA Guardian is monitoring this conversation to help maintain a constructive tone.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Messages */}
+                      {messages.map((message, index) => {
+                        const isOwn = message.sender_id === user?.id;
+                        const prevMessage = index > 0 ? messages[index - 1] : null;
+                        const showAvatar = !prevMessage || prevMessage.sender_id !== message.sender_id;
+
+                        return (
+                          <MessageBubble
+                            key={message.id}
+                            message={message}
+                            isOwn={isOwn}
+                            showAvatar={showAvatar}
+                            userName={isOwn ? undefined : 'Co-Parent'}
+                          />
+                        );
+                      })}
+                      <div ref={messagesEndRef} />
+                    </>
+                  )}
+                </div>
 
                 {/* Compose Area */}
-                {showCompose && (
-                  <>
+                {showCompose ? (
+                  <div className="border-t border-border p-4 bg-card">
                     {getOtherParentId() ? (
                       <MessageCompose
-                        caseId={selectedAgreement.case_id || selectedFamilyFile.id}
+                        caseId={selectedAgreement.case_id || undefined}
+                        familyFileId={selectedFamilyFile?.id}
                         agreementId={selectedAgreement.id}
                         recipientId={getOtherParentId()}
                         onMessageSent={handleMessageSent}
                         ariaEnabled={true}
                       />
                     ) : (
-                      <Alert variant="default" className="bg-cg-warning-subtle border-cg-warning/30">
-                        <AlertTriangle className="h-4 w-4 text-cg-warning" />
-                        <AlertDescription>
-                          <p className="font-medium text-foreground">Can't send messages yet</p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            The other parent needs to join this family file before you can exchange messages.
+                      <div className="aria-guardian p-4 flex items-center gap-3">
+                        <AlertTriangle className="h-5 w-5 text-cg-amber flex-shrink-0" />
+                        <div>
+                          <p className="font-medium text-foreground">Waiting for co-parent</p>
+                          <p className="text-sm text-muted-foreground">
+                            The other parent needs to join before you can exchange messages.
                           </p>
-                        </AlertDescription>
-                      </Alert>
+                        </div>
+                      </div>
                     )}
-                  </>
+                    <button
+                      onClick={() => setShowCompose(false)}
+                      className="mt-3 text-sm text-muted-foreground hover:text-foreground transition-smooth"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  /* Quick Compose Button */
+                  <div className="border-t border-border p-4 bg-card">
+                    <button
+                      onClick={() => setShowCompose(true)}
+                      disabled={!getOtherParentId()}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-smooth ${
+                        getOtherParentId()
+                          ? 'border-border hover:border-cg-sage hover:bg-cg-sage-subtle/50 cursor-pointer'
+                          : 'border-border bg-muted cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-cg-sage-subtle flex items-center justify-center">
+                        <Send className="h-4 w-4 text-cg-sage" />
+                      </div>
+                      <span className="text-muted-foreground">
+                        {getOtherParentId() ? 'Write a message...' : 'Waiting for co-parent to join'}
+                      </span>
+                    </button>
+                  </div>
                 )}
-
-                {/* Messages Thread */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Messages</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {isLoadingMessages && (
-                      <div className="text-center py-12">
-                        <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent mx-auto" />
-                        <p className="mt-4 text-muted-foreground">Loading messages...</p>
-                      </div>
-                    )}
-
-                    {!isLoadingMessages && messages.length === 0 && (
-                      <EmptyState
-                        icon={MessageSquare}
-                        title="No messages yet"
-                        description={`Start a conversation about "${selectedAgreement.title}"`}
-                        action={{
-                          label: 'Send First Message',
-                          onClick: () => setShowCompose(true),
-                        }}
-                      />
-                    )}
-
-                    {!isLoadingMessages && messages.length > 0 && (
-                      <div className="space-y-3 sm:space-y-4">
-                        {messages.map((message) => {
-                          const isSent = message.sender_id === user?.id;
-
-                          return (
-                            <div
-                              key={message.id}
-                              className={`flex ${isSent ? 'justify-end' : 'justify-start'}`}
-                            >
-                              <div className={`max-w-[85%] sm:max-w-md ${isSent ? 'ml-4 sm:ml-12' : 'mr-4 sm:mr-12'}`}>
-                                <div
-                                  className={`rounded-2xl px-3 sm:px-4 py-2 sm:py-3 ${
-                                    isSent
-                                      ? 'bg-cg-primary text-white rounded-br-md'
-                                      : 'bg-secondary text-foreground rounded-bl-md'
-                                  }`}
-                                >
-                                  {message.was_flagged && (
-                                    <div className={`flex items-center gap-2 mb-2 pb-2 border-b ${isSent ? 'border-white/20' : 'border-border'}`}>
-                                      <Lightbulb className="h-3 w-3" />
-                                      <span className="text-xs opacity-75">ARIA reviewed</span>
-                                    </div>
-                                  )}
-
-                                  <p className="text-sm whitespace-pre-wrap leading-relaxed break-words">{message.content}</p>
-
-                                  {message.original_content && (
-                                    <details className={`mt-2 pt-2 border-t ${isSent ? 'border-white/20' : 'border-border'}`}>
-                                      <summary className="text-xs opacity-75 cursor-pointer">
-                                        View original
-                                      </summary>
-                                      <p className="text-xs opacity-75 mt-1 italic break-words">
-                                        "{message.original_content}"
-                                      </p>
-                                    </details>
-                                  )}
-                                </div>
-
-                                <div className={`flex items-center gap-1.5 sm:gap-2 mt-1 text-xs text-muted-foreground ${isSent ? 'justify-end' : 'justify-start'}`}>
-                                  <Clock className="h-3 w-3" />
-                                  <span>{formatTime(message.sent_at)}</span>
-                                  {isSent && (
-                                    <CheckCircle className="h-3 w-3 text-cg-success" />
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+              </>
             )}
-          </div>
+          </main>
         </div>
-      </PageContainer>
+      </div>
     </div>
   );
 }

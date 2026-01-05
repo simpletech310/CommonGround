@@ -240,10 +240,10 @@ function NewQuickAccordContent() {
 
       {/* Chat Interface */}
       <Card className="flex flex-col h-[500px]">
-        <CardHeader className="border-b">
+        <CardHeader className="border-b border-border">
           <div className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-primary" />
-            <CardTitle className="text-lg">Chat with ARIA</CardTitle>
+            <Bot className="h-5 w-5 text-cg-sage" />
+            <CardTitle className="text-lg text-foreground">Chat with ARIA</CardTitle>
           </div>
           <CardDescription>
             Describe your situation and ARIA will help create the agreement
@@ -254,7 +254,7 @@ function NewQuickAccordContent() {
         <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 && !conversationId && (
             <div className="text-center text-muted-foreground py-8">
-              <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <Bot className="h-12 w-12 mx-auto mb-4 text-cg-sage/50" />
               <p>Select a category above or describe what you need</p>
             </div>
           )}
@@ -265,22 +265,22 @@ function NewQuickAccordContent() {
               className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}
             >
               {message.role === 'assistant' && (
-                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <Bot className="h-4 w-4 text-primary" />
+                <div className="h-8 w-8 rounded-full bg-cg-sage/20 flex items-center justify-center flex-shrink-0">
+                  <Bot className="h-4 w-4 text-cg-sage" />
                 </div>
               )}
               <div
-                className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                className={`max-w-[80%] rounded-lg px-4 py-3 ${
                   message.role === 'user'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-secondary'
+                    ? 'bg-cg-sage text-white'
+                    : 'bg-card border border-border text-foreground'
                 }`}
               >
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                <p className="whitespace-pre-wrap text-sm">{message.content}</p>
               </div>
               {message.role === 'user' && (
-                <div className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center flex-shrink-0">
-                  <User className="h-4 w-4" />
+                <div className="h-8 w-8 rounded-full bg-cg-sage/20 flex items-center justify-center flex-shrink-0">
+                  <User className="h-4 w-4 text-cg-sage" />
                 </div>
               )}
             </div>
@@ -288,14 +288,14 @@ function NewQuickAccordContent() {
 
           {isSending && (
             <div className="flex gap-3">
-              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                <Bot className="h-4 w-4 text-primary animate-pulse" />
+              <div className="h-8 w-8 rounded-full bg-cg-sage/20 flex items-center justify-center">
+                <Bot className="h-4 w-4 text-cg-sage animate-pulse" />
               </div>
-              <div className="bg-secondary rounded-lg px-4 py-2">
+              <div className="bg-card border border-border rounded-lg px-4 py-3">
                 <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" />
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce delay-100" />
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce delay-200" />
+                  <div className="w-2 h-2 bg-cg-sage rounded-full animate-bounce" />
+                  <div className="w-2 h-2 bg-cg-sage rounded-full animate-bounce delay-100" />
+                  <div className="w-2 h-2 bg-cg-sage rounded-full animate-bounce delay-200" />
                 </div>
               </div>
             </div>
@@ -427,7 +427,7 @@ export default function NewQuickAccordPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-background">
         <Navigation />
-        <PageContainer>
+        <PageContainer className="pb-32">
           <NewQuickAccordContent />
         </PageContainer>
       </div>

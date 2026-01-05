@@ -5,32 +5,52 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { agreementsAPI, Agreement, AgreementSection, AgreementQuickSummary } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
-import { FileText, Sparkles, CheckCircle, Pencil } from 'lucide-react';
+import {
+  FileText,
+  Sparkles,
+  CheckCircle,
+  Pencil,
+  ArrowLeft,
+  Download,
+  Power,
+  PowerOff,
+  Trash2,
+  Send,
+  Clock,
+  AlertCircle,
+  FileSignature,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Quote,
+  Edit3,
+  Calendar,
+} from 'lucide-react';
+
+/* =============================================================================
+   HELPER FUNCTIONS
+   ============================================================================= */
 
 // Map backend section types to wizard section indexes for editing
 function getSectionEditIndex(sectionType: string, sectionNumber: string): number {
-  // Map from backend section (type + number) to wizard section index
   const mappings: Record<string, number> = {
-    'basic_info_1': 1,       // parent_info (also covers other_parent_info=2, children_info=3)
-    'custody_2': 4,          // legal_custody
-    'custody_3': 5,          // physical_custody
-    'schedule_4': 6,         // parenting_schedule
-    'schedule_5': 7,         // holiday_schedule
-    'schedule_6': 15,        // travel (vacation time)
-    'logistics_8': 8,        // exchange_logistics
-    'decision_making_9': 18, // other_provisions
-    'decision_making_10': 12, // education
-    'decision_making_11': 11, // medical_healthcare
-    'financial_14': 10,      // child_support
-    'financial_15': 10,      // child_support (expense sharing)
-    'communication_16': 13,  // parent_communication
-    'legal_17': 17,          // dispute_resolution
-    'legal_18': 16,          // relocation (modification process)
+    'basic_info_1': 1,
+    'custody_2': 4,
+    'custody_3': 5,
+    'schedule_4': 6,
+    'schedule_5': 7,
+    'schedule_6': 15,
+    'logistics_8': 8,
+    'decision_making_9': 18,
+    'decision_making_10': 12,
+    'decision_making_11': 11,
+    'financial_14': 10,
+    'financial_15': 10,
+    'communication_16': 13,
+    'legal_17': 17,
+    'legal_18': 16,
   };
 
   const key = `${sectionType}_${sectionNumber}`;
@@ -39,17 +59,14 @@ function getSectionEditIndex(sectionType: string, sectionNumber: string): number
 
 // Helper to format structured data into human-readable summary
 function formatSectionSummary(section: AgreementSection): string | null {
-  // If content exists and is not JSON, use it directly
   if (section.content && !section.content.startsWith('{')) {
     return section.content;
   }
 
-  // Try to parse and format structured_data
   const data = section.structured_data;
   if (!data) return null;
 
   try {
-    // Handle different section types
     const sectionData = typeof data === 'string' ? JSON.parse(data) : data;
 
     switch (section.section_type) {
@@ -81,8 +98,10 @@ function formatSectionSummary(section: AgreementSection): string | null {
         const holidays = Object.entries(hs)
           .filter(([_, v]) => v && typeof v === 'string' && v !== '')
           .slice(0, 4)
-          .map(([k, _]) => k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()));
-        return holidays.length > 0 ? `Holidays covered: ${holidays.join(', ')}` : 'Holiday schedule configured';
+          .map(([k, _]) => k.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()));
+        return holidays.length > 0
+          ? `Holidays covered: ${holidays.join(', ')}`
+          : 'Holiday schedule configured';
       }
 
       case 'education': {
@@ -122,7 +141,9 @@ function formatSectionSummary(section: AgreementSection): string | null {
         const shared = Object.entries(exp)
           .filter(([_, v]) => v === '50/50')
           .map(([k, _]) => k.replace(/_/g, ' '));
-        return shared.length > 0 ? `50/50 split: ${shared.slice(0, 3).join(', ')}` : 'Expense sharing configured';
+        return shared.length > 0
+          ? `50/50 split: ${shared.slice(0, 3).join(', ')}`
+          : 'Expense sharing configured';
       }
 
       case 'dispute_resolution': {
@@ -142,32 +163,13 @@ function formatSectionSummary(section: AgreementSection): string | null {
         return parts.length > 0 ? parts.join(' • ') : 'Communication guidelines set';
       }
 
-      case 'activities':
-      case 'extracurricular': {
-        const act = sectionData.current_activities || sectionData;
-        if (Array.isArray(act) && act.length > 0) {
-          const activities = act.map((a: any) => a.activity || a.name).filter(Boolean);
-          return activities.length > 0 ? `Activities: ${activities.join(', ')}` : null;
-        }
-        return 'Extracurricular activities configured';
-      }
-
-      case 'transportation':
-      case 'logistics': {
-        const tr = sectionData.exchange_location || sectionData;
-        const parts = [];
-        if (tr.primary) parts.push(`Exchange at: ${tr.primary}`);
-        if (sectionData.costs) parts.push(`Costs: ${sectionData.costs}`);
-        if (sectionData.transportation_costs) parts.push(`Costs: ${sectionData.transportation_costs}`);
-        return parts.length > 0 ? parts.join(' • ') : 'Transportation logistics configured';
-      }
-
       case 'basic_info': {
         const bi = sectionData;
         const parts = [];
         if (bi.parent_a?.name) parts.push(bi.parent_a.name);
         if (bi.parent_b?.name) parts.push(bi.parent_b.name);
-        if (bi.children?.length) parts.push(`${bi.children.length} child${bi.children.length > 1 ? 'ren' : ''}`);
+        if (bi.children?.length)
+          parts.push(`${bi.children.length} child${bi.children.length > 1 ? 'ren' : ''}`);
         return parts.length > 0 ? parts.join(' & ') : null;
       }
 
@@ -180,47 +182,6 @@ function formatSectionSummary(section: AgreementSection): string | null {
         return parts.length > 0 ? parts.join(' • ') : 'Legal custody defined';
       }
 
-      case 'decision_making': {
-        const dm = sectionData.major_decisions || sectionData;
-        if (dm.requires_agreement) {
-          return `Joint decisions: ${dm.requires_agreement.slice(0, 3).join(', ')}`;
-        }
-        return 'Decision-making authority defined';
-      }
-
-      case 'religious': {
-        const rel = sectionData.religious || sectionData;
-        const parts = [];
-        if (rel.religious_upbringing || rel.upbringing) parts.push(rel.religious_upbringing || rel.upbringing);
-        if (rel.religious_education || rel.formal_education) parts.push(`Education: ${rel.religious_education || rel.formal_education}`);
-        return parts.length > 0 ? parts.join(' • ') : 'Religious provisions defined';
-      }
-
-      case 'modifications': {
-        const mod = sectionData.minor_modifications || sectionData;
-        if (mod.relocation_notice_days) {
-          return `${mod.relocation_notice_days} days relocation notice required`;
-        }
-        return 'Modification process defined';
-      }
-
-      case 'vacation_schedule':
-      case 'vacation': {
-        const vs = sectionData.summer_vacation || sectionData;
-        const parts = [];
-        if (vs.weeks_each) parts.push(`${vs.weeks_each} weeks each parent`);
-        if (vs.notice_required_days) parts.push(`${vs.notice_required_days} days notice`);
-        return parts.length > 0 ? parts.join(' • ') : 'Vacation schedule configured';
-      }
-
-      case 'school_breaks': {
-        const sb = sectionData.school_breaks || sectionData;
-        const breaks = Object.entries(sb)
-          .filter(([_, v]) => v && v !== '')
-          .map(([k, _]) => k.replace(/_/g, ' '));
-        return breaks.length > 0 ? `Covers: ${breaks.slice(0, 3).join(', ')}` : 'School breaks scheduled';
-      }
-
       default:
         return null;
     }
@@ -228,6 +189,227 @@ function formatSectionSummary(section: AgreementSection): string | null {
     return null;
   }
 }
+
+/* =============================================================================
+   HELPER COMPONENTS - Editorial/Legal Aesthetic
+   ============================================================================= */
+
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { icon: React.ReactNode; className: string; label: string }> = {
+    active: {
+      icon: <CheckCircle className="h-4 w-4" />,
+      className: 'bg-cg-success text-white',
+      label: 'Active',
+    },
+    approved: {
+      icon: <CheckCircle className="h-4 w-4" />,
+      className: 'bg-cg-sage text-white',
+      label: 'Approved',
+    },
+    pending_approval: {
+      icon: <Clock className="h-4 w-4" />,
+      className: 'bg-cg-amber text-white',
+      label: 'Pending Approval',
+    },
+    draft: {
+      icon: <FileText className="h-4 w-4" />,
+      className: 'bg-cg-slate text-white',
+      label: 'Draft',
+    },
+    inactive: {
+      icon: <PowerOff className="h-4 w-4" />,
+      className: 'bg-muted text-muted-foreground',
+      label: 'Inactive',
+    },
+    rejected: {
+      icon: <AlertCircle className="h-4 w-4" />,
+      className: 'bg-cg-error text-white',
+      label: 'Rejected',
+    },
+  };
+
+  const { icon, className, label } = config[status] || config.draft;
+
+  return (
+    <span className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full ${className}`}>
+      {icon}
+      {label}
+    </span>
+  );
+}
+
+function ApprovalTracker({
+  approvedByA,
+  approvedByB,
+}: {
+  approvedByA: boolean;
+  approvedByB: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-6">
+      <div className="flex items-center gap-2">
+        <div
+          className={`w-8 h-8 rounded-full flex items-center justify-center ${
+            approvedByA ? 'bg-cg-success text-white' : 'bg-muted text-muted-foreground'
+          }`}
+        >
+          {approvedByA ? <CheckCircle className="h-4 w-4" /> : <span className="text-xs font-medium">A</span>}
+        </div>
+        <span className={`text-sm ${approvedByA ? 'text-cg-success font-medium' : 'text-muted-foreground'}`}>
+          Parent A {approvedByA ? 'Approved' : 'Pending'}
+        </span>
+      </div>
+      <div className="h-px w-8 bg-border" />
+      <div className="flex items-center gap-2">
+        <div
+          className={`w-8 h-8 rounded-full flex items-center justify-center ${
+            approvedByB ? 'bg-cg-success text-white' : 'bg-muted text-muted-foreground'
+          }`}
+        >
+          {approvedByB ? <CheckCircle className="h-4 w-4" /> : <span className="text-xs font-medium">B</span>}
+        </div>
+        <span className={`text-sm ${approvedByB ? 'text-cg-success font-medium' : 'text-muted-foreground'}`}>
+          Parent B {approvedByB ? 'Approved' : 'Pending'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function AgreementSectionCard({
+  section,
+  sectionIndex,
+  canEdit,
+  onEdit,
+}: {
+  section: AgreementSection;
+  sectionIndex: number;
+  canEdit: boolean;
+  onEdit: () => void;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const summary = formatSectionSummary(section);
+
+  return (
+    <div
+      className={`border-l-4 transition-all duration-200 ${
+        section.is_completed
+          ? 'border-l-cg-sage bg-card'
+          : 'border-l-muted bg-muted/30'
+      }`}
+    >
+      <div className="p-5">
+        <div className="flex items-start gap-4">
+          {/* Paragraph Number */}
+          <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-cg-sand flex items-center justify-center">
+            <span className="font-mono text-sm font-semibold text-muted-foreground">
+              §{sectionIndex}
+            </span>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-serif text-lg font-semibold text-foreground">
+                  {section.section_title}
+                </h3>
+                {section.is_required && (
+                  <span className="text-xs text-cg-amber font-medium">Required</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {section.is_completed ? (
+                  <span className="px-2.5 py-1 bg-cg-success-subtle text-cg-success text-xs font-medium rounded-full flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3" />
+                    Complete
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 bg-muted text-muted-foreground text-xs font-medium rounded-full">
+                    Incomplete
+                  </span>
+                )}
+
+                {canEdit && (
+                  <button
+                    onClick={onEdit}
+                    className="p-2 rounded-lg hover:bg-cg-sage-subtle text-muted-foreground hover:text-cg-sage transition-colors"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Summary */}
+            {summary && (
+              <p className="font-serif text-muted-foreground mt-3 leading-relaxed">
+                {summary}
+              </p>
+            )}
+
+            {!section.content && !section.structured_data && !section.is_completed && (
+              <p className="text-sm text-muted-foreground/60 mt-2 italic">
+                This section has not been completed yet.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActionButton({
+  onClick,
+  isLoading,
+  disabled,
+  variant = 'primary',
+  icon,
+  loadingText,
+  children,
+}: {
+  onClick: () => void;
+  isLoading?: boolean;
+  disabled?: boolean;
+  variant?: 'primary' | 'secondary' | 'success' | 'danger' | 'warning';
+  icon: React.ReactNode;
+  loadingText?: string;
+  children: React.ReactNode;
+}) {
+  const variantClasses = {
+    primary: 'cg-btn-primary',
+    secondary: 'cg-btn-secondary',
+    success: 'bg-cg-success text-white hover:bg-cg-success/90 px-6 py-3 rounded-full font-medium transition-all duration-200',
+    danger: 'bg-cg-error text-white hover:bg-cg-error/90 px-6 py-3 rounded-full font-medium transition-all duration-200',
+    warning: 'bg-cg-amber text-white hover:bg-cg-amber/90 px-6 py-3 rounded-full font-medium transition-all duration-200',
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={isLoading || disabled}
+      className={`${variantClasses[variant]} flex items-center justify-center gap-2 w-full disabled:opacity-50 disabled:cursor-not-allowed`}
+    >
+      {isLoading ? (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {loadingText || 'Loading...'}
+        </>
+      ) : (
+        <>
+          {icon}
+          {children}
+        </>
+      )}
+    </button>
+  );
+}
+
+/* =============================================================================
+   MAIN COMPONENT
+   ============================================================================= */
 
 function AgreementDetailsContent() {
   const { user } = useAuth();
@@ -255,11 +437,9 @@ function AgreementDetailsContent() {
       setError(null);
 
       const data = await agreementsAPI.get(agreementId);
-
       setAgreement(data.agreement);
       setSections(data.sections);
 
-      // Load AI summary
       try {
         const summaryData = await agreementsAPI.getQuickSummary(agreementId);
         setSummary(summaryData);
@@ -276,7 +456,7 @@ function AgreementDetailsContent() {
 
   const handleSubmit = async () => {
     try {
-      setIsApproving(true); // Reuse the same loading state
+      setIsApproving(true);
       setError(null);
 
       const data = await agreementsAPI.submit(agreementId);
@@ -313,7 +493,6 @@ function AgreementDetailsContent() {
 
       const pdfBlob = await agreementsAPI.generatePDF(agreementId);
 
-      // Create download link
       const url = URL.createObjectURL(pdfBlob);
       const a = document.createElement('a');
       a.href = url;
@@ -377,7 +556,6 @@ function AgreementDetailsContent() {
 
       await agreementsAPI.delete(agreementId);
 
-      // Navigate back to case details
       if (agreement?.case_id) {
         router.push(`/cases/${agreement.case_id}`);
       } else {
@@ -391,29 +569,6 @@ function AgreementDetailsContent() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active':
-        return 'text-green-700 bg-green-100 border-green-200';
-      case 'approved':
-        return 'text-blue-700 bg-blue-100 border-blue-200';
-      case 'pending_approval':
-        return 'text-yellow-700 bg-yellow-100 border-yellow-200';
-      case 'draft':
-        return 'text-gray-700 bg-gray-100 border-gray-200';
-      case 'inactive':
-        return 'text-gray-700 bg-gray-100 border-gray-200';
-      case 'rejected':
-        return 'text-red-700 bg-red-100 border-red-200';
-      default:
-        return 'text-gray-700 bg-gray-100 border-gray-200';
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    return status.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-  };
-
   const hasUserApproved = () => {
     if (!agreement || !user) return false;
     return agreement.approved_by_a === user.id || agreement.approved_by_b === user.id;
@@ -425,447 +580,356 @@ function AgreementDetailsContent() {
     return !hasUserApproved();
   };
 
+  const completedSections = sections.filter((s) => s.is_completed).length;
+  const completionPercent = sections.length > 0 ? Math.round((completedSections / sections.length) * 100) : 0;
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-cg-sand">
       <Navigation />
 
-      {/* Main Content */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
-          <Link href="/agreements">
-            <Button variant="outline" size="sm">
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              Back to Agreements
-            </Button>
+      {/* Back Button */}
+      <div className="bg-card border-b border-border">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <Link
+            href="/agreements"
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-cg-sage transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Agreements
           </Link>
         </div>
+      </div>
 
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Loading State */}
         {isLoading && (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading agreement...</p>
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <Loader2 className="h-12 w-12 animate-spin text-cg-sage mx-auto" />
+              <p className="mt-4 text-muted-foreground">Loading agreement...</p>
+            </div>
           </div>
         )}
 
         {/* Error State */}
-        {error && (
-          <Card className="border-red-200 bg-red-50">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div>
-                  <p className="font-medium text-red-900">Error</p>
-                  <p className="text-sm text-red-700">{error}</p>
-                </div>
+        {error && !isLoading && (
+          <div className="cg-card p-6 bg-cg-error-subtle border-cg-error/20">
+            <div className="flex items-start gap-4">
+              <AlertCircle className="h-6 w-6 text-cg-error flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-cg-error">Error Loading Agreement</p>
+                <p className="text-sm text-cg-error/80 mt-1">{error}</p>
               </div>
-              <Button variant="outline" className="mt-4" onClick={loadAgreement}>
-                Try Again
-              </Button>
-            </CardContent>
-          </Card>
+            </div>
+            <button onClick={loadAgreement} className="mt-4 cg-btn-secondary">
+              Try Again
+            </button>
+          </div>
         )}
 
-        {/* Agreement Details */}
+        {/* Agreement Content */}
         {!isLoading && agreement && (
-          <div className="space-y-6">
-            {/* Header Card */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between">
+          <div className="space-y-8">
+            {/* Document Header - Paper Texture Background */}
+            <div className="cg-card overflow-hidden">
+              {/* Decorative Header Bar */}
+              <div className="h-2 bg-gradient-to-r from-cg-sage via-cg-amber to-cg-sage" />
+
+              <div className="p-8">
+                {/* Title and Status */}
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
                   <div>
-                    <CardTitle className="text-2xl">{agreement.title}</CardTitle>
-                    <CardDescription className="mt-2">
-                      Version {agreement.version}
-                    </CardDescription>
+                    <div className="flex items-center gap-3 mb-2">
+                      <FileSignature className="h-6 w-6 text-cg-sage" />
+                      <span className="text-sm text-muted-foreground font-mono">
+                        Version {agreement.version}
+                      </span>
+                    </div>
+                    <h1 className="font-serif text-3xl font-bold text-foreground">
+                      {agreement.title}
+                    </h1>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(agreement.status)}`}>
-                    {getStatusLabel(agreement.status)}
-                  </span>
+                  <StatusBadge status={agreement.status} />
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="text-gray-500">Created</p>
-                    <p className="font-medium">{new Date(agreement.created_at).toLocaleDateString()}</p>
+
+                {/* Meta Information */}
+                <div className="flex flex-wrap gap-6 text-sm text-muted-foreground border-t border-border pt-6">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    <span>
+                      Created {new Date(agreement.created_at).toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
                   </div>
                   {agreement.effective_date && (
-                    <div>
-                      <p className="text-gray-500">Effective Date</p>
-                      <p className="font-medium">{new Date(agreement.effective_date).toLocaleDateString()}</p>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-cg-success" />
+                      <span>
+                        Effective {new Date(agreement.effective_date).toLocaleDateString('en-US', {
+                          month: 'long',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </span>
                     </div>
                   )}
                 </div>
 
-                {/* Approval Status */}
+                {/* Approval Tracker */}
                 {agreement.status === 'pending_approval' && (
-                  <div className="pt-4 border-t">
-                    <p className="text-sm font-medium text-gray-700 mb-2">Approval Status:</p>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        {agreement.approved_by_a ? (
-                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        )}
-                        <span className="text-sm text-gray-600">
-                          Parent A {agreement.approved_by_a ? 'approved' : 'pending'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {agreement.approved_by_b ? (
-                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        )}
-                        <span className="text-sm text-gray-600">
-                          Parent B {agreement.approved_by_b ? 'approved' : 'pending'}
-                        </span>
-                      </div>
-                    </div>
+                  <div className="mt-6 pt-6 border-t border-border">
+                    <p className="text-sm font-medium text-foreground mb-4">Approval Status</p>
+                    <ApprovalTracker
+                      approvedByA={!!agreement.approved_by_a}
+                      approvedByB={!!agreement.approved_by_b}
+                    />
                   </div>
                 )}
-              </CardContent>
-            </Card>
 
-            {/* AI Summary Card */}
-            {summary && summary.completion_percentage > 0 && (
-              <Card className="border-cg-primary/20 bg-cg-primary-subtle/30">
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="h-5 w-5 text-cg-primary" />
-                    <CardTitle className="text-lg">Agreement Summary</CardTitle>
-                  </div>
-                  <CardDescription>
-                    AI-generated overview of your parenting agreement
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Progress Bar */}
-                  <div>
-                    <div className="flex justify-between text-sm text-muted-foreground mb-1">
-                      <span>Completion</span>
-                      <span>{summary.completion_percentage}%</span>
+                {/* Completion Progress */}
+                {sections.length > 0 && (
+                  <div className="mt-6 pt-6 border-t border-border">
+                    <div className="flex items-center justify-between text-sm mb-2">
+                      <span className="text-muted-foreground">
+                        {completedSections} of {sections.length} sections complete
+                      </span>
+                      <span className="font-semibold text-foreground">{completionPercent}%</span>
                     </div>
-                    <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                    <div className="h-2 bg-muted rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-cg-primary rounded-full transition-all duration-500"
-                        style={{ width: `${summary.completion_percentage}%` }}
+                        className="h-full bg-cg-sage rounded-full transition-all duration-500"
+                        style={{ width: `${completionPercent}%` }}
                       />
                     </div>
                   </div>
+                )}
+              </div>
+            </div>
 
-                  {/* Summary Text */}
-                  <p className="text-foreground leading-relaxed">
-                    {summary.summary}
-                  </p>
+            {/* AI Summary Card */}
+            {summary && summary.completion_percentage > 0 && (
+              <div className="cg-card p-6 bg-cg-amber-subtle/30 border-cg-amber/20">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-cg-amber flex items-center justify-center flex-shrink-0 aria-glow">
+                    <Sparkles className="h-6 w-6 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-foreground mb-2">ARIA Summary</h3>
+                    <p className="font-serif text-muted-foreground leading-relaxed">
+                      {summary.summary}
+                    </p>
 
-                  {/* Key Points */}
-                  {summary.key_points && summary.key_points.length > 0 && (
-                    <div className="pt-3 border-t border-border">
-                      <p className="text-sm font-medium text-foreground mb-2">Key Terms:</p>
-                      <ul className="space-y-1.5">
-                        {summary.key_points.map((point, idx) => (
-                          <li key={idx} className="flex items-start gap-2 text-sm">
-                            <CheckCircle className="h-4 w-4 text-cg-success flex-shrink-0 mt-0.5" />
-                            <span className="text-muted-foreground">{point}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                    {summary.key_points && summary.key_points.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-cg-amber/20">
+                        <p className="text-sm font-medium text-foreground mb-2">Key Terms:</p>
+                        <ul className="space-y-1.5">
+                          {summary.key_points.map((point, idx) => (
+                            <li key={idx} className="flex items-start gap-2 text-sm text-muted-foreground">
+                              <CheckCircle className="h-4 w-4 text-cg-success flex-shrink-0 mt-0.5" />
+                              {point}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
 
-            {/* Actions */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Actions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {canApprove() && (
-                  <Button
-                    className="w-full"
-                    onClick={handleApprove}
-                    disabled={isApproving}
-                  >
-                    {isApproving ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Approving...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        Approve Agreement
-                      </>
-                    )}
-                  </Button>
-                )}
-
-                {hasUserApproved() && agreement.status === 'pending_approval' && (
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                    <p className="text-sm text-blue-900">
-                      You've approved this agreement. Waiting for the other parent's approval.
-                    </p>
-                  </div>
-                )}
-
-                {agreement.status === 'approved' && (
-                  <>
-                    <Button
-                      className="w-full bg-green-600 hover:bg-green-700"
-                      onClick={handleActivate}
-                      disabled={isActivating}
-                    >
-                      {isActivating ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          Activating...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Activate Agreement
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={handleGeneratePDF}
-                      disabled={isGeneratingPDF}
-                    >
-                      {isGeneratingPDF ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
-                          Generating PDF...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          Download PDF
-                        </>
-                      )}
-                    </Button>
-                  </>
-                )}
-
-                {agreement.status === 'active' && (
-                  <>
-                    <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-                      <p className="text-sm font-medium text-green-900">This agreement is currently active!</p>
-                      {agreement.effective_date && (
-                        <p className="text-xs text-green-700 mt-1">
-                          Effective since {new Date(agreement.effective_date).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
-                    <Button
-                      variant="outline"
-                      className="w-full border-orange-300 text-orange-700 hover:bg-orange-50"
-                      onClick={handleDeactivate}
-                      disabled={isActivating}
-                    >
-                      {isActivating ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600 mr-2"></div>
-                          Deactivating...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                          </svg>
-                          Deactivate Agreement
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={handleGeneratePDF}
-                      disabled={isGeneratingPDF}
-                    >
-                      {isGeneratingPDF ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600 mr-2"></div>
-                          Generating PDF...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                          Download PDF
-                        </>
-                      )}
-                    </Button>
-                  </>
-                )}
-
+            {/* Actions Card */}
+            <div className="cg-card p-6">
+              <h3 className="font-semibold text-foreground mb-4">Actions</h3>
+              <div className="space-y-3">
+                {/* Draft Actions */}
                 {agreement.status === 'draft' && (
                   <>
-                    <Button
-                      className="w-full bg-green-600 hover:bg-green-700"
+                    <ActionButton
                       onClick={handleSubmit}
-                      disabled={isApproving}
+                      isLoading={isApproving}
+                      variant="success"
+                      icon={<Send className="h-4 w-4" />}
+                      loadingText="Submitting..."
                     >
-                      {isApproving ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          Submitting...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          Submit for Approval
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
+                      Submit for Approval
+                    </ActionButton>
+                    <ActionButton
                       onClick={() => router.push(`/agreements/${agreementId}/builder`)}
+                      variant="secondary"
+                      icon={<Edit3 className="h-4 w-4" />}
                     >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
                       Continue Editing
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full border-red-300 text-red-700 hover:bg-red-50"
+                    </ActionButton>
+                    <ActionButton
                       onClick={handleDelete}
-                      disabled={isDeleting}
+                      isLoading={isDeleting}
+                      variant="danger"
+                      icon={<Trash2 className="h-4 w-4" />}
+                      loadingText="Deleting..."
                     >
-                      {isDeleting ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600 mr-2"></div>
-                          Deleting...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                          Delete Draft
-                        </>
-                      )}
-                    </Button>
+                      Delete Draft
+                    </ActionButton>
                   </>
                 )}
-              </CardContent>
-            </Card>
 
-            {/* Sections */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Agreement Sections</CardTitle>
-                <CardDescription>
-                  {sections.filter(s => s.is_completed).length} of {sections.length} sections completed
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {sections.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-muted-foreground">No sections completed yet</p>
-                    <Button
-                      className="mt-4"
-                      onClick={() => router.push(`/agreements/${agreementId}/builder`)}
-                    >
-                      Start Building
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {sections.map((section) => {
-                      const editIndex = getSectionEditIndex(section.section_type, section.section_number);
-                      const canEdit = agreement.status === 'draft' && editIndex >= 0;
-
-                      return (
-                        <div
-                          key={section.id}
-                          className={`p-4 rounded-lg border transition-colors ${
-                            section.is_completed
-                              ? 'bg-cg-success/5 border-cg-success/20'
-                              : 'bg-secondary/50 border-border'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                {section.is_completed ? (
-                                  <CheckCircle className="h-4 w-4 text-cg-success flex-shrink-0" />
-                                ) : (
-                                  <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 flex-shrink-0" />
-                                )}
-                                <h4 className="font-medium text-foreground">{section.section_title}</h4>
-                              </div>
-                              {(section.content || section.structured_data) && (
-                                <p className="text-sm text-muted-foreground mt-2 ml-6 line-clamp-2">
-                                  {formatSectionSummary(section) || 'Section configured'}
-                                </p>
-                              )}
-                              {!section.content && !section.structured_data && !section.is_completed && (
-                                <p className="text-sm text-muted-foreground/60 mt-2 ml-6 italic">
-                                  Not yet completed
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              {section.is_required && (
-                                <Badge variant="secondary" size="sm">
-                                  Required
-                                </Badge>
-                              )}
-                              {section.is_completed && (
-                                <Badge variant="success" size="sm">
-                                  Complete
-                                </Badge>
-                              )}
-                              {canEdit && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => router.push(`/agreements/${agreementId}/builder?section=${editIndex}`)}
-                                  className="ml-2"
-                                >
-                                  <Pencil className="h-3.5 w-3.5 mr-1" />
-                                  Edit
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                {/* Pending Approval Actions */}
+                {agreement.status === 'pending_approval' && (
+                  <>
+                    {canApprove() ? (
+                      <ActionButton
+                        onClick={handleApprove}
+                        isLoading={isApproving}
+                        variant="success"
+                        icon={<CheckCircle className="h-4 w-4" />}
+                        loadingText="Approving..."
+                      >
+                        Approve Agreement
+                      </ActionButton>
+                    ) : hasUserApproved() ? (
+                      <div className="p-4 bg-cg-sage-subtle rounded-xl text-center">
+                        <CheckCircle className="h-6 w-6 text-cg-sage mx-auto mb-2" />
+                        <p className="text-sm font-medium text-cg-sage">You've approved this agreement</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Waiting for the other parent's approval
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
                 )}
-              </CardContent>
-            </Card>
+
+                {/* Approved Actions */}
+                {agreement.status === 'approved' && (
+                  <>
+                    <ActionButton
+                      onClick={handleActivate}
+                      isLoading={isActivating}
+                      variant="success"
+                      icon={<Power className="h-4 w-4" />}
+                      loadingText="Activating..."
+                    >
+                      Activate Agreement
+                    </ActionButton>
+                    <ActionButton
+                      onClick={handleGeneratePDF}
+                      isLoading={isGeneratingPDF}
+                      variant="secondary"
+                      icon={<Download className="h-4 w-4" />}
+                      loadingText="Generating..."
+                    >
+                      Download PDF
+                    </ActionButton>
+                  </>
+                )}
+
+                {/* Active Actions */}
+                {agreement.status === 'active' && (
+                  <>
+                    <div className="p-4 bg-cg-success-subtle rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <CheckCircle className="h-6 w-6 text-cg-success" />
+                        <div>
+                          <p className="font-medium text-cg-success">Agreement is Active</p>
+                          {agreement.effective_date && (
+                            <p className="text-xs text-cg-success/80">
+                              Effective since {new Date(agreement.effective_date).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <ActionButton
+                      onClick={handleGeneratePDF}
+                      isLoading={isGeneratingPDF}
+                      variant="secondary"
+                      icon={<Download className="h-4 w-4" />}
+                      loadingText="Generating..."
+                    >
+                      Download PDF
+                    </ActionButton>
+                    <ActionButton
+                      onClick={handleDeactivate}
+                      isLoading={isActivating}
+                      variant="warning"
+                      icon={<PowerOff className="h-4 w-4" />}
+                      loadingText="Deactivating..."
+                    >
+                      Deactivate Agreement
+                    </ActionButton>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Sections - The Living Document */}
+            <div className="cg-card overflow-hidden">
+              <div className="p-6 border-b border-border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-serif text-xl font-semibold text-foreground">
+                      Agreement Sections
+                    </h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      The terms and conditions of your parenting agreement
+                    </p>
+                  </div>
+                  {agreement.status === 'draft' && (
+                    <button
+                      onClick={() => router.push(`/agreements/${agreementId}/builder`)}
+                      className="cg-btn-secondary text-sm py-2 px-4"
+                    >
+                      <Edit3 className="h-4 w-4 mr-2" />
+                      Edit All
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {sections.length === 0 ? (
+                <div className="p-12 text-center">
+                  <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground mb-4">No sections completed yet</p>
+                  <button
+                    onClick={() => router.push(`/agreements/${agreementId}/builder`)}
+                    className="cg-btn-primary"
+                  >
+                    Start Building
+                  </button>
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {sections.map((section, index) => {
+                    const editIndex = getSectionEditIndex(section.section_type, section.section_number);
+                    const canEdit = agreement.status === 'draft' && editIndex >= 0;
+
+                    return (
+                      <AgreementSectionCard
+                        key={section.id}
+                        section={section}
+                        sectionIndex={index + 1}
+                        canEdit={canEdit}
+                        onEdit={() => router.push(`/agreements/${agreementId}/builder?section=${editIndex}`)}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Floating Propose Change Button - Future Feature */}
+            {agreement.status === 'active' && (
+              <div className="fixed bottom-24 right-6 sm:bottom-8 sm:right-8">
+                <button
+                  className="w-14 h-14 rounded-full bg-cg-amber text-white shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center justify-center aria-glow"
+                  title="Propose Change (Coming Soon)"
+                  onClick={() => alert('Propose Change feature coming soon!')}
+                >
+                  <Quote className="h-6 w-6" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </main>

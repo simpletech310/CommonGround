@@ -87,6 +87,7 @@ async def create_event(
     return ScheduleEventResponse(
         id=event.id,
         case_id=event.case_id,
+        family_file_id=event.family_file_id,
         collection_id=event.collection_id,
         created_by=event.created_by,
         event_type=event.event_type,
@@ -144,6 +145,7 @@ async def get_case_events(
         ScheduleEventResponse(
             id=e.id,
             case_id=e.case_id,
+            family_file_id=e.family_file_id,
             collection_id=e.collection_id,
             created_by=e.created_by,
             event_type=e.event_type,

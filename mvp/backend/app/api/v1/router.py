@@ -26,6 +26,7 @@ from app.api.v1.endpoints import (
     clearfund,
     exports,
     intake,
+    dashboard,
 )
 
 api_router = APIRouter()
@@ -68,3 +69,6 @@ api_router.include_router(exports.router, prefix="/exports", tags=["Case Exports
 
 # ARIA Paralegal - Legal Intake
 api_router.include_router(intake.router, prefix="/intake", tags=["ARIA Paralegal"])
+
+# Dashboard - Activity aggregation
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])

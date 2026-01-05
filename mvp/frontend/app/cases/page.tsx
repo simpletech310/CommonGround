@@ -115,7 +115,7 @@ function CasesListContent() {
   const activeCases = cases.filter(c => c.status === 'active');
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-20 lg:pb-0">
       <Navigation />
 
       {/* Page Header */}

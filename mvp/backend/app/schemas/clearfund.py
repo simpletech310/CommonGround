@@ -95,7 +95,8 @@ class ObligationResponse(BaseModel):
     """Obligation response."""
 
     id: str
-    case_id: str
+    case_id: Optional[str] = None  # Court case context (legacy)
+    family_file_id: Optional[str] = None  # Family file context
     agreement_id: Optional[str] = None  # SharedCare Agreement context
     source_type: str
     source_id: Optional[str]

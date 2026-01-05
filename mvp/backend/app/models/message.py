@@ -61,8 +61,13 @@ class Message(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "messages"
 
-    # Links
-    case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), index=True)
+    # Links - at least one of case_id or family_file_id should be set
+    case_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("cases.id"), index=True, nullable=True
+    )  # Court case context (legacy)
+    family_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("family_files.id"), index=True, nullable=True
+    )  # Family file context (preferred)
     thread_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("message_threads.id"), index=True, nullable=True
     )
@@ -106,7 +111,8 @@ class Message(Base, UUIDMixin, TimestampMixin):
     )  # If user modified after ARIA suggestion
 
     # Relationships
-    case: Mapped["Case"] = relationship("Case", back_populates="messages")
+    case: Mapped[Optional["Case"]] = relationship("Case", back_populates="messages")
+    family_file: Mapped[Optional["FamilyFile"]] = relationship("FamilyFile", back_populates="messages")
     thread: Mapped[Optional["MessageThread"]] = relationship("MessageThread", back_populates="messages")
     flags: Mapped[list["MessageFlag"]] = relationship(
         "MessageFlag", back_populates="message", cascade="all, delete-orphan"

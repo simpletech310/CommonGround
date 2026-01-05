@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
-import { familyFilesAPI, quickAccordsAPI, FamilyFileDetail, QuickAccord } from '@/lib/api';
+import { familyFilesAPI, quickAccordsAPI, agreementsAPI, FamilyFileDetail, QuickAccord, Agreement } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +26,8 @@ import {
   Plus,
   Settings,
   MessageSquare,
+  DollarSign,
+  CalendarPlus,
 } from 'lucide-react';
 
 function FamilyFileDetailContent() {
@@ -36,6 +38,7 @@ function FamilyFileDetailContent() {
 
   const [familyFile, setFamilyFile] = useState<FamilyFileDetail | null>(null);
   const [quickAccords, setQuickAccords] = useState<QuickAccord[]>([]);
+  const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,14 +50,20 @@ function FamilyFileDetailContent() {
     try {
       setIsLoading(true);
       setError(null);
-      const [fileData, accordsData] = await Promise.all([
+      const [fileData, accordsData, agreementsData] = await Promise.all([
         familyFilesAPI.get(id),
         quickAccordsAPI.list(id),
+        agreementsAPI.listForFamilyFile(id),
       ]);
       setFamilyFile(fileData);
       setQuickAccords(accordsData.items);
+      setAgreements(agreementsData.items || []);
     } catch (err: any) {
       console.error('Failed to load family file:', err);
+      if (err.message?.includes('401') || err.message?.includes('Unauthorized')) {
+        router.push('/login');
+        return;
+      }
       setError(err.message || 'Failed to load family file');
     } finally {
       setIsLoading(false);
@@ -180,36 +189,34 @@ function FamilyFileDetailContent() {
                 <Button
                   variant="outline"
                   className="h-auto py-4 justify-start"
-                  onClick={() => router.push(`/family-files/${id}/quick-accord/new`)}
+                  onClick={() => router.push(`/payments/new?familyFileId=${id}`)}
                 >
                   <div className="flex items-start gap-3">
-                    <Zap className="h-5 w-5 text-yellow-500 mt-0.5" />
+                    <DollarSign className="h-5 w-5 text-emerald-500 mt-0.5" />
                     <div className="text-left">
-                      <div className="font-medium">New QuickAccord</div>
+                      <div className="font-medium">ClearFund Request</div>
                       <div className="text-xs text-muted-foreground">
-                        Create a situational agreement
+                        Request expense reimbursement
                       </div>
                     </div>
                   </div>
                 </Button>
 
-                {familyFile.can_create_shared_care_agreement && (
-                  <Button
-                    variant="outline"
-                    className="h-auto py-4 justify-start"
-                    onClick={() => router.push(`/agreements/new?familyFileId=${id}`)}
-                  >
-                    <div className="flex items-start gap-3">
-                      <FileText className="h-5 w-5 text-blue-500 mt-0.5" />
-                      <div className="text-left">
-                        <div className="font-medium">SharedCare Agreement</div>
-                        <div className="text-xs text-muted-foreground">
-                          Create a comprehensive agreement
-                        </div>
+                <Button
+                  variant="outline"
+                  className="h-auto py-4 justify-start"
+                  onClick={() => router.push(`/schedule?familyFileId=${id}&action=new-event`)}
+                >
+                  <div className="flex items-start gap-3">
+                    <CalendarPlus className="h-5 w-5 text-blue-500 mt-0.5" />
+                    <div className="text-left">
+                      <div className="font-medium">New Event</div>
+                      <div className="text-xs text-muted-foreground">
+                        Add to shared calendar
                       </div>
                     </div>
-                  </Button>
-                )}
+                  </div>
+                </Button>
 
                 <Button
                   variant="outline"
@@ -233,7 +240,7 @@ function FamilyFileDetailContent() {
                     className="h-auto py-4 justify-start"
                   >
                     <div className="flex items-start gap-3">
-                      <Mail className="h-5 w-5 text-primary mt-0.5" />
+                      <Mail className="h-5 w-5 text-cg-sage mt-0.5" />
                       <div className="text-left">
                         <div className="font-medium">Invite Co-Parent</div>
                         <div className="text-xs text-muted-foreground">
@@ -274,7 +281,7 @@ function FamilyFileDetailContent() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {quickAccords.slice(0, 5).map((accord) => (
+                  {quickAccords.slice(0, 3).map((accord) => (
                     <div
                       key={accord.id}
                       className="flex items-center justify-between p-3 border rounded-lg hover:bg-secondary/50 cursor-pointer"
@@ -293,11 +300,13 @@ function FamilyFileDetailContent() {
                       {getStatusBadge(accord.status)}
                     </div>
                   ))}
-                  {quickAccords.length > 5 && (
-                    <Button variant="ghost" className="w-full">
-                      View all {quickAccords.length} QuickAccords
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    className="w-full text-muted-foreground hover:text-foreground"
+                    onClick={() => router.push(`/family-files/${id}/quick-accords`)}
+                  >
+                    View All QuickAccords ({quickAccords.length})
+                  </Button>
                 </div>
               )}
             </CardContent>
@@ -305,26 +314,31 @@ function FamilyFileDetailContent() {
 
           {/* SharedCare Agreements */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <FileText className="h-5 w-5 text-blue-500" />
-                SharedCare Agreements
-              </CardTitle>
-              <CardDescription>Comprehensive co-parenting agreements</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-blue-500" />
+                  SharedCare Agreements
+                </CardTitle>
+                <CardDescription>Comprehensive co-parenting agreements</CardDescription>
+              </div>
+              {familyFile.can_create_shared_care_agreement && (
+                <Button
+                  size="sm"
+                  onClick={() => router.push(`/agreements/new?familyFileId=${id}`)}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  New
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
-              {familyFile.active_agreement_count === 0 ? (
+              {agreements.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p>No SharedCare Agreements yet</p>
                   {familyFile.can_create_shared_care_agreement ? (
-                    <Button
-                      variant="link"
-                      className="mt-2"
-                      onClick={() => router.push(`/agreements/new?familyFileId=${id}`)}
-                    >
-                      Create your first agreement
-                    </Button>
+                    <p className="text-sm mt-2">Create a comprehensive co-parenting agreement</p>
                   ) : (
                     <p className="text-sm mt-2">
                       New agreements require court approval when a Court Case is linked
@@ -333,11 +347,30 @@ function FamilyFileDetailContent() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="p-3 border rounded-lg">
-                    <div className="font-medium">Active Agreements: {familyFile.active_agreement_count}</div>
-                  </div>
-                  <Button variant="outline" className="w-full">
-                    View All Agreements
+                  {agreements.slice(0, 3).map((agreement) => (
+                    <div
+                      key={agreement.id}
+                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-secondary/50 cursor-pointer"
+                      onClick={() => router.push(`/agreements/${agreement.id}`)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">📄</span>
+                        <div>
+                          <div className="font-medium">{agreement.title}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {new Date(agreement.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+                      {getStatusBadge(agreement.status)}
+                    </div>
+                  ))}
+                  <Button
+                    variant="ghost"
+                    className="w-full text-muted-foreground hover:text-foreground"
+                    onClick={() => router.push(`/agreements?familyFileId=${id}`)}
+                  >
+                    View All Agreements ({agreements.length})
                   </Button>
                 </div>
               )}
@@ -420,14 +453,18 @@ function FamilyFileDetailContent() {
               ) : (
                 <div className="space-y-3">
                   {familyFile.children.map((child) => (
-                    <div key={child.id} className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-secondary flex items-center justify-center">
-                        <span className="text-sm font-medium">
+                    <div
+                      key={child.id}
+                      className="flex items-center gap-3 p-2 -mx-2 rounded-lg hover:bg-secondary/50 cursor-pointer transition-colors"
+                      onClick={() => router.push(`/family-files/${id}/children/${child.id}`)}
+                    >
+                      <div className="h-8 w-8 rounded-full bg-cg-sage/10 flex items-center justify-center">
+                        <span className="text-sm font-medium text-cg-sage">
                           {child.first_name[0]}
                         </span>
                       </div>
-                      <div>
-                        <div className="font-medium">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">
                           {child.preferred_name || child.first_name} {child.last_name}
                         </div>
                         <div className="text-xs text-muted-foreground">
@@ -435,7 +472,7 @@ function FamilyFileDetailContent() {
                         </div>
                       </div>
                       {child.status !== 'active' && (
-                        <Badge variant="outline" className="text-xs">
+                        <Badge variant="outline" className="text-xs flex-shrink-0">
                           {child.status}
                         </Badge>
                       )}
@@ -477,7 +514,7 @@ function FamilyFileDetailContent() {
 export default function FamilyFileDetailPage() {
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background pb-20 lg:pb-0">
         <Navigation />
         <PageContainer>
           <FamilyFileDetailContent />

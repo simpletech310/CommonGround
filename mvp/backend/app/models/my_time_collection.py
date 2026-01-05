@@ -13,6 +13,7 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
     from app.models.case import Case
+    from app.models.family_file import FamilyFile
     from app.models.user import User
     from app.models.time_block import TimeBlock
     from app.models.schedule import ScheduleEvent
@@ -34,8 +35,13 @@ class MyTimeCollection(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "my_time_collections"
 
-    # Ownership
-    case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), index=True)
+    # Ownership - at least one of case_id or family_file_id should be set
+    case_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("cases.id"), index=True, nullable=True
+    )  # Court case context (legacy)
+    family_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("family_files.id"), index=True, nullable=True
+    )  # Family file context (preferred)
     owner_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
 
     # Collection details (PRIVATE to owner)
@@ -48,7 +54,8 @@ class MyTimeCollection(Base, UUIDMixin, TimestampMixin):
     display_order: Mapped[int] = mapped_column(Integer, default=0)  # Sort order in UI
 
     # Relationships
-    case: Mapped["Case"] = relationship("Case", back_populates="my_time_collections")
+    case: Mapped[Optional["Case"]] = relationship("Case", back_populates="my_time_collections")
+    family_file: Mapped[Optional["FamilyFile"]] = relationship("FamilyFile", back_populates="my_time_collections")
     owner: Mapped["User"] = relationship("User", foreign_keys=[owner_id])
     time_blocks: Mapped[list["TimeBlock"]] = relationship(
         "TimeBlock",

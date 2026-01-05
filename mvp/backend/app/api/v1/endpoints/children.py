@@ -8,7 +8,7 @@ Profiles start as pending_approval and become active when both parents approve.
 from typing import List, Optional
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -38,6 +38,7 @@ def _child_to_basic_response(child) -> ChildBasicResponse:
     return ChildBasicResponse(
         id=child.id,
         case_id=child.case_id,
+        family_file_id=child.family_file_id,
         first_name=child.first_name,
         last_name=child.last_name,
         preferred_name=child.preferred_name,
@@ -81,6 +82,7 @@ def _child_to_full_response(child) -> ChildProfileResponse:
     return ChildProfileResponse(
         id=child.id,
         case_id=child.case_id,
+        family_file_id=child.family_file_id,
         status=child.status,
         created_by=child.created_by,
         approved_by_a=child.approved_by_a,
@@ -376,6 +378,58 @@ async def update_photo(
     current_user: User = Depends(get_current_user),
 ):
     """Update child's profile photo."""
+    service = ChildService(db)
+    child = await service.update_photo(child_id, photo_url, current_user)
+    return _child_to_full_response(child)
+
+
+@router.post(
+    "/{child_id}/photo/upload",
+    response_model=ChildProfileResponse,
+    summary="Upload profile photo file",
+    description="Upload a photo file for a child's profile.",
+)
+async def upload_photo(
+    child_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload and save a child's profile photo file."""
+    import os
+    import uuid
+    from pathlib import Path
+
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File type {file.content_type} not allowed. Use JPEG, PNG, GIF, or WebP."
+        )
+
+    # Create uploads directory if needed
+    uploads_dir = Path(__file__).parent.parent.parent.parent.parent / "uploads" / "children"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate unique filename
+    ext = file.filename.split(".")[-1] if file.filename and "." in file.filename else "jpg"
+    filename = f"{child_id}_{uuid.uuid4().hex[:8]}.{ext}"
+    filepath = uploads_dir / filename
+
+    # Save file
+    try:
+        content = await file.read()
+        with open(filepath, "wb") as f:
+            f.write(content)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save file: {str(e)}"
+        )
+
+    # Update child with photo URL
+    photo_url = f"/uploads/children/{filename}"
     service = ChildService(db)
     child = await service.update_photo(child_id, photo_url, current_user)
     return _child_to_full_response(child)

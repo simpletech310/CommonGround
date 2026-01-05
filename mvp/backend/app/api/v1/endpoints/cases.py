@@ -1,16 +1,25 @@
 """
 Case management endpoints.
+
+Supports both Cases (legacy court-linked) and Family Files (new standalone).
+When a case_id is provided, the endpoint first checks for a Case, then falls
+back to checking for a Family File.
 """
 
 from typing import List
-from fastapi import APIRouter, Depends, Body, status
+from fastapi import APIRouter, Depends, Body, status, HTTPException
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.models.family_file import FamilyFile
+from app.models.child import Child
 from app.schemas.case import CaseCreate, CaseResponse, CaseUpdate
 from app.services.case import CaseService
+from app.services.access_control import check_case_or_family_file_access
 
 router = APIRouter()
 
@@ -217,36 +226,94 @@ async def get_case(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get detailed case information.
+    Get detailed case or family file information.
 
+    Supports both Cases (legacy court-linked) and Family Files.
     Returns case details including participants and children.
 
     Args:
-        case_id: ID of the case
+        case_id: ID of the case or family file
 
     Returns:
-        Case details
+        Case/Family File details
     """
     case_service = CaseService(db)
-    case = await case_service.get_case(case_id, current_user)
+
+    # First try to get as a Case
+    try:
+        case = await case_service.get_case(case_id, current_user)
+        return {
+            "id": case.id,
+            "case_name": case.case_name,
+            "case_number": case.case_number,
+            "state": case.state,
+            "status": case.status,
+            "created_at": case.created_at,
+            "participants": [
+                {
+                    "id": p.id,
+                    "role": p.role,
+                    "parent_type": p.parent_type,
+                    "user_id": p.user_id,
+                    "is_active": p.is_active
+                }
+                for p in case.participants
+            ]
+        }
+    except HTTPException as e:
+        if e.status_code != 404:
+            raise
+
+    # Case not found - try as Family File
+    result = await db.execute(
+        select(FamilyFile)
+        .options(selectinload(FamilyFile.children))
+        .where(
+            FamilyFile.id == case_id,
+            or_(
+                FamilyFile.parent_a_id == current_user.id,
+                FamilyFile.parent_b_id == current_user.id
+            )
+        )
+    )
+    family_file = result.scalar_one_or_none()
+
+    if not family_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Case or Family File not found"
+        )
+
+    # Return Family File as case-compatible format
+    participants = []
+    if family_file.parent_a_id:
+        participants.append({
+            "id": f"ff-{family_file.id}-a",
+            "role": "petitioner",
+            "parent_type": family_file.parent_a_role or "parent_a",
+            "user_id": family_file.parent_a_id,
+            "is_active": True
+        })
+    if family_file.parent_b_id:
+        participants.append({
+            "id": f"ff-{family_file.id}-b",
+            "role": "respondent",
+            "parent_type": family_file.parent_b_role or "parent_b",
+            "user_id": family_file.parent_b_id,
+            "is_active": True
+        })
 
     return {
-        "id": case.id,
-        "case_name": case.case_name,
-        "case_number": case.case_number,
-        "state": case.state,
-        "status": case.status,
-        "created_at": case.created_at,
-        "participants": [
-            {
-                "id": p.id,
-                "role": p.role,
-                "parent_type": p.parent_type,
-                "user_id": p.user_id,
-                "is_active": p.is_active
-            }
-            for p in case.participants
-        ]
+        "id": family_file.id,
+        "case_name": family_file.title,
+        "case_number": family_file.family_file_number,
+        "state": family_file.state,
+        "status": family_file.status,
+        "created_at": family_file.created_at,
+        "participants": participants,
+        # Additional Family File fields
+        "is_family_file": True,
+        "family_file_number": family_file.family_file_number,
     }
 
 

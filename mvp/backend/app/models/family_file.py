@@ -159,6 +159,21 @@ class FamilyFile(Base, UUIDMixin, TimestampMixin):
         "QuickAccord", back_populates="family_file", cascade="all, delete-orphan"
     )
 
+    # Messages (direct communication between parents)
+    messages: Mapped[list["Message"]] = relationship(
+        "Message", back_populates="family_file", cascade="all, delete-orphan"
+    )
+
+    # My Time Collections (schedule organization containers)
+    my_time_collections: Mapped[list["MyTimeCollection"]] = relationship(
+        "MyTimeCollection", back_populates="family_file", cascade="all, delete-orphan"
+    )
+
+    # Custody Exchanges (pickup/dropoff events)
+    custody_exchanges: Mapped[list["CustodyExchange"]] = relationship(
+        "CustodyExchange", back_populates="family_file", cascade="all, delete-orphan"
+    )
+
     # Court Custody Case (optional, 0 or 1)
     court_custody_case: Mapped[Optional["CourtCustodyCase"]] = relationship(
         "CourtCustodyCase", back_populates="family_file", uselist=False

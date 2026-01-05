@@ -20,7 +20,13 @@ class CustodyExchangeCreate(BaseModel):
     # Parent involvement
     from_parent_id: Optional[str] = None
     to_parent_id: Optional[str] = None
+
+    # Children involved - simple list (used for pickup or dropoff types)
     child_ids: List[str] = Field(default_factory=list)
+
+    # Children by direction (used when exchange_type="both" to specify per-child direction)
+    pickup_child_ids: List[str] = Field(default_factory=list, description="Children being picked up")
+    dropoff_child_ids: List[str] = Field(default_factory=list, description="Children being dropped off")
 
     # Location
     location: Optional[str] = None
@@ -64,6 +70,8 @@ class CustodyExchangeUpdate(BaseModel):
     from_parent_id: Optional[str] = None
     to_parent_id: Optional[str] = None
     child_ids: Optional[List[str]] = None
+    pickup_child_ids: Optional[List[str]] = None
+    dropoff_child_ids: Optional[List[str]] = None
     location: Optional[str] = None
     location_notes: Optional[str] = None
     scheduled_time: Optional[datetime] = None
@@ -104,6 +112,8 @@ class CustodyExchangeResponse(BaseModel):
     from_parent_id: Optional[str] = None
     to_parent_id: Optional[str] = None
     child_ids: List[str] = Field(default_factory=list)
+    pickup_child_ids: List[str] = Field(default_factory=list)
+    dropoff_child_ids: List[str] = Field(default_factory=list)
 
     location: Optional[str] = None
     location_notes: Optional[str] = None
@@ -277,3 +287,87 @@ class QRTokenResponse(BaseModel):
     """Response containing QR confirmation token."""
     token: str
     instance_id: str
+
+
+# ============================================================
+# Custody Status Tracker Schemas
+# ============================================================
+
+class ChildCustodyStatus(BaseModel):
+    """Custody status for a single child."""
+    child_id: str
+    child_first_name: str
+    child_last_name: Optional[str] = None
+
+    # Current status
+    with_current_user: bool  # True if child is with the requesting user
+    current_parent_id: Optional[str] = None  # Who has the child now
+    current_parent_name: Optional[str] = None
+
+    # Next action for this child (from user's perspective)
+    next_action: Optional[str] = None  # 'pickup' or 'dropoff'
+
+    # Next exchange info
+    next_exchange_id: Optional[str] = None
+    next_exchange_time: Optional[datetime] = None
+    next_exchange_location: Optional[str] = None
+
+    # Time calculations
+    hours_remaining: Optional[float] = None
+    time_with_current_parent_hours: Optional[float] = None
+    progress_percentage: float = 0  # 0-100
+
+
+class CustodyStatusResponse(BaseModel):
+    """
+    Complete custody status for the dashboard.
+
+    Answers: "Where are my kids right now?"
+    """
+    family_file_id: str
+    case_id: Optional[str] = None
+
+    # User context
+    current_user_id: str
+    coparent_id: Optional[str] = None
+    coparent_name: Optional[str] = None
+
+    # Overall status (all kids together case)
+    all_with_current_user: bool  # True if ALL children are with requesting user
+    any_with_current_user: bool  # True if ANY children are with requesting user
+
+    # Per-child status
+    children: List[ChildCustodyStatus]
+
+    # Next exchange summary (soonest)
+    next_exchange_time: Optional[datetime] = None
+    next_exchange_day: Optional[str] = None  # "Wednesday"
+    next_exchange_formatted: Optional[str] = None  # "Wednesday 6:00 PM"
+    hours_until_next_exchange: Optional[float] = None
+
+    # Progress (for progress bar)
+    custody_period_hours: float = 168  # Default 7 days
+    elapsed_hours: float = 0
+    progress_percentage: float = 0
+
+    # Manual override info
+    last_manual_override: Optional[datetime] = None
+    manual_override_by: Optional[str] = None
+    pending_override_request: bool = False
+
+    model_config = {"from_attributes": True}
+
+
+class ManualCustodyOverrideRequest(BaseModel):
+    """Request to manually claim custody status."""
+    family_file_id: str
+    child_ids: List[str] = Field(..., min_length=1, description="Children being claimed")
+    notes: Optional[str] = None
+
+
+class ManualCustodyOverrideResponse(BaseModel):
+    """Response after requesting custody override."""
+    success: bool
+    message: str
+    notification_sent_to: Optional[str] = None  # Coparent name
+    requires_acknowledgment: bool = True

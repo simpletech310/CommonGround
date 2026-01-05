@@ -7,6 +7,21 @@
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const BASE_URL = API_URL.replace('/api/v1', '');
+
+/**
+ * Get full URL for uploaded images
+ * Handles relative paths like /uploads/children/photo.jpg
+ */
+export function getImageUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  // If already absolute URL, return as-is
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+  // Prepend base URL for relative paths
+  return `${BASE_URL}${path}`;
+}
 
 export class APIError extends Error {
   constructor(
@@ -383,7 +398,8 @@ export const casesAPI = {
 // ============================================================================
 
 export interface SendMessageRequest {
-  case_id: string;
+  case_id?: string;  // Court case context (legacy)
+  family_file_id?: string;  // Family file context (preferred)
   agreement_id?: string;  // SharedCare Agreement context
   recipient_id: string;
   content: string;
@@ -393,7 +409,7 @@ export interface SendMessageRequest {
 
 export interface Message {
   id: string;
-  case_id: string;
+  case_id?: string | null;
   agreement_id?: string | null;  // SharedCare Agreement context
   sender_id: string;
   recipient_id: string;
@@ -447,14 +463,22 @@ export const messagesAPI = {
 
   /**
    * Analyze message before sending
-   * Uses case-level ARIA settings (backend reads from case automatically)
+   * Uses case-level or family file-level ARIA settings
    */
   async analyze(
-    caseId: string,
-    content: string
+    content: string,
+    options: { caseId?: string; familyFileId?: string }
   ): Promise<ARIAAnalysisResponse> {
+    const params = new URLSearchParams();
+    params.append('content', content);
+    if (options.caseId) {
+      params.append('case_id', options.caseId);
+    }
+    if (options.familyFileId) {
+      params.append('family_file_id', options.familyFileId);
+    }
     return fetchAPI<ARIAAnalysisResponse>(
-      `/messages/analyze?case_id=${caseId}&content=${encodeURIComponent(content)}`,
+      `/messages/analyze?${params.toString()}`,
       {
         method: 'POST',
       }
@@ -997,7 +1021,8 @@ export type CategoryData = MedicalCategoryData | SchoolCategoryData | SportsCate
 // Updated Event Types (V2.0)
 export interface EventV2 {
   id: string;
-  case_id: string;
+  case_id: string;  // Effective identifier (Case ID or Family File ID)
+  family_file_id?: string;  // Family file context when applicable
   collection_id?: string;
   created_by?: string;
   title: string; // Privacy filtered
@@ -1672,6 +1697,8 @@ export interface CustodyExchange {
   from_parent_id?: string;
   to_parent_id?: string;
   child_ids: string[];
+  pickup_child_ids: string[];
+  dropoff_child_ids: string[];
   location?: string;
   location_notes?: string;
   scheduled_time: string;
@@ -1742,6 +1769,8 @@ export interface CreateCustodyExchangeRequest {
   from_parent_id?: string;
   to_parent_id?: string;
   child_ids?: string[];
+  pickup_child_ids?: string[];
+  dropoff_child_ids?: string[];
   location?: string;
   location_notes?: string;
   scheduled_time: string;
@@ -1769,6 +1798,8 @@ export interface UpdateCustodyExchangeRequest {
   from_parent_id?: string;
   to_parent_id?: string;
   child_ids?: string[];
+  pickup_child_ids?: string[];
+  dropoff_child_ids?: string[];
   location?: string;
   location_notes?: string;
   scheduled_time?: string;
@@ -2897,6 +2928,7 @@ export interface ChildProfileBasic {
   preferred_name?: string;
   date_of_birth: string;
   age: number;
+  gender?: string;
   photo_url?: string;
   status: ChildProfileStatus;
   created_by?: string;
@@ -3169,6 +3201,29 @@ export const childrenAPI = {
     return fetchAPI<ChildProfile>(`/children/${childId}/photo?photo_url=${encodeURIComponent(photoUrl)}`, {
       method: 'PUT',
     });
+  },
+
+  /**
+   * Upload profile photo file
+   */
+  async uploadPhoto(childId: string, file: File): Promise<ChildProfile> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_URL}/children/${childId}/photo/upload`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAuthToken()}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(error.detail || 'Failed to upload photo');
+    }
+
+    return response.json();
   },
 
   /**
@@ -3918,6 +3973,44 @@ export interface FamilyFileInvitation {
   invited_at: string;
 }
 
+// Custody Status Types
+export interface ChildCustodyStatus {
+  child_id: string;
+  child_first_name: string;
+  child_last_name?: string;
+  with_current_user: boolean;
+  current_parent_id?: string;
+  current_parent_name?: string;
+  next_action?: 'pickup' | 'dropoff';  // What happens at next exchange
+  next_exchange_id?: string;
+  next_exchange_time?: string;
+  next_exchange_location?: string;
+  hours_remaining?: number;
+  time_with_current_parent_hours?: number;
+  progress_percentage: number;
+}
+
+export interface CustodyStatusResponse {
+  family_file_id: string;
+  case_id?: string;
+  current_user_id: string;
+  coparent_id?: string;
+  coparent_name?: string;
+  all_with_current_user: boolean;
+  any_with_current_user: boolean;
+  children: ChildCustodyStatus[];
+  next_exchange_time?: string;
+  next_exchange_day?: string;
+  next_exchange_formatted?: string;
+  hours_until_next_exchange?: number;
+  custody_period_hours: number;
+  elapsed_hours: number;
+  progress_percentage: number;
+  last_manual_override?: string;
+  manual_override_by?: string;
+  pending_override_request: boolean;
+}
+
 export const familyFilesAPI = {
   /**
    * List all Family Files for the current user
@@ -4000,6 +4093,14 @@ export const familyFilesAPI = {
    */
   async getChildren(familyFileId: string): Promise<{ items: FamilyFileChild[]; total: number }> {
     return fetchAPI<{ items: FamilyFileChild[]; total: number }>(`/family-files/${familyFileId}/children`);
+  },
+
+  /**
+   * Get current custody status for the dashboard
+   * Answers: "Where are my kids right now?"
+   */
+  async getCustodyStatus(familyFileId: string): Promise<CustodyStatusResponse> {
+    return fetchAPI<CustodyStatusResponse>(`/exchanges/family-file/${familyFileId}/custody-status`);
   },
 };
 
@@ -4423,6 +4524,80 @@ export const intakeAPI = {
       method: 'POST',
       body: JSON.stringify({ edits }),
     });
+  },
+};
+
+// =========================================================================
+// Dashboard API - Aggregated Activity Data
+// =========================================================================
+
+export interface PendingExpense {
+  id: string;
+  title: string;
+  amount: number;
+  category: string;
+  requested_by_name?: string;
+  requested_at: string;
+  days_pending: number;
+}
+
+export interface UnreadMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  content_preview: string;
+  sent_at: string;
+}
+
+export interface PendingAgreement {
+  id: string;
+  title: string;
+  agreement_type: string;  // "shared_care" or "quick_accord"
+  status: string;
+  submitted_at?: string;
+  submitted_by_name?: string;
+}
+
+export interface CourtNotification {
+  id: string;
+  message_type: string;  // "notice", "reminder", "order", "general"
+  subject?: string;
+  is_urgent: boolean;
+  sent_at: string;
+}
+
+export interface UpcomingEvent {
+  id: string;
+  title: string;
+  event_category: string;  // "medical", "school", "sports", "exchange", "general"
+  start_time: string;
+  end_time: string;
+  location?: string;
+  all_day: boolean;
+  is_exchange: boolean;
+  child_names: string[];
+}
+
+export interface DashboardSummary {
+  pending_expenses_count: number;
+  pending_expenses: PendingExpense[];
+  unread_messages_count: number;
+  unread_messages: UnreadMessage[];
+  sender_name?: string;
+  pending_agreements_count: number;
+  pending_agreements: PendingAgreement[];
+  unread_court_count: number;
+  court_notifications: CourtNotification[];
+  upcoming_events: UpcomingEvent[];
+  next_event?: UpcomingEvent;
+}
+
+export const dashboardAPI = {
+  /**
+   * Get aggregated dashboard summary for a family file
+   */
+  async getSummary(familyFileId: string): Promise<DashboardSummary> {
+    return fetchAPI<DashboardSummary>(`/dashboard/summary/${familyFileId}`);
   },
 };
 

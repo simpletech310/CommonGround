@@ -72,6 +72,8 @@ async def create_exchange(
             from_parent_id=exchange_data.from_parent_id,
             to_parent_id=exchange_data.to_parent_id,
             child_ids=exchange_data.child_ids,
+            pickup_child_ids=exchange_data.pickup_child_ids,
+            dropoff_child_ids=exchange_data.dropoff_child_ids,
             location=exchange_data.location,
             location_notes=exchange_data.location_notes,
             duration_minutes=exchange_data.duration_minutes,
@@ -699,3 +701,51 @@ async def geocode_address(
         formatted_address=result["formatted_address"],
         accuracy=result["accuracy"]
     )
+
+
+# ============================================================
+# Custody Status Tracker Endpoints
+# ============================================================
+
+@router.get(
+    "/family-file/{family_file_id}/custody-status",
+    summary="Get current custody status",
+    description="Get current custody status for the dashboard - where are the kids right now?"
+)
+async def get_custody_status(
+    family_file_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get the current custody status for a family file.
+
+    Returns:
+    - Which parent currently has each child
+    - Time remaining until next exchange
+    - Progress bar percentage
+    - Next exchange details
+
+    This powers the "Kids are with You" card on the dashboard.
+    """
+    from app.schemas.custody_exchange import CustodyStatusResponse, ChildCustodyStatus
+
+    custody_status = await CustodyExchangeService.get_custody_status(
+        db=db,
+        family_file_id=family_file_id,
+        user_id=current_user.id
+    )
+
+    if not custody_status:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Family file not found or no access"
+        )
+
+    # Convert children dicts to ChildCustodyStatus models
+    children_models = [
+        ChildCustodyStatus(**child) for child in custody_status["children"]
+    ]
+    custody_status["children"] = children_models
+
+    return CustodyStatusResponse(**custody_status)

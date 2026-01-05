@@ -163,8 +163,13 @@ class PaymentLedger(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "payment_ledger"
 
-    # Case link
-    case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), index=True)
+    # Case or Family File link (one must be set)
+    case_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("cases.id"), index=True, nullable=True
+    )
+    family_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("family_files.id"), index=True, nullable=True
+    )
 
     # Entry type
     entry_type: Mapped[str] = mapped_column(

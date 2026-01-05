@@ -50,7 +50,7 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background">
       <Navigation />
 
-      <PageContainer>
+      <PageContainer className="pb-32">
         {/* Back to Dashboard */}
         <button
           onClick={() => router.push('/dashboard')}

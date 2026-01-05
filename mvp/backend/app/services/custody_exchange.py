@@ -14,7 +14,53 @@ from sqlalchemy.orm import selectinload
 
 from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
 from app.models.case import Case, CaseParticipant
+from app.models.family_file import FamilyFile
 from app.services.geolocation import GeolocationService
+
+
+async def _check_case_or_family_file_access(
+    db: AsyncSession,
+    case_id: str,
+    user_id: str
+) -> Tuple[bool, str, bool]:
+    """
+    Check if user has access via Case Participant or Family File.
+    Returns (has_access, effective_id, is_family_file).
+
+    - For Case participants: returns (True, case_id, False)
+    - For Family Files with legacy_case_id: returns (True, legacy_case_id, False)
+    - For Family Files without legacy_case_id: returns (True, family_file_id, True)
+    """
+    # First check Case Participant
+    participant = await db.execute(
+        select(CaseParticipant).where(
+            and_(
+                CaseParticipant.case_id == case_id,
+                CaseParticipant.user_id == user_id,
+                CaseParticipant.is_active == True
+            )
+        )
+    )
+    if participant.scalar_one_or_none():
+        return True, case_id, False
+
+    # Check Family File
+    family_file_result = await db.execute(
+        select(FamilyFile).where(
+            FamilyFile.id == case_id,
+            or_(FamilyFile.parent_a_id == user_id, FamilyFile.parent_b_id == user_id)
+        )
+    )
+    family_file = family_file_result.scalar_one_or_none()
+    if family_file:
+        if family_file.legacy_case_id:
+            # Has a linked case - use legacy_case_id
+            return True, family_file.legacy_case_id, False
+        else:
+            # Pure Family File - no linked case
+            return True, case_id, True
+
+    return False, case_id, False
 
 
 def _strip_tz(dt: Optional[datetime]) -> Optional[datetime]:
@@ -43,6 +89,8 @@ class CustodyExchangeService:
         from_parent_id: Optional[str] = None,
         to_parent_id: Optional[str] = None,
         child_ids: Optional[List[str]] = None,
+        pickup_child_ids: Optional[List[str]] = None,
+        dropoff_child_ids: Optional[List[str]] = None,
         location: Optional[str] = None,
         location_notes: Optional[str] = None,
         duration_minutes: int = 30,
@@ -64,18 +112,16 @@ class CustodyExchangeService:
     ) -> CustodyExchange:
         """Create a new custody exchange (pickup/dropoff)."""
 
-        # Verify user is a participant in the case
-        participant = await db.execute(
-            select(CaseParticipant).where(
-                and_(
-                    CaseParticipant.case_id == case_id,
-                    CaseParticipant.user_id == created_by,
-                    CaseParticipant.is_active == True
-                )
-            )
+        # Verify user has access (via case participant or family file)
+        has_access, effective_id, is_family_file = await _check_case_or_family_file_access(
+            db, case_id, created_by
         )
-        if not participant.scalar_one_or_none():
+        if not has_access:
             raise ValueError("User is not a participant in this case")
+
+        # Determine which ID to use
+        actual_case_id = None if is_family_file else effective_id
+        actual_family_file_id = case_id if is_family_file else None
 
         # Generate title if not provided
         if not title:
@@ -92,15 +138,33 @@ class CustodyExchangeService:
         scheduled_time_naive = _strip_tz(scheduled_time)
         recurrence_end_naive = _strip_tz(recurrence_end_date)
 
+        # Handle child_ids based on exchange_type
+        # For "pickup": all children go to pickup_child_ids
+        # For "dropoff": all children go to dropoff_child_ids
+        # For "both": use the explicitly provided pickup/dropoff lists
+        effective_pickup_ids = pickup_child_ids or []
+        effective_dropoff_ids = dropoff_child_ids or []
+
+        if exchange_type == "pickup" and child_ids and not pickup_child_ids:
+            effective_pickup_ids = child_ids
+        elif exchange_type == "dropoff" and child_ids and not dropoff_child_ids:
+            effective_dropoff_ids = child_ids
+
+        # Compute combined child_ids for backward compatibility
+        combined_child_ids = list(set((child_ids or []) + effective_pickup_ids + effective_dropoff_ids))
+
         exchange = CustodyExchange(
             id=str(uuid.uuid4()),
-            case_id=case_id,
+            case_id=actual_case_id,
+            family_file_id=actual_family_file_id,
             created_by=created_by,
             exchange_type=exchange_type,
             title=title,
             from_parent_id=from_parent_id,
             to_parent_id=to_parent_id,
-            child_ids=child_ids or [],
+            child_ids=combined_child_ids,
+            pickup_child_ids=effective_pickup_ids,
+            dropoff_child_ids=effective_dropoff_ids,
             location=location,
             location_notes=location_notes,
             scheduled_time=scheduled_time_naive,
@@ -257,17 +321,38 @@ class CustodyExchangeService:
         if not exchange:
             return None
 
-        # Verify viewer is a participant
-        participant = await db.execute(
-            select(CaseParticipant).where(
-                and_(
-                    CaseParticipant.case_id == exchange.case_id,
-                    CaseParticipant.user_id == viewer_id,
-                    CaseParticipant.is_active == True
+        # Verify viewer has access via CaseParticipant or FamilyFile
+        has_access = False
+
+        # Check Case Participant if exchange has case_id
+        if exchange.case_id:
+            participant = await db.execute(
+                select(CaseParticipant).where(
+                    and_(
+                        CaseParticipant.case_id == exchange.case_id,
+                        CaseParticipant.user_id == viewer_id,
+                        CaseParticipant.is_active == True
+                    )
                 )
             )
-        )
-        if not participant.scalar_one_or_none():
+            if participant.scalar_one_or_none():
+                has_access = True
+
+        # Check Family File if exchange has family_file_id
+        if not has_access and exchange.family_file_id:
+            family_file_result = await db.execute(
+                select(FamilyFile).where(
+                    FamilyFile.id == exchange.family_file_id,
+                    or_(
+                        FamilyFile.parent_a_id == viewer_id,
+                        FamilyFile.parent_b_id == viewer_id
+                    )
+                )
+            )
+            if family_file_result.scalar_one_or_none():
+                has_access = True
+
+        if not has_access:
             return None
 
         return exchange
@@ -282,22 +367,22 @@ class CustodyExchangeService:
     ) -> List[CustodyExchange]:
         """List all custody exchanges for a case."""
 
-        # Verify viewer is a participant
-        participant = await db.execute(
-            select(CaseParticipant).where(
-                and_(
-                    CaseParticipant.case_id == case_id,
-                    CaseParticipant.user_id == viewer_id,
-                    CaseParticipant.is_active == True
-                )
-            )
+        # Verify viewer has access (via case participant or family file)
+        has_access, effective_id, is_family_file = await _check_case_or_family_file_access(
+            db, case_id, viewer_id
         )
-        if not participant.scalar_one_or_none():
+        if not has_access:
             return []
 
-        query = select(CustodyExchange).where(
-            CustodyExchange.case_id == case_id
-        )
+        # Query by the appropriate field
+        if is_family_file:
+            query = select(CustodyExchange).where(
+                CustodyExchange.family_file_id == case_id
+            )
+        else:
+            query = select(CustodyExchange).where(
+                CustodyExchange.case_id == effective_id
+            )
 
         if status:
             query = query.where(CustodyExchange.status == status)
@@ -321,34 +406,34 @@ class CustodyExchangeService:
     ) -> List[CustodyExchangeInstance]:
         """Get upcoming exchange instances for a case."""
 
-        # Verify viewer is a participant
-        participant = await db.execute(
-            select(CaseParticipant).where(
-                and_(
-                    CaseParticipant.case_id == case_id,
-                    CaseParticipant.user_id == viewer_id,
-                    CaseParticipant.is_active == True
-                )
-            )
+        # Verify viewer has access (via case participant or family file)
+        has_access, effective_id, is_family_file = await _check_case_or_family_file_access(
+            db, case_id, viewer_id
         )
-        if not participant.scalar_one_or_none():
+        if not has_access:
             return []
 
         if not start_date:
             start_date = datetime.utcnow()
 
+        # Build base conditions
+        base_conditions = [
+            CustodyExchange.status == "active",
+            CustodyExchangeInstance.scheduled_time >= start_date,
+            CustodyExchangeInstance.status.in_(["scheduled", "rescheduled"])
+        ]
+
+        # Add the appropriate ID filter
+        if is_family_file:
+            base_conditions.append(CustodyExchange.family_file_id == case_id)
+        else:
+            base_conditions.append(CustodyExchange.case_id == effective_id)
+
         query = (
             select(CustodyExchangeInstance)
             .join(CustodyExchange)
             .options(selectinload(CustodyExchangeInstance.exchange))
-            .where(
-                and_(
-                    CustodyExchange.case_id == case_id,
-                    CustodyExchange.status == "active",
-                    CustodyExchangeInstance.scheduled_time >= start_date,
-                    CustodyExchangeInstance.status.in_(["scheduled", "rescheduled"])
-                )
-            )
+            .where(and_(*base_conditions))
         )
 
         if end_date:
@@ -453,17 +538,38 @@ class CustodyExchangeService:
         if not instance:
             return None
 
-        # Verify user has access
-        participant = await db.execute(
-            select(CaseParticipant).where(
-                and_(
-                    CaseParticipant.case_id == instance.exchange.case_id,
-                    CaseParticipant.user_id == user_id,
-                    CaseParticipant.is_active == True
+        exchange = instance.exchange
+        has_access = False
+
+        # Verify user has access via CaseParticipant
+        if exchange.case_id:
+            participant = await db.execute(
+                select(CaseParticipant).where(
+                    and_(
+                        CaseParticipant.case_id == exchange.case_id,
+                        CaseParticipant.user_id == user_id,
+                        CaseParticipant.is_active == True
+                    )
                 )
             )
-        )
-        if not participant.scalar_one_or_none():
+            if participant.scalar_one_or_none():
+                has_access = True
+
+        # Check Family File access
+        if not has_access and exchange.family_file_id:
+            family_file_result = await db.execute(
+                select(FamilyFile).where(
+                    FamilyFile.id == exchange.family_file_id,
+                    or_(
+                        FamilyFile.parent_a_id == user_id,
+                        FamilyFile.parent_b_id == user_id
+                    )
+                )
+            )
+            if family_file_result.scalar_one_or_none():
+                has_access = True
+
+        if not has_access:
             return None
 
         instance.status = "cancelled"
@@ -485,15 +591,21 @@ class CustodyExchangeService:
 
         is_owner = exchange.created_by == viewer_id
 
+        # Effective case_id for API response
+        effective_case_id = exchange.case_id if exchange.case_id else exchange.family_file_id
+
         data = {
             "id": exchange.id,
-            "case_id": exchange.case_id,
+            "case_id": effective_case_id,
+            "family_file_id": exchange.family_file_id,
             "created_by": exchange.created_by,
             "exchange_type": exchange.exchange_type,
             "title": exchange.title,
             "from_parent_id": exchange.from_parent_id,
             "to_parent_id": exchange.to_parent_id,
             "child_ids": exchange.child_ids,
+            "pickup_child_ids": exchange.pickup_child_ids or [],
+            "dropoff_child_ids": exchange.dropoff_child_ids or [],
             "location": exchange.location,
             "scheduled_time": exchange.scheduled_time,
             "duration_minutes": exchange.duration_minutes,
@@ -854,3 +966,251 @@ class CustodyExchangeService:
 
         await db.commit()
         return closed_count
+
+    @staticmethod
+    async def get_custody_status(
+        db: AsyncSession,
+        family_file_id: str,
+        user_id: str
+    ) -> Optional[dict]:
+        """
+        Get current custody status for the dashboard.
+
+        Determines where children are based on the NEXT upcoming exchange:
+        - Child in dropoff_child_ids → child is WITH current user (they will drop off)
+        - Child in pickup_child_ids → child is WITH other parent (user will pick up)
+
+        Returns a dict ready to be converted to CustodyStatusResponse.
+        """
+        from app.models.child import Child
+        from app.models.user import User
+
+        # Get the family file
+        family_file_result = await db.execute(
+            select(FamilyFile).where(FamilyFile.id == family_file_id)
+        )
+        family_file = family_file_result.scalar_one_or_none()
+
+        if not family_file:
+            return None
+
+        # Verify user access
+        if user_id not in [family_file.parent_a_id, family_file.parent_b_id]:
+            return None
+
+        # Determine coparent
+        coparent_id = (
+            family_file.parent_b_id if user_id == family_file.parent_a_id
+            else family_file.parent_a_id
+        )
+
+        # Get coparent name
+        coparent_name = None
+        if coparent_id:
+            coparent_result = await db.execute(
+                select(User).where(User.id == coparent_id)
+            )
+            coparent = coparent_result.scalar_one_or_none()
+            if coparent:
+                coparent_name = f"{coparent.first_name} {coparent.last_name or ''}".strip()
+
+        # Get children
+        children_result = await db.execute(
+            select(Child).where(
+                and_(
+                    Child.family_file_id == family_file_id,
+                    Child.status == "active"
+                )
+            )
+        )
+        children = children_result.scalars().all()
+
+        now = datetime.utcnow()
+        child_statuses = []
+
+        # First, get ALL upcoming exchanges for this family file (simpler query without child filter)
+        # This avoids JSONB contains issues with JSON columns
+        if family_file.legacy_case_id:
+            exchange_filter = or_(
+                CustodyExchange.family_file_id == family_file_id,
+                CustodyExchange.case_id == family_file.legacy_case_id
+            )
+        else:
+            exchange_filter = CustodyExchange.family_file_id == family_file_id
+
+        all_upcoming_result = await db.execute(
+            select(CustodyExchangeInstance)
+            .options(selectinload(CustodyExchangeInstance.exchange))
+            .join(CustodyExchange, CustodyExchangeInstance.exchange_id == CustodyExchange.id)
+            .where(
+                and_(
+                    exchange_filter,
+                    CustodyExchangeInstance.scheduled_time > now,
+                    CustodyExchangeInstance.status == "scheduled"
+                )
+            )
+            .order_by(CustodyExchangeInstance.scheduled_time.asc())
+            .limit(20)
+        )
+        all_upcoming_instances = all_upcoming_result.scalars().all()
+
+        for child in children:
+            child_id_str = str(child.id)
+
+            # Find the next exchange that includes this child (filter in Python)
+            next_exchange_instance = None
+            for inst in all_upcoming_instances:
+                exchange = inst.exchange
+                child_ids = exchange.child_ids or []
+                pickup_ids = exchange.pickup_child_ids or []
+                dropoff_ids = exchange.dropoff_child_ids or []
+
+                # Check if child is in any of the ID lists
+                if (child_id_str in child_ids or
+                    child_id_str in pickup_ids or
+                    child_id_str in dropoff_ids):
+                    next_exchange_instance = inst
+                    break
+
+            # Determine who has the child based on upcoming exchange
+            # If child is in dropoff_child_ids for user's exchange → child is WITH user
+            # If child is in pickup_child_ids for user's exchange → child is WITH other parent
+            with_current_user = True  # Default: assume with current user if no exchange data
+            current_parent_id = user_id
+            current_parent_name = "You"
+            next_action = None  # 'pickup' or 'dropoff'
+
+            if next_exchange_instance:
+                exchange = next_exchange_instance.exchange
+                exchange_creator = exchange.created_by
+
+                # Check if this child is in pickup or dropoff lists
+                pickup_ids = exchange.pickup_child_ids or []
+                dropoff_ids = exchange.dropoff_child_ids or []
+
+                is_in_pickup = child_id_str in pickup_ids
+                is_in_dropoff = child_id_str in dropoff_ids
+
+                # Determine custody based on the exchange creator's perspective
+                if exchange_creator == user_id:
+                    # User created this exchange
+                    if is_in_dropoff:
+                        # User is dropping off → child is WITH user now
+                        with_current_user = True
+                        current_parent_id = user_id
+                        current_parent_name = "You"
+                        next_action = "dropoff"
+                    elif is_in_pickup:
+                        # User is picking up → child is WITH other parent now
+                        with_current_user = False
+                        current_parent_id = coparent_id
+                        current_parent_name = coparent_name
+                        next_action = "pickup"
+                else:
+                    # Coparent created this exchange - reverse logic
+                    if is_in_dropoff:
+                        # Coparent is dropping off → child is WITH coparent now
+                        with_current_user = False
+                        current_parent_id = coparent_id
+                        current_parent_name = coparent_name
+                        next_action = "pickup"  # From user's perspective, they're picking up
+                    elif is_in_pickup:
+                        # Coparent is picking up → child is WITH user now
+                        with_current_user = True
+                        current_parent_id = user_id
+                        current_parent_name = "You"
+                        next_action = "dropoff"  # From user's perspective, they're dropping off
+
+            # Calculate time remaining
+            hours_remaining = None
+            time_with_current_hours = None
+            progress_percentage = 0.0
+            default_custody_period = 168.0  # 7 days in hours
+
+            if next_exchange_instance:
+                hours_remaining = (next_exchange_instance.scheduled_time - now).total_seconds() / 3600
+
+                # Progress calculation: use default period
+                if hours_remaining < default_custody_period:
+                    time_with_current_hours = default_custody_period - hours_remaining
+                    progress_percentage = min(100.0, (time_with_current_hours / default_custody_period) * 100)
+                else:
+                    time_with_current_hours = 0
+                    progress_percentage = 0.0
+
+            child_statuses.append({
+                "child_id": child.id,
+                "child_first_name": child.first_name,
+                "child_last_name": child.last_name,
+                "with_current_user": with_current_user,
+                "current_parent_id": current_parent_id,
+                "current_parent_name": current_parent_name,
+                "next_action": next_action,  # 'pickup' or 'dropoff' from user's perspective
+                "next_exchange_id": next_exchange_instance.id if next_exchange_instance else None,
+                "next_exchange_time": next_exchange_instance.scheduled_time if next_exchange_instance else None,
+                "next_exchange_location": (
+                    next_exchange_instance.exchange.location
+                    if next_exchange_instance else None
+                ),
+                "hours_remaining": round(hours_remaining, 1) if hours_remaining else None,
+                "time_with_current_parent_hours": round(time_with_current_hours, 1) if time_with_current_hours else None,
+                "progress_percentage": round(progress_percentage, 1)
+            })
+
+        # Overall status
+        all_with_user = all(c["with_current_user"] for c in child_statuses) if child_statuses else False
+        any_with_user = any(c["with_current_user"] for c in child_statuses) if child_statuses else False
+
+        # Find soonest next exchange across all children
+        next_times = [c["next_exchange_time"] for c in child_statuses if c["next_exchange_time"]]
+        next_exchange_time = min(next_times) if next_times else None
+
+        hours_until_next = None
+        next_day = None
+        next_formatted = None
+        if next_exchange_time:
+            hours_until_next = (next_exchange_time - now).total_seconds() / 3600
+            next_day = next_exchange_time.strftime("%A")  # "Wednesday"
+            next_formatted = next_exchange_time.strftime("%A %-I:%M %p")  # "Wednesday 6:00 PM"
+
+        # Calculate overall progress
+        overall_progress = 0.0
+        elapsed_hours = 0.0
+        custody_period_hours = 168.0  # Default 7 days
+
+        if child_statuses:
+            # Use average progress across children
+            progresses = [c["progress_percentage"] for c in child_statuses]
+            overall_progress = sum(progresses) / len(progresses) if progresses else 0.0
+
+            # Use the first child's time values for overall
+            first_child = child_statuses[0]
+            if first_child["time_with_current_parent_hours"] is not None:
+                elapsed_hours = first_child["time_with_current_parent_hours"]
+            if first_child["hours_remaining"] is not None:
+                # If we have elapsed hours, use actual period; otherwise use default
+                if elapsed_hours > 0:
+                    custody_period_hours = elapsed_hours + first_child["hours_remaining"]
+                else:
+                    custody_period_hours = 168.0  # Default 7 days
+
+        return {
+            "family_file_id": family_file_id,
+            "case_id": family_file.legacy_case_id,
+            "current_user_id": user_id,
+            "coparent_id": coparent_id,
+            "coparent_name": coparent_name,
+            "all_with_current_user": all_with_user,
+            "any_with_current_user": any_with_user,
+            "children": child_statuses,
+            "next_exchange_time": next_exchange_time,
+            "next_exchange_day": next_day,
+            "next_exchange_formatted": next_formatted,
+            "hours_until_next_exchange": round(hours_until_next, 1) if hours_until_next else None,
+            "custody_period_hours": round(custody_period_hours, 1),
+            "elapsed_hours": round(elapsed_hours, 1),
+            "progress_percentage": round(overall_progress, 1),
+            "last_manual_override": None,
+            "manual_override_by": None,
+            "pending_override_request": False
+        }

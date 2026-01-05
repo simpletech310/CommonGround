@@ -25,8 +25,15 @@ class ScheduleEvent(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "schedule_events"
 
-    # Case and collection
-    case_id: Mapped[str] = mapped_column(String(36), ForeignKey("cases.id"), index=True)
+    # Case or Family File - at least one should be set
+    case_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("cases.id"), index=True, nullable=True
+    )  # Court case context (legacy)
+    family_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("family_files.id"), index=True, nullable=True
+    )  # Family file context (preferred for new events)
+
+    # Collection
     collection_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("my_time_collections.id"),
