@@ -7,6 +7,21 @@
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const BASE_URL = API_URL.replace('/api/v1', '');
+
+/**
+ * Get full URL for uploaded images
+ * Handles relative paths like /uploads/children/photo.jpg
+ */
+export function getImageUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  // If already absolute URL, return as-is
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path;
+  }
+  // Prepend base URL for relative paths
+  return `${BASE_URL}${path}`;
+}
 
 export class APIError extends Error {
   constructor(
@@ -383,7 +398,9 @@ export const casesAPI = {
 // ============================================================================
 
 export interface SendMessageRequest {
-  case_id: string;
+  case_id?: string;  // Court case context (legacy)
+  family_file_id?: string;  // Family file context (preferred)
+  agreement_id?: string;  // SharedCare Agreement context
   recipient_id: string;
   content: string;
   thread_id?: string;
@@ -392,7 +409,8 @@ export interface SendMessageRequest {
 
 export interface Message {
   id: string;
-  case_id: string;
+  case_id?: string | null;
+  agreement_id?: string | null;  // SharedCare Agreement context
   sender_id: string;
   recipient_id: string;
   content: string;
@@ -434,15 +452,33 @@ export const messagesAPI = {
   },
 
   /**
+   * Get messages for a specific SharedCare Agreement
+   * This is the primary way to get messages in the agreement-centric architecture
+   */
+  async listByAgreement(agreementId: string, limit = 50, offset = 0): Promise<Message[]> {
+    return fetchAPI<Message[]>(
+      `/messages/agreement/${agreementId}?limit=${limit}&offset=${offset}`
+    );
+  },
+
+  /**
    * Analyze message before sending
-   * Uses case-level ARIA settings (backend reads from case automatically)
+   * Uses case-level or family file-level ARIA settings
    */
   async analyze(
-    caseId: string,
-    content: string
+    content: string,
+    options: { caseId?: string; familyFileId?: string }
   ): Promise<ARIAAnalysisResponse> {
+    const params = new URLSearchParams();
+    params.append('content', content);
+    if (options.caseId) {
+      params.append('case_id', options.caseId);
+    }
+    if (options.familyFileId) {
+      params.append('family_file_id', options.familyFileId);
+    }
     return fetchAPI<ARIAAnalysisResponse>(
-      `/messages/analyze?case_id=${caseId}&content=${encodeURIComponent(content)}`,
+      `/messages/analyze?${params.toString()}`,
       {
         method: 'POST',
       }
@@ -456,7 +492,8 @@ export const messagesAPI = {
 
 export interface Agreement {
   id: string;
-  case_id: string;
+  case_id: string | null;  // Optional for Family File-based agreements
+  family_file_id: string | null;  // Primary container for SharedCare Agreements
   title: string;
   version: number;
   status: 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'expired' | 'active';
@@ -500,7 +537,7 @@ export interface UpdateSectionRequest {
 
 export const agreementsAPI = {
   /**
-   * Create a new agreement for a case
+   * Create a new agreement for a case (legacy support)
    */
   async create(data: CreateAgreementRequest): Promise<Agreement> {
     const { case_id, ...agreementData } = data;
@@ -508,6 +545,26 @@ export const agreementsAPI = {
       method: 'POST',
       body: JSON.stringify(agreementData),
     });
+  },
+
+  /**
+   * Create a new SharedCare Agreement for a Family File
+   */
+  async createForFamilyFile(familyFileId: string, data: { title: string; agreement_type?: string }): Promise<Agreement> {
+    return fetchAPI<Agreement>(`/family-files/${familyFileId}/agreements`, {
+      method: 'POST',
+      body: JSON.stringify({
+        title: data.title,
+        agreement_type: data.agreement_type || 'shared_care',
+      }),
+    });
+  },
+
+  /**
+   * Get all agreements for a Family File
+   */
+  async listForFamilyFile(familyFileId: string): Promise<{ items: Agreement[]; total: number }> {
+    return fetchAPI<{ items: Agreement[]; total: number }>(`/family-files/${familyFileId}/agreements`);
   },
 
   /**
@@ -964,7 +1021,8 @@ export type CategoryData = MedicalCategoryData | SchoolCategoryData | SportsCate
 // Updated Event Types (V2.0)
 export interface EventV2 {
   id: string;
-  case_id: string;
+  case_id: string;  // Effective identifier (Case ID or Family File ID)
+  family_file_id?: string;  // Family file context when applicable
   collection_id?: string;
   created_by?: string;
   title: string; // Privacy filtered
@@ -1639,6 +1697,8 @@ export interface CustodyExchange {
   from_parent_id?: string;
   to_parent_id?: string;
   child_ids: string[];
+  pickup_child_ids: string[];
+  dropoff_child_ids: string[];
   location?: string;
   location_notes?: string;
   scheduled_time: string;
@@ -1709,6 +1769,8 @@ export interface CreateCustodyExchangeRequest {
   from_parent_id?: string;
   to_parent_id?: string;
   child_ids?: string[];
+  pickup_child_ids?: string[];
+  dropoff_child_ids?: string[];
   location?: string;
   location_notes?: string;
   scheduled_time: string;
@@ -1736,6 +1798,8 @@ export interface UpdateCustodyExchangeRequest {
   from_parent_id?: string;
   to_parent_id?: string;
   child_ids?: string[];
+  pickup_child_ids?: string[];
+  dropoff_child_ids?: string[];
   location?: string;
   location_notes?: string;
   scheduled_time?: string;
@@ -2135,20 +2199,31 @@ export const clearfundAPI = {
    */
   async listObligations(
     caseId: string,
-    options?: {
+    agreementIdOrOptions?: string | {
       status?: string;
       category?: string;
       is_overdue?: boolean;
       page?: number;
       page_size?: number;
+      agreement_id?: string;
     }
   ): Promise<ObligationListResponse> {
     const params = new URLSearchParams({ case_id: caseId });
-    if (options?.status) params.append('status', options.status);
-    if (options?.category) params.append('category', options.category);
-    if (options?.is_overdue !== undefined) params.append('is_overdue', String(options.is_overdue));
-    if (options?.page) params.append('page', String(options.page));
-    if (options?.page_size) params.append('page_size', String(options.page_size));
+
+    // Handle both old signature (caseId, options) and new signature (caseId, agreementId)
+    if (typeof agreementIdOrOptions === 'string') {
+      // New usage: listObligations(familyFileId, agreementId)
+      params.append('agreement_id', agreementIdOrOptions);
+    } else if (agreementIdOrOptions) {
+      // Old usage: listObligations(caseId, options)
+      const options = agreementIdOrOptions;
+      if (options.status) params.append('status', options.status);
+      if (options.category) params.append('category', options.category);
+      if (options.is_overdue !== undefined) params.append('is_overdue', String(options.is_overdue));
+      if (options.page) params.append('page', String(options.page));
+      if (options.page_size) params.append('page_size', String(options.page_size));
+      if (options.agreement_id) params.append('agreement_id', options.agreement_id);
+    }
     return fetchAPI<ObligationListResponse>(`/clearfund/obligations/?${params.toString()}`);
   },
 
@@ -2853,6 +2928,7 @@ export interface ChildProfileBasic {
   preferred_name?: string;
   date_of_birth: string;
   age: number;
+  gender?: string;
   photo_url?: string;
   status: ChildProfileStatus;
   created_by?: string;
@@ -3125,6 +3201,29 @@ export const childrenAPI = {
     return fetchAPI<ChildProfile>(`/children/${childId}/photo?photo_url=${encodeURIComponent(photoUrl)}`, {
       method: 'PUT',
     });
+  },
+
+  /**
+   * Upload profile photo file
+   */
+  async uploadPhoto(childId: string, file: File): Promise<ChildProfile> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_URL}/children/${childId}/photo/upload`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${getAuthToken()}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(error.detail || 'Failed to upload photo');
+    }
+
+    return response.json();
   },
 
   /**
@@ -3791,6 +3890,714 @@ export const courtEventsAPI = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+};
+
+// ============================================================================
+// Family Files API
+// ============================================================================
+
+export interface FamilyFile {
+  id: string;
+  family_file_number: string;
+  title: string;
+  status: 'active' | 'archived' | 'court_linked';
+  conflict_level: 'low' | 'moderate' | 'high';
+  state: string | null;
+  county: string | null;
+  aria_enabled: boolean;
+  aria_provider: string;
+  require_joint_approval: boolean;
+  created_at: string;
+  updated_at: string;
+  parent_a_id: string;
+  parent_a_role: string;
+  parent_b_id: string | null;
+  parent_b_role: string | null;
+  parent_b_email: string | null;
+  parent_b_invited_at: string | null;
+  parent_b_joined_at: string | null;
+  is_complete: boolean;
+  has_court_case: boolean;
+  can_create_shared_care_agreement: boolean;
+}
+
+export interface FamilyFileDetail extends FamilyFile {
+  children: FamilyFileChild[];
+  active_agreement_count: number;
+  quick_accord_count: number;
+}
+
+export interface FamilyFileCreate {
+  title: string;
+  parent_a_role?: string;
+  parent_b_email?: string;
+  parent_b_role?: string;
+  state?: string;
+  county?: string;
+  children?: {
+    first_name: string;
+    last_name: string;
+    date_of_birth: string;
+    middle_name?: string;
+    gender?: string;
+  }[];
+}
+
+export interface FamilyFileUpdate {
+  title?: string;
+  state?: string;
+  county?: string;
+  aria_enabled?: boolean;
+  aria_provider?: string;
+}
+
+export interface FamilyFileChild {
+  id: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
+  middle_name?: string;
+  preferred_name?: string;
+  gender?: string;
+  photo_url?: string;
+  status: string;
+}
+
+export interface FamilyFileInvitation {
+  id: string;
+  family_file_number: string;
+  title: string;
+  parent_a_role: string;
+  your_role: string;
+  invited_at: string;
+}
+
+// Custody Status Types
+export interface ChildCustodyStatus {
+  child_id: string;
+  child_first_name: string;
+  child_last_name?: string;
+  with_current_user: boolean;
+  current_parent_id?: string;
+  current_parent_name?: string;
+  next_action?: 'pickup' | 'dropoff';  // What happens at next exchange
+  next_exchange_id?: string;
+  next_exchange_time?: string;
+  next_exchange_location?: string;
+  hours_remaining?: number;
+  time_with_current_parent_hours?: number;
+  progress_percentage: number;
+}
+
+export interface CustodyStatusResponse {
+  family_file_id: string;
+  case_id?: string;
+  current_user_id: string;
+  coparent_id?: string;
+  coparent_name?: string;
+  all_with_current_user: boolean;
+  any_with_current_user: boolean;
+  children: ChildCustodyStatus[];
+  next_exchange_time?: string;
+  next_exchange_day?: string;
+  next_exchange_formatted?: string;
+  hours_until_next_exchange?: number;
+  custody_period_hours: number;
+  elapsed_hours: number;
+  progress_percentage: number;
+  last_manual_override?: string;
+  manual_override_by?: string;
+  pending_override_request: boolean;
+}
+
+export const familyFilesAPI = {
+  /**
+   * List all Family Files for the current user
+   */
+  async list(): Promise<{ items: FamilyFile[]; total: number }> {
+    return fetchAPI<{ items: FamilyFile[]; total: number }>('/family-files/');
+  },
+
+  /**
+   * Get a specific Family File with full details
+   */
+  async get(id: string): Promise<FamilyFileDetail> {
+    return fetchAPI<FamilyFileDetail>(`/family-files/${id}`);
+  },
+
+  /**
+   * Create a new Family File
+   */
+  async create(data: FamilyFileCreate): Promise<FamilyFile & { message: string }> {
+    return fetchAPI<FamilyFile & { message: string }>('/family-files/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update a Family File
+   */
+  async update(id: string, data: FamilyFileUpdate): Promise<FamilyFile> {
+    return fetchAPI<FamilyFile>(`/family-files/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get pending invitations
+   */
+  async getInvitations(): Promise<{ items: FamilyFileInvitation[]; total: number }> {
+    return fetchAPI<{ items: FamilyFileInvitation[]; total: number }>('/family-files/invitations');
+  },
+
+  /**
+   * Invite Parent B to a Family File
+   */
+  async inviteParentB(id: string, email: string, role: string = 'parent_b'): Promise<FamilyFile & { message: string }> {
+    return fetchAPI<FamilyFile & { message: string }>(`/family-files/${id}/invite`, {
+      method: 'POST',
+      body: JSON.stringify({ email, role }),
+    });
+  },
+
+  /**
+   * Accept a Family File invitation
+   */
+  async acceptInvitation(id: string): Promise<FamilyFile & { message: string }> {
+    return fetchAPI<FamilyFile & { message: string }>(`/family-files/${id}/accept`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Add a child to a Family File
+   */
+  async addChild(familyFileId: string, child: {
+    first_name: string;
+    last_name: string;
+    date_of_birth: string;
+    middle_name?: string;
+    gender?: string;
+  }): Promise<FamilyFileChild & { message: string }> {
+    return fetchAPI<FamilyFileChild & { message: string }>(`/family-files/${familyFileId}/children`, {
+      method: 'POST',
+      body: JSON.stringify(child),
+    });
+  },
+
+  /**
+   * Get children in a Family File
+   */
+  async getChildren(familyFileId: string): Promise<{ items: FamilyFileChild[]; total: number }> {
+    return fetchAPI<{ items: FamilyFileChild[]; total: number }>(`/family-files/${familyFileId}/children`);
+  },
+
+  /**
+   * Get current custody status for the dashboard
+   * Answers: "Where are my kids right now?"
+   */
+  async getCustodyStatus(familyFileId: string): Promise<CustodyStatusResponse> {
+    return fetchAPI<CustodyStatusResponse>(`/exchanges/family-file/${familyFileId}/custody-status`);
+  },
+};
+
+// ============================================================================
+// QuickAccord API
+// ============================================================================
+
+export interface QuickAccord {
+  id: string;
+  family_file_id: string;
+  accord_number: string;
+  title: string;
+  purpose_category: 'travel' | 'schedule_swap' | 'special_event' | 'overnight' | 'expense' | 'other';
+  purpose_description: string | null;
+  is_single_event: boolean;
+  status: 'draft' | 'pending_approval' | 'active' | 'completed' | 'revoked' | 'expired';
+  event_date: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  child_ids: string[];
+  location: string | null;
+  pickup_responsibility: string | null;
+  dropoff_responsibility: string | null;
+  transportation_notes: string | null;
+  has_shared_expense: boolean;
+  estimated_amount: number | null;
+  expense_category: string | null;
+  receipt_required: boolean;
+  parent_a_approved: boolean;
+  parent_a_approved_at: string | null;
+  parent_b_approved: boolean;
+  parent_b_approved_at: string | null;
+  ai_summary: string | null;
+  initiated_by: string;
+  created_at: string;
+  updated_at: string;
+  is_approved: boolean;
+  is_active: boolean;
+  is_expired: boolean;
+}
+
+export interface QuickAccordCreate {
+  title: string;
+  purpose_category: 'travel' | 'schedule_swap' | 'special_event' | 'overnight' | 'expense' | 'other';
+  purpose_description?: string;
+  is_single_event?: boolean;
+  event_date?: string;
+  start_date?: string;
+  end_date?: string;
+  child_ids?: string[];
+  location?: string;
+  pickup_responsibility?: string;
+  dropoff_responsibility?: string;
+  transportation_notes?: string;
+  has_shared_expense?: boolean;
+  estimated_amount?: number;
+  expense_category?: string;
+  receipt_required?: boolean;
+}
+
+export interface ARIAConversationResponse {
+  conversation_id: string;
+  response: string;
+  extracted_data: Record<string, any> | null;
+  is_ready_to_create: boolean;
+}
+
+export const quickAccordsAPI = {
+  /**
+   * List QuickAccords for a Family File
+   */
+  async list(familyFileId: string, status?: string): Promise<{ items: QuickAccord[]; total: number }> {
+    const params = status ? `?status=${status}` : '';
+    return fetchAPI<{ items: QuickAccord[]; total: number }>(`/quick-accords/family-file/${familyFileId}${params}`);
+  },
+
+  /**
+   * Get a specific QuickAccord
+   */
+  async get(id: string): Promise<QuickAccord> {
+    return fetchAPI<QuickAccord>(`/quick-accords/${id}`);
+  },
+
+  /**
+   * Create a new QuickAccord
+   */
+  async create(familyFileId: string, data: QuickAccordCreate): Promise<QuickAccord & { message: string }> {
+    return fetchAPI<QuickAccord & { message: string }>(`/quick-accords/family-file/${familyFileId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update a QuickAccord (draft only)
+   */
+  async update(id: string, data: Partial<QuickAccordCreate>): Promise<QuickAccord> {
+    return fetchAPI<QuickAccord>(`/quick-accords/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Submit for approval
+   */
+  async submit(id: string): Promise<QuickAccord & { message: string }> {
+    return fetchAPI<QuickAccord & { message: string }>(`/quick-accords/${id}/submit`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Approve or reject a QuickAccord
+   */
+  async approve(id: string, approved: boolean = true, notes?: string): Promise<QuickAccord & { message: string }> {
+    return fetchAPI<QuickAccord & { message: string }>(`/quick-accords/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ approved, notes }),
+    });
+  },
+
+  /**
+   * Mark as completed
+   */
+  async complete(id: string): Promise<QuickAccord & { message: string }> {
+    return fetchAPI<QuickAccord & { message: string }>(`/quick-accords/${id}/complete`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Revoke a QuickAccord
+   */
+  async revoke(id: string): Promise<QuickAccord & { message: string }> {
+    return fetchAPI<QuickAccord & { message: string }>(`/quick-accords/${id}/revoke`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Delete a QuickAccord (draft only)
+   */
+  async delete(id: string): Promise<void> {
+    return fetchAPI<void>(`/quick-accords/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // ARIA Conversational Creation
+  aria: {
+    /**
+     * Start an ARIA conversation to create a QuickAccord
+     */
+    async start(familyFileId: string): Promise<ARIAConversationResponse> {
+      return fetchAPI<ARIAConversationResponse>(`/quick-accords/aria/start/${familyFileId}`, {
+        method: 'POST',
+      });
+    },
+
+    /**
+     * Send a message in an ARIA conversation
+     */
+    async sendMessage(conversationId: string, message: string): Promise<ARIAConversationResponse> {
+      return fetchAPI<ARIAConversationResponse>(`/quick-accords/aria/message/${conversationId}`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      });
+    },
+
+    /**
+     * Create QuickAccord from conversation
+     */
+    async create(conversationId: string): Promise<QuickAccord & { message: string }> {
+      return fetchAPI<QuickAccord & { message: string }>(`/quick-accords/aria/create/${conversationId}`, {
+        method: 'POST',
+      });
+    },
+  },
+};
+
+// ============================================================================
+// ARIA Paralegal - Intake API
+// ============================================================================
+
+export type IntakeStatus = 'pending' | 'in_progress' | 'completed' | 'expired' | 'cancelled';
+
+export interface IntakeSession {
+  id: string;
+  session_number: string;
+  case_id: string;
+  family_file_id?: string;
+  professional_id: string;
+  parent_id: string;
+
+  // Access info
+  access_token: string;
+  intake_link: string;
+  access_link_expires_at: string;
+  access_link_used_at?: string;
+
+  // Form targets
+  target_forms: string[];
+  custom_questions?: string[];
+
+  // Status
+  status: IntakeStatus;
+  started_at?: string;
+  completed_at?: string;
+  message_count: number;
+
+  // Confirmation
+  parent_confirmed: boolean;
+  parent_confirmed_at?: string;
+
+  // Professional review
+  professional_reviewed: boolean;
+  professional_reviewed_at?: string;
+
+  // Clarification
+  clarification_requested: boolean;
+  clarification_request?: string;
+  clarification_response?: string;
+
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntakeSessionListItem {
+  id: string;
+  session_number: string;
+  case_id: string;
+  parent_id: string;
+  target_forms: string[];
+  status: IntakeStatus;
+  message_count: number;
+  parent_confirmed: boolean;
+  professional_reviewed: boolean;
+  clarification_requested: boolean;
+  access_link_expires_at: string;
+  created_at: string;
+}
+
+export interface IntakeAccessResponse {
+  session_id: string;
+  session_number: string;
+  professional_name: string;
+  professional_role: string;
+  target_forms: string[];
+  status: IntakeStatus;
+  is_accessible: boolean;
+  case_name?: string;
+  children_names?: string[];
+}
+
+export interface IntakeMessageResponse {
+  response: string;
+  message_count: number;
+  extracted_so_far?: Record<string, unknown>;
+  progress_sections?: string[];
+  is_complete: boolean;
+}
+
+export interface IntakeSummaryResponse {
+  session_number: string;
+  aria_summary: string;
+  extracted_data?: Record<string, unknown>;
+  target_forms: string[];
+  message_count: number;
+  parent_confirmed: boolean;
+}
+
+export interface IntakeTranscriptResponse {
+  session_number: string;
+  messages: Array<{ role: string; content: string; timestamp: string }>;
+  message_count: number;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export interface IntakeOutputs {
+  session_number: string;
+  status: IntakeStatus;
+  parent_confirmed: boolean;
+  parent_confirmed_at?: string;
+  aria_summary?: string;
+  extracted_data?: Record<string, unknown>;
+  messages: Array<{ role: string; content: string; timestamp: string }>;
+  message_count: number;
+  draft_form_url?: string;
+  draft_form_generated_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  target_forms: string[];
+}
+
+export interface CreateIntakeSessionRequest {
+  case_id: string;
+  parent_id: string;
+  target_forms: string[];
+  custom_questions?: string[];
+  family_file_id?: string;
+  expires_in_days?: number;
+}
+
+export const intakeAPI = {
+  // =========================================================================
+  // Professional Endpoints (Court Portal)
+  // =========================================================================
+
+  /**
+   * Create a new intake session
+   */
+  async createSession(data: CreateIntakeSessionRequest): Promise<IntakeSession> {
+    return fetchAPI<IntakeSession>('/intake/sessions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * List intake sessions (for professional's cases)
+   */
+  async listSessions(params?: { case_id?: string; status?: IntakeStatus }): Promise<{ items: IntakeSessionListItem[]; total: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.case_id) searchParams.set('case_id', params.case_id);
+    if (params?.status) searchParams.set('status', params.status);
+    const query = searchParams.toString();
+    return fetchAPI<{ items: IntakeSessionListItem[]; total: number }>(`/intake/sessions${query ? `?${query}` : ''}`);
+  },
+
+  /**
+   * Get a specific intake session
+   */
+  async getSession(sessionId: string): Promise<IntakeSession> {
+    return fetchAPI<IntakeSession>(`/intake/sessions/${sessionId}`);
+  },
+
+  /**
+   * Get intake session transcript
+   */
+  async getTranscript(sessionId: string): Promise<IntakeTranscriptResponse> {
+    return fetchAPI<IntakeTranscriptResponse>(`/intake/sessions/${sessionId}/transcript`);
+  },
+
+  /**
+   * Get ARIA summary for session
+   */
+  async getSummary(sessionId: string): Promise<IntakeSummaryResponse> {
+    return fetchAPI<IntakeSummaryResponse>(`/intake/sessions/${sessionId}/summary`);
+  },
+
+  /**
+   * Get all outputs for session
+   */
+  async getOutputs(sessionId: string): Promise<IntakeOutputs> {
+    return fetchAPI<IntakeOutputs>(`/intake/sessions/${sessionId}/outputs`);
+  },
+
+  /**
+   * Request clarification from parent
+   */
+  async requestClarification(sessionId: string, clarificationRequest: string): Promise<IntakeSession> {
+    return fetchAPI<IntakeSession>(`/intake/sessions/${sessionId}/request-clarification`, {
+      method: 'POST',
+      body: JSON.stringify({ clarification_request: clarificationRequest }),
+    });
+  },
+
+  /**
+   * Mark session as reviewed
+   */
+  async markReviewed(sessionId: string): Promise<IntakeSession> {
+    return fetchAPI<IntakeSession>(`/intake/sessions/${sessionId}/mark-reviewed`, {
+      method: 'POST',
+    });
+  },
+
+  // =========================================================================
+  // Parent Endpoints (Public Access via Token)
+  // =========================================================================
+
+  /**
+   * Validate intake access token and get session info
+   */
+  async validateAccess(token: string): Promise<IntakeAccessResponse> {
+    return fetchAPI<IntakeAccessResponse>(`/intake/access/${token}`);
+  },
+
+  /**
+   * Start the intake conversation
+   */
+  async startIntake(token: string): Promise<IntakeMessageResponse> {
+    return fetchAPI<IntakeMessageResponse>(`/intake/access/${token}/start`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Send a message in the intake conversation
+   */
+  async sendMessage(token: string, message: string): Promise<IntakeMessageResponse> {
+    return fetchAPI<IntakeMessageResponse>(`/intake/access/${token}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  },
+
+  /**
+   * Get parent's view of summary (before confirmation)
+   */
+  async getParentSummary(token: string): Promise<IntakeSummaryResponse> {
+    return fetchAPI<IntakeSummaryResponse>(`/intake/access/${token}/summary`);
+  },
+
+  /**
+   * Parent confirms intake completion
+   */
+  async confirmIntake(token: string, edits?: Array<{ field: string; value: string }>): Promise<{ message: string; session_number: string }> {
+    return fetchAPI<{ message: string; session_number: string }>(`/intake/access/${token}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ edits }),
+    });
+  },
+};
+
+// =========================================================================
+// Dashboard API - Aggregated Activity Data
+// =========================================================================
+
+export interface PendingExpense {
+  id: string;
+  title: string;
+  amount: number;
+  category: string;
+  requested_by_name?: string;
+  requested_at: string;
+  days_pending: number;
+}
+
+export interface UnreadMessage {
+  id: string;
+  sender_id: string;
+  sender_name: string;
+  content_preview: string;
+  sent_at: string;
+}
+
+export interface PendingAgreement {
+  id: string;
+  title: string;
+  agreement_type: string;  // "shared_care" or "quick_accord"
+  status: string;
+  submitted_at?: string;
+  submitted_by_name?: string;
+}
+
+export interface CourtNotification {
+  id: string;
+  message_type: string;  // "notice", "reminder", "order", "general"
+  subject?: string;
+  is_urgent: boolean;
+  sent_at: string;
+}
+
+export interface UpcomingEvent {
+  id: string;
+  title: string;
+  event_category: string;  // "medical", "school", "sports", "exchange", "general"
+  start_time: string;
+  end_time: string;
+  location?: string;
+  all_day: boolean;
+  is_exchange: boolean;
+  child_names: string[];
+}
+
+export interface DashboardSummary {
+  pending_expenses_count: number;
+  pending_expenses: PendingExpense[];
+  unread_messages_count: number;
+  unread_messages: UnreadMessage[];
+  sender_name?: string;
+  pending_agreements_count: number;
+  pending_agreements: PendingAgreement[];
+  unread_court_count: number;
+  court_notifications: CourtNotification[];
+  upcoming_events: UpcomingEvent[];
+  next_event?: UpcomingEvent;
+}
+
+export const dashboardAPI = {
+  /**
+   * Get aggregated dashboard summary for a family file
+   */
+  async getSummary(familyFileId: string): Promise<DashboardSummary> {
+    return fetchAPI<DashboardSummary>(`/dashboard/summary/${familyFileId}`);
   },
 };
 

@@ -7,6 +7,16 @@ This module contains all database models for the application.
 from app.models.base import Base
 from app.models.user import User, UserProfile
 from app.models.case import Case, CaseParticipant
+from app.models.family_file import (
+    FamilyFile,
+    CourtCustodyCase,
+    QuickAccord,
+    FamilyFileStatus,
+    ConflictLevel,
+    ParentRole,
+    generate_family_file_number,
+    generate_quick_accord_number,
+)
 from app.models.child import Child, ChildProfileStatus
 from app.models.cubbie import (
     CubbieItem,
@@ -16,7 +26,14 @@ from app.models.cubbie import (
     ItemLocation,
     ItemCondition,
 )
-from app.models.agreement import Agreement, AgreementVersion, AgreementSection
+from app.models.agreement import (
+    Agreement,
+    AgreementVersion,
+    AgreementSection,
+    AgreementConversation,
+    AgreementType,
+    generate_shared_care_number,
+)
 from app.models.message import Message, MessageFlag, MessageThread
 from app.models.schedule import ScheduleEvent, ExchangeCheckIn
 from app.models.my_time_collection import MyTimeCollection
@@ -92,6 +109,17 @@ from app.models.court_form import (
     HearingType,
     HearingOutcome,
 )
+from app.models.intake import (
+    IntakeSession,
+    IntakeQuestion,
+    IntakeExtraction,
+    IntakeStatus,
+    IntakeFormType,
+    IntakeQuestionCategory,
+    IntakeQuestionType,
+    generate_session_number,
+    generate_access_token,
+)
 
 __all__ = [
     "Base",
@@ -99,6 +127,16 @@ __all__ = [
     "UserProfile",
     "Case",
     "CaseParticipant",
+    # Family File System
+    "FamilyFile",
+    "CourtCustodyCase",
+    "QuickAccord",
+    "FamilyFileStatus",
+    "ConflictLevel",
+    "ParentRole",
+    "generate_family_file_number",
+    "generate_quick_accord_number",
+    # Children
     "Child",
     "ChildProfileStatus",
     # KidsCubbie
@@ -108,9 +146,13 @@ __all__ = [
     "ItemCategory",
     "ItemLocation",
     "ItemCondition",
+    # Agreements (SharedCare)
     "Agreement",
     "AgreementVersion",
     "AgreementSection",
+    "AgreementConversation",
+    "AgreementType",
+    "generate_shared_care_number",
     "Message",
     "MessageFlag",
     "MessageThread",
@@ -189,4 +231,14 @@ __all__ = [
     "ServiceType",
     "HearingType",
     "HearingOutcome",
+    # ARIA Paralegal - Legal Intake
+    "IntakeSession",
+    "IntakeQuestion",
+    "IntakeExtraction",
+    "IntakeStatus",
+    "IntakeFormType",
+    "IntakeQuestionCategory",
+    "IntakeQuestionType",
+    "generate_session_number",
+    "generate_access_token",
 ]

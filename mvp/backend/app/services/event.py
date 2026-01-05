@@ -19,7 +19,46 @@ from app.models.schedule import ScheduleEvent
 from app.models.event_attendance import EventAttendance
 from app.models.my_time_collection import MyTimeCollection
 from app.models.case import CaseParticipant
+from app.models.family_file import FamilyFile
 from app.services.time_block import TimeBlockService, normalize_datetime
+
+
+async def _check_event_access(
+    db: AsyncSession,
+    case_id: str,
+    user_id: str
+) -> tuple[bool, str, bool]:
+    """
+    Check if user has access via Case Participant or Family File.
+    Returns (has_access, effective_case_id, is_family_file).
+    """
+    # First check Case Participant
+    participant = await db.execute(
+        select(CaseParticipant).where(
+            CaseParticipant.case_id == case_id,
+            CaseParticipant.user_id == user_id,
+            CaseParticipant.is_active == True
+        )
+    )
+    if participant.scalar_one_or_none():
+        return True, case_id, False
+
+    # Check Family File
+    family_file_result = await db.execute(
+        select(FamilyFile).where(
+            FamilyFile.id == case_id,
+            or_(FamilyFile.parent_a_id == user_id, FamilyFile.parent_b_id == user_id)
+        )
+    )
+    family_file = family_file_result.scalar_one_or_none()
+    if family_file:
+        # If has legacy_case_id, use that for case-based queries
+        if family_file.legacy_case_id:
+            return True, family_file.legacy_case_id, False
+        # Otherwise, use family_file_id for family-file-based queries
+        return True, case_id, True
+
+    return False, case_id, False
 
 
 class EventService:
@@ -87,10 +126,11 @@ class EventService:
         start_time = normalize_datetime(start_time)
         end_time = normalize_datetime(end_time)
 
-        # Create event
+        # Create event - set case_id or family_file_id based on collection
         event = ScheduleEvent(
             id=str(uuid.uuid4()),
             case_id=collection.case_id,
+            family_file_id=collection.family_file_id,  # Support Family File context
             collection_id=collection_id,
             created_by=user_id,
             title=title,
@@ -155,15 +195,33 @@ class EventService:
         if not event:
             return None
 
-        # Verify viewer has access to this case
-        access_result = await db.execute(
-            select(CaseParticipant).where(
-                CaseParticipant.case_id == event.case_id,
-                CaseParticipant.user_id == viewer_id,
-                CaseParticipant.is_active == True
+        # Verify viewer has access - check Case or Family File
+        has_access = False
+
+        # Check Case Participant access (if event has case_id)
+        if event.case_id:
+            access_result = await db.execute(
+                select(CaseParticipant).where(
+                    CaseParticipant.case_id == event.case_id,
+                    CaseParticipant.user_id == viewer_id,
+                    CaseParticipant.is_active == True
+                )
             )
-        )
-        if not access_result.scalar_one_or_none():
+            if access_result.scalar_one_or_none():
+                has_access = True
+
+        # Check Family File access (if event has family_file_id)
+        if not has_access and event.family_file_id:
+            family_file_result = await db.execute(
+                select(FamilyFile).where(
+                    FamilyFile.id == event.family_file_id,
+                    or_(FamilyFile.parent_a_id == viewer_id, FamilyFile.parent_b_id == viewer_id)
+                )
+            )
+            if family_file_result.scalar_one_or_none():
+                has_access = True
+
+        if not has_access:
             return None
 
         # Check visibility
@@ -181,11 +239,11 @@ class EventService:
         end_date: Optional[datetime] = None
     ) -> List[ScheduleEvent]:
         """
-        List events for a case (privacy filtered).
+        List events for a case or family file (privacy filtered).
 
         Args:
             db: Database session
-            case_id: Case UUID
+            case_id: Case UUID or Family File ID
             viewer_id: User requesting events
             start_date: Filter by start date (optional)
             end_date: Filter by end date (optional)
@@ -193,25 +251,28 @@ class EventService:
         Returns:
             List of ScheduleEvent (privacy filtered)
         """
-        # Verify access
-        access_result = await db.execute(
-            select(CaseParticipant).where(
-                CaseParticipant.case_id == case_id,
-                CaseParticipant.user_id == viewer_id,
-                CaseParticipant.is_active == True
-            )
-        )
-        if not access_result.scalar_one_or_none():
+        # Verify access (via case participant or family file)
+        has_access, effective_id, is_family_file = await _check_event_access(db, case_id, viewer_id)
+        if not has_access:
             raise ValueError("No access to this case")
 
-        # Build query
-        query = select(ScheduleEvent).where(
-            ScheduleEvent.case_id == case_id,
-            or_(
-                ScheduleEvent.created_by == viewer_id,
-                ScheduleEvent.visibility == "co_parent"
+        # Build query - use family_file_id for Family Files, case_id for Cases
+        if is_family_file:
+            query = select(ScheduleEvent).where(
+                ScheduleEvent.family_file_id == effective_id,
+                or_(
+                    ScheduleEvent.created_by == viewer_id,
+                    ScheduleEvent.visibility == "co_parent"
+                )
             )
-        )
+        else:
+            query = select(ScheduleEvent).where(
+                ScheduleEvent.case_id == effective_id,
+                or_(
+                    ScheduleEvent.created_by == viewer_id,
+                    ScheduleEvent.visibility == "co_parent"
+                )
+            )
 
         # Add date filters (normalize to strip timezone for PostgreSQL)
         if start_date:
@@ -353,11 +414,15 @@ class EventService:
         Returns:
             Filtered dictionary
         """
+        # Use case_id if set, otherwise use family_file_id as the identifier
+        effective_case_id = event.case_id if event.case_id else event.family_file_id
+
         if event.created_by == viewer_id:
             # Creator sees everything
             return {
                 "id": event.id,
-                "case_id": event.case_id,
+                "case_id": effective_case_id,  # Return the effective identifier
+                "family_file_id": event.family_file_id,
                 "collection_id": event.collection_id,
                 "created_by": event.created_by,
                 "title": event.title,
@@ -389,7 +454,8 @@ class EventService:
 
             return {
                 "id": event.id,
-                "case_id": event.case_id,
+                "case_id": effective_case_id,  # Return the effective identifier
+                "family_file_id": event.family_file_id,
                 "created_by": event.created_by,
                 "title": event.title if event.visibility == "co_parent" else "Event",
                 "description": event.description if event.visibility == "co_parent" else None,

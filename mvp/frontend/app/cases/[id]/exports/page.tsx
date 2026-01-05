@@ -68,12 +68,12 @@ function ExportsPageContent() {
             <span>/</span>
             <Link href={`/cases/${caseId}`} className="hover:text-blue-600">{caseData.case_name}</Link>
             <span>/</span>
-            <span className="text-gray-900">Exports</span>
+            <span className="text-gray-900">CaseExport</span>
           </div>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Case Exports</h1>
-              <p className="text-gray-500">Court-ready documentation packages for {caseData.case_name}</p>
+              <h1 className="text-2xl font-bold text-gray-900">CaseExport</h1>
+              <p className="text-gray-500">Court-ready documentation for {caseData.case_name}</p>
             </div>
             <Button onClick={() => router.push(`/cases/${caseId}/exports/new`)}>
               Create New Export
@@ -87,10 +87,10 @@ function ExportsPageContent() {
         {/* Info Card */}
         <Card className="mb-8 bg-blue-50 border-blue-200">
           <CardContent className="pt-6">
-            <h3 className="font-medium text-blue-900 mb-2">About Case Exports</h3>
+            <h3 className="font-medium text-blue-900 mb-2">About CaseExport</h3>
             <p className="text-sm text-blue-800 mb-3">
-              Case exports are court-ready PDF packages that compile your case data into a professional,
-              verifiable document. Each export includes:
+              CaseExport generates court-ready PDF packages that compile your case data into professional,
+              verifiable documents. Each export includes:
             </p>
             <ul className="text-sm text-blue-800 space-y-1">
               <li>&#x2022; <strong>Comprehensive Data:</strong> Agreement terms, compliance metrics, communications</li>

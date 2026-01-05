@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     # AI Services (for ARIA)
     ANTHROPIC_API_KEY: str
     OPENAI_API_KEY: str
+    ARIA_DEFAULT_PROVIDER: str = "claude"  # "claude" or "openai"
 
     # Stripe
     STRIPE_SECRET_KEY: str

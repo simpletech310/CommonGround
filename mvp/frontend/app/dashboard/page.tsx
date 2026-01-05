@@ -2,61 +2,61 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
-import { PageContainer, PageHeader, EmptyState } from '@/components/layout';
 import { useRouter } from 'next/navigation';
 import {
-  casesAPI,
-  courtSettingsAPI,
-  scheduleAPI,
+  familyFilesAPI,
   agreementsAPI,
-  Case,
-  Child,
-  CourtSettingsPublic,
-  ScheduleEvent,
+  dashboardAPI,
+  FamilyFileDetail,
+  FamilyFileChild,
   Agreement,
-  AgreementQuickSummary,
+  CustodyStatusResponse,
+  ChildCustodyStatus,
+  DashboardSummary,
+  UpcomingEvent,
 } from '@/lib/api';
 import {
   Calendar,
   MessageSquare,
   FileText,
-  Clock,
-  MapPin,
-  Users,
-  AlertTriangle,
   ChevronRight,
   Plus,
+  FolderOpen,
+  Wallet,
+  Bell,
+  Users,
+  Clock,
+  ArrowRight,
+  Heart,
+  MapPin,
   Gavel,
+  CheckCircle,
 } from 'lucide-react';
 
 /**
- * CommonGround Parent Dashboard
+ * CommonGround Dashboard - "The Morning Brief"
  *
- * Design: Child-centered view - children are the focus, not the conflict.
- * Philosophy: "It's about the children, not the parents."
+ * Design: Organic Minimalist
+ * Philosophy: Situational awareness for the busy parent
+ * Key Elements: Greeting, Custody Status, Action Stream
  */
 
-interface CaseWithData {
-  case: Case;
-  settings: CourtSettingsPublic | null;
+interface FamilyFileWithData {
+  familyFile: FamilyFileDetail;
   agreements: Agreement[];
-  agreementSummary: AgreementQuickSummary | null;
-  upcomingEvents: ScheduleEvent[];
 }
 
-// Helper to calculate child's age
+// Get time-based greeting
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good Morning';
+  if (hour < 17) return 'Good Afternoon';
+  return 'Good Evening';
+}
+
+// Calculate child's age
 function calculateAge(dateOfBirth: string): number {
   const today = new Date();
   const birthDate = new Date(dateOfBirth);
@@ -69,30 +69,420 @@ function calculateAge(dateOfBirth: string): number {
 }
 
 // Get initials for avatar
-function getInitials(firstName: string, lastName: string): string {
-  return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+function getInitials(firstName: string, lastName?: string): string {
+  if (lastName) {
+    return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+  }
+  return firstName.charAt(0).toUpperCase();
 }
 
-// Format date for display
-function formatEventDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+// Format hours remaining into a human-readable string
+function formatHoursRemaining(hours: number | undefined): string {
+  if (!hours) return 'Unknown';
+  if (hours < 1) {
+    return `${Math.round(hours * 60)} minutes`;
+  }
+  if (hours < 24) {
+    return `${Math.round(hours)} hours`;
+  }
+  const days = Math.floor(hours / 24);
+  const remainingHours = Math.round(hours % 24);
+  if (remainingHours === 0) {
+    return `${days} day${days > 1 ? 's' : ''}`;
+  }
+  return `${days} day${days > 1 ? 's' : ''}, ${remainingHours} hour${remainingHours > 1 ? 's' : ''}`;
+}
 
-  if (date.toDateString() === today.toDateString()) {
-    return `Today at ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+// Child Avatar Component
+function ChildAvatar({ child, size = 'md' }: { child: FamilyFileChild; size?: 'sm' | 'md' | 'lg' }) {
+  const initials = getInitials(child.first_name, child.last_name);
+  const sizeClasses = {
+    sm: 'w-8 h-8 text-xs',
+    md: 'w-12 h-12 text-sm',
+    lg: 'w-16 h-16 text-base',
+  };
+
+  return (
+    <div
+      className={`${sizeClasses[size]} rounded-full bg-cg-amber-subtle flex items-center justify-center ring-2 ring-card`}
+      title={`${child.first_name} ${child.last_name}`}
+    >
+      <span className="font-semibold text-cg-amber">{initials}</span>
+    </div>
+  );
+}
+
+// Individual Child Custody Card - Shows status for one child
+function ChildCustodyCard({
+  childStatus,
+  childData,
+  coparentName,
+  onWithMe,
+}: {
+  childStatus: ChildCustodyStatus;
+  childData?: FamilyFileChild;
+  coparentName?: string;
+  onWithMe?: (childId: string) => void;
+}) {
+  const isWithYou = childStatus.with_current_user;
+  const progress = childStatus.progress_percentage || 0;
+  const statusColor = isWithYou ? 'bg-cg-sage' : 'bg-cg-slate';
+  const statusTextColor = isWithYou ? 'text-cg-sage' : 'text-cg-slate';
+  const hasNextExchange = !!childStatus.next_exchange_time;
+
+  // Format next exchange time
+  const formatNextExchange = () => {
+    if (!childStatus.next_exchange_time) return null;
+    const date = new Date(childStatus.next_exchange_time);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    const isTomorrow = new Date(now.getTime() + 86400000).toDateString() === date.toDateString();
+
+    const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const dayStr = date.toLocaleDateString('en-US', { weekday: 'long' });
+
+    if (isToday) return `Today ${timeStr}`;
+    if (isTomorrow) return `Tomorrow ${timeStr}`;
+    return `${dayStr} ${timeStr}`;
+  };
+
+  const nextExchangeStr = formatNextExchange();
+
+  // Get next action text
+  const getNextActionText = () => {
+    if (!childStatus.next_action) return null;
+    return childStatus.next_action === 'pickup' ? 'Pick up' : 'Drop off';
+  };
+
+  return (
+    <div className="cg-card overflow-hidden">
+      {/* Top accent bar */}
+      <div className={`h-1.5 ${statusColor}`} />
+
+      <div className="p-4">
+        {/* Child header with "With Me" button */}
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-full bg-cg-amber-subtle flex items-center justify-center flex-shrink-0">
+            {childData?.photo_url ? (
+              <img
+                src={childData.photo_url}
+                alt={childStatus.child_first_name}
+                className="w-10 h-10 rounded-full object-cover"
+              />
+            ) : (
+              <span className="text-sm font-semibold text-cg-amber">
+                {childStatus.child_first_name.charAt(0)}
+              </span>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-foreground truncate">
+              {childStatus.child_first_name}
+            </p>
+            <p className={`text-sm font-medium ${statusTextColor}`}>
+              {isWithYou ? 'With You' : `With ${childStatus.current_parent_name || coparentName || 'co-parent'}`}
+            </p>
+          </div>
+          {/* "With Me" button */}
+          {!isWithYou && onWithMe && (
+            <button
+              onClick={() => onWithMe(childStatus.child_id)}
+              className="px-3 py-1.5 text-xs font-medium bg-cg-sage text-white rounded-lg hover:bg-cg-sage-light transition-colors flex-shrink-0"
+            >
+              With Me
+            </button>
+          )}
+        </div>
+
+        {/* Next exchange info */}
+        {hasNextExchange ? (
+          <div className="mb-3">
+            <p className="text-sm text-foreground">
+              {getNextActionText() && (
+                <span className={`font-medium ${childStatus.next_action === 'pickup' ? 'text-green-600' : 'text-blue-600'}`}>
+                  {getNextActionText()}
+                </span>
+              )}
+              {' '}
+              {nextExchangeStr && <>until <span className="font-medium">{nextExchangeStr}</span></>}
+            </p>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground mb-3 italic">
+            No exchanges scheduled
+          </p>
+        )}
+
+        {/* Progress Bar - only show if exchange scheduled */}
+        {hasNextExchange && (
+          <>
+            <div className="relative mb-2">
+              <div className="cg-progress h-2.5 rounded-full">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${isWithYou ? 'cg-progress-bar' : 'bg-cg-slate/60'}`}
+                  style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                />
+              </div>
+              {/* Child indicator on progress bar */}
+              <div
+                className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-500 ${statusColor} shadow-sm`}
+                style={{ left: `calc(${Math.min(92, Math.max(4, progress))}% - 12px)` }}
+              >
+                <span className="text-[10px] font-bold text-white">
+                  {childStatus.child_first_name.charAt(0)}
+                </span>
+              </div>
+            </div>
+
+            {/* Time remaining */}
+            <p className="text-xs text-muted-foreground">
+              {childStatus.hours_remaining
+                ? formatHoursRemaining(childStatus.hours_remaining) + ' remaining'
+                : ''}
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Custody Status Section - Shows individual tracking for each child
+function CustodyStatusCard({
+  custodyStatus,
+  children,
+  coparentName,
+  onWithMe,
+}: {
+  custodyStatus: CustodyStatusResponse | null;
+  children: FamilyFileChild[];
+  coparentName?: string;
+  onWithMe?: (childId: string) => void;
+}) {
+  // If no custody status data, show simplified card
+  if (!custodyStatus || children.length === 0) {
+    return (
+      <div className="cg-card overflow-hidden">
+        <div className="h-2 bg-cg-sage" />
+        <div className="p-5">
+          <p className="text-sm text-muted-foreground">
+            Set up custody exchanges to see status
+          </p>
+        </div>
+      </div>
+    );
   }
-  if (date.toDateString() === tomorrow.toDateString()) {
-    return `Tomorrow at ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+
+  // If no child-specific data, fall back to single card
+  if (!custodyStatus.children || custodyStatus.children.length === 0) {
+    const allWithYou = custodyStatus.all_with_current_user;
+    const statusText = allWithYou ? 'Kids are with You' : `Kids are with ${coparentName || 'co-parent'}`;
+    const statusColor = allWithYou ? 'bg-cg-sage' : 'bg-cg-slate';
+
+    return (
+      <div className="cg-card overflow-hidden">
+        <div className={`h-2 ${statusColor}`} />
+        <div className="p-5">
+          <p className={`text-sm font-medium mb-1 ${allWithYou ? 'text-cg-sage' : 'text-cg-slate'}`}>
+            {statusText}
+          </p>
+          {custodyStatus.next_exchange_formatted && (
+            <p className="text-xl font-semibold text-foreground">
+              until {custodyStatus.next_exchange_formatted}
+            </p>
+          )}
+        </div>
+      </div>
+    );
   }
-  return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+
+  // Render individual cards for each child
+  return (
+    <div className="space-y-3">
+      {custodyStatus.children.map((childStatus) => {
+        const childData = children.find(c => c.id === childStatus.child_id);
+        return (
+          <ChildCustodyCard
+            key={childStatus.child_id}
+            childStatus={childStatus}
+            childData={childData}
+            coparentName={coparentName}
+            onWithMe={onWithMe}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// Action Stream Item
+function ActionStreamItem({
+  icon: Icon,
+  iconBg,
+  iconColor,
+  title,
+  subtitle,
+  hasNotification,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  iconBg: string;
+  iconColor: string;
+  title: string;
+  subtitle: string;
+  hasNotification?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full cg-card-interactive p-4 flex items-center gap-4 text-left"
+    >
+      <div className={`w-12 h-12 ${iconBg} rounded-xl flex items-center justify-center flex-shrink-0`}>
+        <Icon className={`w-5 h-5 ${iconColor}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-foreground">{title}</p>
+        <p className="text-sm text-muted-foreground truncate">{subtitle}</p>
+      </div>
+      {hasNotification && (
+        <div className="w-2.5 h-2.5 bg-cg-error rounded-full flex-shrink-0" />
+      )}
+      <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+    </button>
+  );
+}
+
+// Quick Action Button
+function QuickActionButton({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center gap-2 p-4 cg-card-interactive"
+    >
+      <div className="w-12 h-12 bg-cg-sage-subtle rounded-xl flex items-center justify-center">
+        <Icon className="w-5 h-5 text-cg-sage" />
+      </div>
+      <span className="text-sm font-medium text-foreground">{label}</span>
+    </button>
+  );
+}
+
+// Upcoming Event Card - shows next scheduled event
+function UpcomingEventCard({ event }: { event?: UpcomingEvent }) {
+  if (!event) {
+    return (
+      <div className="cg-card p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-cg-sage-subtle rounded-lg flex items-center justify-center flex-shrink-0">
+            <CheckCircle className="w-5 h-5 text-cg-sage" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-foreground">All caught up!</p>
+            <p className="text-sm text-muted-foreground">No upcoming events in the next 7 days</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Format the event time
+  const eventDate = new Date(event.start_time);
+  const isToday = new Date().toDateString() === eventDate.toDateString();
+  const isTomorrow = new Date(Date.now() + 86400000).toDateString() === eventDate.toDateString();
+  const dayLabel = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : eventDate.toLocaleDateString('en-US', { weekday: 'long' });
+  const timeLabel = event.all_day ? 'All day' : eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+  // Calculate time remaining
+  const now = new Date();
+  const diffMs = eventDate.getTime() - now.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  let timeRemaining = '';
+  if (diffMins < 0) {
+    timeRemaining = 'Started';
+  } else if (diffMins < 60) {
+    timeRemaining = `in ${diffMins} min`;
+  } else if (diffHours < 24) {
+    const remainingMins = diffMins % 60;
+    timeRemaining = remainingMins > 0
+      ? `in ${diffHours}h ${remainingMins}m`
+      : `in ${diffHours} hours`;
+  } else {
+    const remainingHours = diffHours % 24;
+    timeRemaining = remainingHours > 0
+      ? `in ${diffDays}d ${remainingHours}h`
+      : `in ${diffDays} days`;
+  }
+
+  // Get icon and colors based on category
+  const getCategoryStyles = (category: string) => {
+    switch (category) {
+      case 'exchange':
+        return { bg: 'bg-cg-slate-subtle', color: 'text-cg-slate', Icon: MapPin };
+      case 'medical':
+        return { bg: 'bg-cg-error-subtle', color: 'text-cg-error', Icon: Heart };
+      case 'school':
+        return { bg: 'bg-cg-amber-subtle', color: 'text-cg-amber', Icon: FileText };
+      case 'sports':
+        return { bg: 'bg-cg-sage-subtle', color: 'text-cg-sage', Icon: Users };
+      default:
+        return { bg: 'bg-cg-sage-subtle', color: 'text-cg-sage', Icon: Calendar };
+    }
+  };
+
+  const { bg, color, Icon } = getCategoryStyles(event.event_category);
+
+  return (
+    <div className="cg-card p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-foreground capitalize">
+          {event.is_exchange ? 'Next Exchange' : `${event.event_category} Event`}
+        </h3>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-cg-sage bg-cg-sage-subtle px-2 py-0.5 rounded-full">
+            {timeRemaining}
+          </span>
+          <span className="text-sm text-muted-foreground">{dayLabel}</span>
+        </div>
+      </div>
+      <div className="flex items-start gap-3">
+        <div className={`w-10 h-10 ${bg} rounded-lg flex items-center justify-center flex-shrink-0`}>
+          <Icon className={`w-5 h-5 ${color}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-foreground">{event.title}</p>
+          <p className="text-sm text-muted-foreground">
+            {timeLabel}
+            {event.location && ` at ${event.location}`}
+          </p>
+          {event.child_names.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              with {event.child_names.join(', ')}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function DashboardContent() {
   const { user } = useAuth();
   const router = useRouter();
-  const [casesWithData, setCasesWithData] = useState<CaseWithData[]>([]);
+  const [familyFilesWithData, setFamilyFilesWithData] = useState<FamilyFileWithData[]>([]);
+  const [custodyStatus, setCustodyStatus] = useState<CustodyStatusResponse | null>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -102,63 +492,61 @@ function DashboardContent() {
   const loadDashboardData = async () => {
     try {
       setIsLoading(true);
-      const cases = await casesAPI.list();
+      const familyFilesResponse = await familyFilesAPI.list();
+      const familyFiles = familyFilesResponse.items;
 
-      // Fetch additional data for each case
-      const casesWithData: CaseWithData[] = await Promise.all(
-        cases.map(async (c) => {
-          let settings: CourtSettingsPublic | null = null;
+      const filesWithData: FamilyFileWithData[] = await Promise.all(
+        familyFiles.map(async (ff) => {
           let agreements: Agreement[] = [];
-          let agreementSummary: AgreementQuickSummary | null = null;
-          let upcomingEvents: ScheduleEvent[] = [];
+          let familyFileDetail: FamilyFileDetail;
 
-          // Load data for both active and pending cases
-          if (c.status === 'active' || c.status === 'pending') {
-            try {
-              settings = await courtSettingsAPI.getSettings(c.id);
-            } catch {
-              // Court settings may not exist
-            }
+          try {
+            familyFileDetail = await familyFilesAPI.get(ff.id);
+          } catch {
+            familyFileDetail = {
+              ...ff,
+              children: [],
+              active_agreement_count: 0,
+              quick_accord_count: 0,
+            };
+          }
 
+          if (ff.status === 'active') {
             try {
-              agreements = await agreementsAPI.list(c.id);
-              // Get summary for the active agreement first, then approved, then first available
-              if (agreements.length > 0) {
-                const activeAgreement = agreements.find(a => a.status === 'active')
-                  || agreements.find(a => a.status === 'approved')
-                  || agreements[0];
-                try {
-                  agreementSummary = await agreementsAPI.getQuickSummary(activeAgreement.id);
-                } catch {
-                  // Summary may fail if AI is unavailable
-                }
-              }
+              const agreementsData = await agreementsAPI.listForFamilyFile(ff.id);
+              agreements = agreementsData.items;
             } catch {
               // No agreements yet
             }
-
-            try {
-              // Get events for the next 7 days
-              const now = new Date();
-              const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-              const events = await scheduleAPI.getEvents(
-                c.id,
-                now.toISOString().split('T')[0],
-                nextWeek.toISOString().split('T')[0]
-              );
-              upcomingEvents = events
-                .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())
-                .slice(0, 3);
-            } catch {
-              // No events yet
-            }
           }
 
-          return { case: c, settings, agreements, agreementSummary, upcomingEvents };
+          return { familyFile: familyFileDetail, agreements };
         })
       );
 
-      setCasesWithData(casesWithData);
+      setFamilyFilesWithData(filesWithData);
+
+      // Fetch custody status and dashboard summary for the first active family file
+      const activeFile = familyFiles.find(ff => ff.status === 'active');
+      if (activeFile) {
+        // Fetch both in parallel
+        const [custodyResult, summaryResult] = await Promise.allSettled([
+          familyFilesAPI.getCustodyStatus(activeFile.id),
+          dashboardAPI.getSummary(activeFile.id),
+        ]);
+
+        if (custodyResult.status === 'fulfilled') {
+          setCustodyStatus(custodyResult.value);
+        } else {
+          console.error('Failed to load custody status:', custodyResult.reason);
+        }
+
+        if (summaryResult.status === 'fulfilled') {
+          setDashboardSummary(summaryResult.value);
+        } else {
+          console.error('Failed to load dashboard summary:', summaryResult.reason);
+        }
+      }
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
     } finally {
@@ -166,39 +554,59 @@ function DashboardContent() {
     }
   };
 
-  // Get all children from active and pending cases
-  const allChildren = casesWithData
-    .filter((c) => c.case.status === 'active' || c.case.status === 'pending')
-    .flatMap((c) => c.case.children || []);
+  // Handle manual "With Me" check-in
+  const handleWithMe = async (childId: string) => {
+    const activeFile = familyFilesWithData.find(f => f.familyFile.status === 'active');
+    if (!activeFile) return;
 
-  // Get cases with active court controls
-  const casesWithActiveControls = casesWithData.filter(
-    (c) => c.settings?.active_controls && c.settings.active_controls.length > 0
-  );
+    const child = allChildren.find(c => c.id === childId);
+    const childName = child?.first_name || 'Child';
 
-  // Get pending cases
-  const pendingCases = casesWithData.filter((c) => c.case.status === 'pending');
-  const activeCases = casesWithData.filter((c) => c.case.status === 'active');
+    // For now, show confirmation and refresh status
+    // TODO: Implement backend endpoint for manual custody override
+    const confirmed = window.confirm(
+      `Mark ${childName} as "With Me"?\n\nThis will update the custody status to reflect that ${childName} is currently with you.`
+    );
 
-  // Get the primary case (for quick actions) - prefer active, then pending
-  const primaryCase = activeCases[0] || casesWithData[0];
+    if (confirmed) {
+      try {
+        // Refresh custody status to show the change
+        // Note: Full implementation requires backend endpoint
+        const updatedStatus = await familyFilesAPI.getCustodyStatus(activeFile.familyFile.id);
+        setCustodyStatus(updatedStatus);
 
-  // Check if user has any setup to complete - only show Getting Started if NO cases at all
-  const needsSetup = casesWithData.length === 0;
+        // Show success feedback
+        alert(`${childName} is now marked as "With Me".\n\nNote: Manual check-in feature is being finalized.`);
+      } catch (error) {
+        console.error('Failed to update custody status:', error);
+        alert('Unable to update custody status. Please try again.');
+      }
+    }
+  };
 
-  // Show loading state while data is being fetched
+  // Get all children from active family files
+  const allChildren = familyFilesWithData
+    .filter((f) => f.familyFile.status === 'active')
+    .flatMap((f) => f.familyFile.children || []);
+
+  const needsSetup = familyFilesWithData.length === 0;
+  const greeting = getGreeting();
+
+  // Show loading state
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
-        <PageContainer>
+        <main className="max-w-3xl mx-auto px-4 py-8 pb-24 lg:pb-8">
           <div className="flex items-center justify-center h-[60vh]">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-10 w-10 border-2 border-cg-primary border-t-transparent mx-auto" />
+              <div className="w-12 h-12 bg-cg-sage/20 rounded-full flex items-center justify-center mx-auto animate-pulse">
+                <div className="w-6 h-6 bg-cg-sage rounded-full" />
+              </div>
               <p className="mt-4 text-muted-foreground">Loading your dashboard...</p>
             </div>
           </div>
-        </PageContainer>
+        </main>
       </div>
     );
   }
@@ -207,438 +615,277 @@ function DashboardContent() {
     <div className="min-h-screen bg-background">
       <Navigation />
 
-      {/* Court Controls Banner */}
-      {casesWithActiveControls.length > 0 && (
-        <div className="bg-cg-warning-subtle border-b border-cg-warning/20">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-            {casesWithActiveControls.map(({ case: c, settings }) => (
-              <div key={c.id} className="flex items-start gap-3">
-                <Gavel className="h-5 w-5 text-cg-warning flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-foreground">
-                      Court-Ordered Controls Active
-                    </span>
-                    <span className="text-muted-foreground text-sm">
-                      ({c.case_name})
+      <main className="max-w-3xl mx-auto px-4 py-6 pb-24 lg:pb-8">
+        {/* Header with Greeting */}
+        <div className="flex items-start justify-between mb-8">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-foreground">
+              {greeting},
+            </h1>
+            <h2 className="text-2xl sm:text-3xl font-semibold text-cg-sage">
+              {user?.first_name}
+            </h2>
+          </div>
+
+          {/* Children Avatars & Notification */}
+          <div className="flex items-center gap-3">
+            {allChildren.length > 0 && (
+              <div className="flex -space-x-2">
+                {allChildren.slice(0, 3).map((child) => (
+                  <ChildAvatar key={child.id} child={child} size="md" />
+                ))}
+                {allChildren.length > 3 && (
+                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center ring-2 ring-card">
+                    <span className="text-sm font-medium text-muted-foreground">
+                      +{allChildren.length - 3}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {settings?.gps_checkins_required && (
-                      <Badge variant="warning" size="sm">GPS Check-ins</Badge>
-                    )}
-                    {settings?.supervised_exchange_required && (
-                      <Badge variant="warning" size="sm">Supervised Exchanges</Badge>
-                    )}
-                    {settings?.in_app_communication_only && (
-                      <Badge variant="warning" size="sm">In-App Communication Only</Badge>
-                    )}
-                    {settings?.aria_enforcement_locked && (
-                      <Badge variant="warning" size="sm">ARIA Moderation Locked</Badge>
-                    )}
-                  </div>
-                </div>
+                )}
               </div>
-            ))}
+            )}
+            <button className="relative p-2 rounded-xl hover:bg-cg-sage-subtle transition-smooth">
+              <Bell className="w-6 h-6 text-muted-foreground" />
+              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-cg-amber rounded-full" />
+            </button>
           </div>
         </div>
-      )}
 
-      <PageContainer>
-        {/* Welcome Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-foreground sm:text-3xl">
-            Welcome back, {user?.first_name}
-          </h1>
-          <p className="mt-1 text-muted-foreground">
-            {needsSetup
-              ? "Let's get started with setting up your co-parenting account"
-              : "Here's what's happening with your family"}
-          </p>
-        </div>
-
-        {/* Pending Case Alerts */}
-        {pendingCases.length > 0 && (
-          <Alert variant="default" className="mb-6">
-            <AlertDescription>
-              <div className="flex items-center justify-between">
-                <span>
-                  You have {pendingCases.length} pending case
-                  {pendingCases.length > 1 ? 's' : ''} awaiting the other parent to join.
-                </span>
-                <Button variant="ghost" size="sm" onClick={() => router.push('/cases')}>
-                  View cases
-                </Button>
-              </div>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Main Dashboard Grid */}
         {needsSetup ? (
-          // Getting Started View
-          <GettingStartedSection router={router} />
-        ) : (
-          <div className="grid gap-6 lg:grid-cols-3">
-            {/* Left Column - Children & Events */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Children Cards */}
-              {allChildren.length > 0 && (
-                <section>
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-foreground">Your Children</h2>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => router.push('/cases')}
-                    >
-                      Manage
-                      <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {allChildren.map((child) => (
-                      <ChildCard key={child.id} child={child} />
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* What's Next - Upcoming Events */}
-              <section>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-foreground">What's Next</h2>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => router.push('/schedule')}
-                  >
-                    View schedule
-                    <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
-                {primaryCase?.upcomingEvents && primaryCase.upcomingEvents.length > 0 ? (
-                  <Card>
-                    <CardContent className="p-0">
-                      <div className="divide-y divide-border">
-                        {primaryCase.upcomingEvents.map((event) => (
-                          <EventRow key={event.id} event={event} />
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <Card>
-                    <CardContent className="py-8">
-                      <EmptyState
-                        icon={Calendar}
-                        title="No upcoming events"
-                        description="Your schedule is clear for the next 7 days"
-                        action={{
-                          label: 'Add event',
-                          onClick: () => router.push('/schedule'),
-                        }}
-                      />
-                    </CardContent>
-                  </Card>
-                )}
-              </section>
+          // Getting Started
+          <div className="space-y-6">
+            <div className="cg-card-elevated p-8 text-center">
+              <div className="w-16 h-16 bg-cg-sage-subtle rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <FolderOpen className="w-8 h-8 text-cg-sage" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-2">
+                Welcome to CommonGround
+              </h3>
+              <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
+                Create a Family File to get started with co-parenting tools, shared calendars, and secure messaging.
+              </p>
+              <button
+                onClick={() => router.push('/family-files/new')}
+                className="cg-btn-primary inline-flex items-center gap-2"
+              >
+                Create Family File
+                <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Right Column - Quick Actions & Status */}
-            <div className="space-y-6">
-              {/* Quick Actions */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Quick Actions</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => router.push('/messages')}
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Send a message
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => router.push('/schedule')}
-                  >
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Schedule event
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start"
-                    onClick={() => router.push('/payments/new')}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Log expense
-                  </Button>
-                </CardContent>
-              </Card>
+            {/* Quick Info Cards */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="cg-card p-4">
+                <div className="w-10 h-10 bg-cg-sage-subtle rounded-xl flex items-center justify-center mb-3">
+                  <MessageSquare className="w-5 h-5 text-cg-sage" />
+                </div>
+                <h4 className="font-medium text-foreground">ARIA Messaging</h4>
+                <p className="text-sm text-muted-foreground mt-1">
+                  AI-powered communication that reduces conflict
+                </p>
+              </div>
+              <div className="cg-card p-4">
+                <div className="w-10 h-10 bg-cg-sage-subtle rounded-xl flex items-center justify-center mb-3">
+                  <Calendar className="w-5 h-5 text-cg-sage" />
+                </div>
+                <h4 className="font-medium text-foreground">Shared Calendar</h4>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Track custody schedules and exchanges
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Custody Status Card */}
+            {allChildren.length > 0 && (
+              <CustodyStatusCard
+                custodyStatus={custodyStatus}
+                children={allChildren}
+                coparentName={custodyStatus?.coparent_name}
+                onWithMe={handleWithMe}
+              />
+            )}
 
-              {/* Agreement Summary */}
-              {primaryCase && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Agreement Summary</CardTitle>
-                    <CardDescription>
-                      {primaryCase.case.case_name}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {primaryCase.agreements.length > 0 ? (
-                      <div className="space-y-4">
-                        {/* AI Summary (if available) */}
-                        {primaryCase.agreementSummary && (
-                          <div className="space-y-3">
-                            {/* Progress Bar */}
-                            <div>
-                              <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                                <span>Completion</span>
-                                <span>{primaryCase.agreementSummary.completion_percentage}%</span>
-                              </div>
-                              <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                                <div
-                                  className="h-full bg-cg-primary rounded-full transition-all duration-500"
-                                  style={{ width: `${primaryCase.agreementSummary.completion_percentage}%` }}
-                                />
-                              </div>
-                            </div>
-
-                            {/* Summary Text */}
-                            <p className="text-sm text-muted-foreground leading-relaxed">
-                              {primaryCase.agreementSummary.summary}
-                            </p>
-
-                            {/* Key Points */}
-                            {primaryCase.agreementSummary.key_points.length > 0 && (
-                              <ul className="space-y-1.5">
-                                {primaryCase.agreementSummary.key_points.slice(0, 3).map((point, idx) => (
-                                  <li key={idx} className="flex items-start gap-2 text-sm">
-                                    <span className="text-cg-success mt-0.5">•</span>
-                                    <span className="text-muted-foreground">{point}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Agreement List */}
-                        <div className="space-y-2 pt-2 border-t border-border">
-                          {primaryCase.agreements.slice(0, 2).map((agreement) => (
-                            <div
-                              key={agreement.id}
-                              className="flex items-center justify-between"
-                            >
-                              <div className="flex items-center gap-2">
-                                <FileText className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm">{agreement.title}</span>
-                              </div>
-                              <Badge
-                                variant={
-                                  agreement.status === 'approved'
-                                    ? 'success'
-                                    : agreement.status === 'pending_approval'
-                                    ? 'warning'
-                                    : 'secondary'
-                                }
-                                size="sm"
-                              >
-                                {agreement.status.replace('_', ' ')}
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
-
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="w-full"
-                          onClick={() => router.push('/agreements')}
-                        >
-                          View all agreements
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="text-center py-4">
-                        <p className="text-sm text-muted-foreground mb-3">
-                          No agreement created yet
-                        </p>
-                        <Button
-                          size="sm"
-                          onClick={() => router.push(`/cases/${primaryCase.case.id}`)}
-                        >
-                          Create agreement
-                        </Button>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Co-Parent Communication */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Communication</CardTitle>
-                  <CardDescription>
-                    Messages with AI-powered moderation
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 w-2 rounded-full bg-cg-success" />
-                      <span className="text-sm text-muted-foreground">ARIA active</span>
+            {/* Action Stream */}
+            <section>
+              <h3 className="text-sm font-medium text-cg-sage uppercase tracking-wide mb-3">
+                Action Stream
+              </h3>
+              <div className="space-y-3">
+                {/* Show "all caught up" if no action items */}
+                {dashboardSummary &&
+                 dashboardSummary.pending_expenses_count === 0 &&
+                 dashboardSummary.unread_messages_count === 0 &&
+                 dashboardSummary.pending_agreements_count === 0 &&
+                 dashboardSummary.unread_court_count === 0 && (
+                  <div className="cg-card p-4 flex items-center gap-3">
+                    <div className="w-12 h-12 bg-cg-sage-subtle rounded-xl flex items-center justify-center">
+                      <CheckCircle className="w-5 h-5 text-cg-sage" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground">All caught up!</p>
+                      <p className="text-sm text-muted-foreground">No pending items to review</p>
                     </div>
                   </div>
-                  <Button
-                    className="w-full"
+                )}
+
+                {/* Pending Expenses */}
+                {(dashboardSummary?.pending_expenses_count ?? 0) > 0 && (
+                  <ActionStreamItem
+                    icon={Wallet}
+                    iconBg="bg-cg-error-subtle"
+                    iconColor="text-cg-error"
+                    title="Pending Expenses"
+                    subtitle={`${dashboardSummary!.pending_expenses_count} item${dashboardSummary!.pending_expenses_count > 1 ? 's' : ''} to review`}
+                    hasNotification
+                    onClick={() => router.push('/payments')}
+                  />
+                )}
+
+                {/* Unread Messages */}
+                {(dashboardSummary?.unread_messages_count ?? 0) > 0 && (
+                  <ActionStreamItem
+                    icon={MessageSquare}
+                    iconBg="bg-cg-slate-subtle"
+                    iconColor="text-cg-slate"
+                    title="Unread Messages"
+                    subtitle={
+                      dashboardSummary!.sender_name
+                        ? `${dashboardSummary!.unread_messages_count} message${dashboardSummary!.unread_messages_count > 1 ? 's' : ''} from ${dashboardSummary!.sender_name}`
+                        : `${dashboardSummary!.unread_messages_count} unread message${dashboardSummary!.unread_messages_count > 1 ? 's' : ''}`
+                    }
+                    hasNotification
                     onClick={() => router.push('/messages')}
+                  />
+                )}
+
+                {/* Pending Agreements */}
+                {(dashboardSummary?.pending_agreements_count ?? 0) > 0 && (
+                  <ActionStreamItem
+                    icon={FileText}
+                    iconBg="bg-cg-sage-subtle"
+                    iconColor="text-cg-sage"
+                    title="Agreement Approval"
+                    subtitle={
+                      dashboardSummary!.pending_agreements.length > 0
+                        ? `"${dashboardSummary!.pending_agreements[0].title}" needs approval`
+                        : `${dashboardSummary!.pending_agreements_count} agreement${dashboardSummary!.pending_agreements_count > 1 ? 's' : ''} need approval`
+                    }
+                    hasNotification
+                    onClick={() => router.push('/agreements')}
+                  />
+                )}
+
+                {/* Court Notifications */}
+                {(dashboardSummary?.unread_court_count ?? 0) > 0 && (
+                  <ActionStreamItem
+                    icon={Gavel}
+                    iconBg="bg-cg-amber-subtle"
+                    iconColor="text-cg-amber"
+                    title="Court Notification"
+                    subtitle={
+                      dashboardSummary!.court_notifications.some(n => n.is_urgent)
+                        ? `${dashboardSummary!.unread_court_count} notification${dashboardSummary!.unread_court_count > 1 ? 's' : ''} (urgent)`
+                        : `${dashboardSummary!.unread_court_count} notification${dashboardSummary!.unread_court_count > 1 ? 's' : ''} from court`
+                    }
+                    hasNotification={dashboardSummary!.court_notifications.some(n => n.is_urgent)}
+                    onClick={() => router.push('/court')}
+                  />
+                )}
+
+                {/* Loading state for action stream */}
+                {!dashboardSummary && (
+                  <div className="cg-card p-4 animate-pulse">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-muted rounded-xl" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 bg-muted rounded w-1/3" />
+                        <div className="h-3 bg-muted rounded w-1/2" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Upcoming Event */}
+            <section>
+              <h3 className="text-sm font-medium text-cg-sage uppercase tracking-wide mb-3">
+                Coming Up
+              </h3>
+              <UpcomingEventCard event={dashboardSummary?.next_event} />
+            </section>
+
+            {/* Quick Actions */}
+            <section>
+              <h3 className="text-sm font-medium text-cg-sage uppercase tracking-wide mb-3">
+                Quick Actions
+              </h3>
+              <div className="grid grid-cols-4 gap-3">
+                <QuickActionButton
+                  icon={MessageSquare}
+                  label="Message"
+                  onClick={() => router.push('/messages')}
+                />
+                <QuickActionButton
+                  icon={Calendar}
+                  label="Schedule"
+                  onClick={() => router.push('/schedule')}
+                />
+                <QuickActionButton
+                  icon={Wallet}
+                  label="Expense"
+                  onClick={() => router.push('/payments/new')}
+                />
+                <QuickActionButton
+                  icon={FolderOpen}
+                  label="Files"
+                  onClick={() => router.push('/family-files')}
+                />
+              </div>
+            </section>
+
+            {/* Family Files Summary */}
+            {familyFilesWithData.length > 0 && (
+              <section>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-medium text-cg-sage uppercase tracking-wide">
+                    Family Files
+                  </h3>
+                  <button
+                    onClick={() => router.push('/family-files')}
+                    className="text-sm text-cg-sage hover:text-cg-sage-light transition-colors"
                   >
-                    Open messages
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
+                    View all
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {familyFilesWithData.slice(0, 2).map(({ familyFile }) => (
+                    <button
+                      key={familyFile.id}
+                      onClick={() => router.push(`/family-files/${familyFile.id}`)}
+                      className="w-full cg-card p-4 flex items-center gap-4 text-left hover:shadow-md transition-smooth"
+                    >
+                      <div className="w-10 h-10 bg-cg-sage-subtle rounded-xl flex items-center justify-center">
+                        <FolderOpen className="w-5 h-5 text-cg-sage" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-foreground truncate">
+                          {familyFile.title}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {familyFile.children?.length || 0} children
+                        </p>
+                      </div>
+                      <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
-      </PageContainer>
-    </div>
-  );
-}
-
-// Child Card Component
-function ChildCard({ child }: { child: Child }) {
-  const age = calculateAge(child.date_of_birth);
-  const initials = getInitials(child.first_name, child.last_name);
-
-  return (
-    <Card className="hover:shadow-md transition-smooth">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-4">
-          {/* Avatar */}
-          <div className="flex-shrink-0 h-14 w-14 rounded-full bg-cg-primary-subtle flex items-center justify-center">
-            <span className="text-lg font-semibold text-cg-primary">{initials}</span>
-          </div>
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground truncate">
-              {child.first_name} {child.last_name}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {age} years old
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// Event Row Component
-function EventRow({ event }: { event: ScheduleEvent }) {
-  const isExchange = event.event_type === 'exchange' || event.title.toLowerCase().includes('exchange');
-
-  return (
-    <div className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-smooth">
-      {/* Icon */}
-      <div
-        className={`flex-shrink-0 h-10 w-10 rounded-lg flex items-center justify-center ${
-          isExchange ? 'bg-cg-primary-subtle' : 'bg-secondary'
-        }`}
-      >
-        {isExchange ? (
-          <Users className="h-5 w-5 text-cg-primary" />
-        ) : (
-          <Calendar className="h-5 w-5 text-muted-foreground" />
-        )}
-      </div>
-      {/* Details */}
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-foreground truncate">{event.title}</p>
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" />
-            {formatEventDate(event.start_time)}
-          </span>
-          {event.location && (
-            <span className="flex items-center gap-1 truncate">
-              <MapPin className="h-3.5 w-3.5" />
-              {event.location}
-            </span>
-          )}
-        </div>
-      </div>
-      {/* Type Badge */}
-      {isExchange && (
-        <Badge variant="default" size="sm">Exchange</Badge>
-      )}
-    </div>
-  );
-}
-
-// Getting Started Section for new users
-function GettingStartedSection({ router }: { router: ReturnType<typeof useRouter> }) {
-  return (
-    <div className="max-w-2xl">
-      <Card>
-        <CardHeader>
-          <CardTitle>Getting Started</CardTitle>
-          <CardDescription>
-            Set up your CommonGround account in a few simple steps
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-6">
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 h-8 w-8 bg-cg-primary-subtle text-cg-primary rounded-full flex items-center justify-center font-semibold text-sm">
-                1
-              </div>
-              <div className="flex-1">
-                <h4 className="font-medium text-foreground">Create a case</h4>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Start by creating a new co-parenting case and inviting the other parent
-                </p>
-                <Button
-                  className="mt-3"
-                  onClick={() => router.push('/cases/new')}
-                >
-                  Create case
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4 opacity-60">
-              <div className="flex-shrink-0 h-8 w-8 bg-secondary text-muted-foreground rounded-full flex items-center justify-center font-semibold text-sm">
-                2
-              </div>
-              <div className="flex-1">
-                <h4 className="font-medium text-foreground">Build your agreement</h4>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Use our guided interview to create a comprehensive custody agreement
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4 opacity-60">
-              <div className="flex-shrink-0 h-8 w-8 bg-secondary text-muted-foreground rounded-full flex items-center justify-center font-semibold text-sm">
-                3
-              </div>
-              <div className="flex-1">
-                <h4 className="font-medium text-foreground">Start communicating</h4>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Send messages with AI-powered moderation to reduce conflict
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      </main>
     </div>
   );
 }

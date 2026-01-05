@@ -109,7 +109,8 @@ class ChildUpdateEmergencyContacts(BaseModel):
 class ChildBasicResponse(BaseModel):
     """Basic child response for lists."""
     id: str
-    case_id: str
+    case_id: Optional[str] = None
+    family_file_id: Optional[str] = None
     first_name: str
     last_name: str
     preferred_name: Optional[str] = None
@@ -128,7 +129,8 @@ class ChildBasicResponse(BaseModel):
 class ChildProfileResponse(BaseModel):
     """Full child profile response."""
     id: str
-    case_id: str
+    case_id: Optional[str] = None
+    family_file_id: Optional[str] = None
 
     # Status & Approval
     status: str

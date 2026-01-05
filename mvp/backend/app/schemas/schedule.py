@@ -28,7 +28,8 @@ class MyTimeCollectionResponse(BaseModel):
     """My Time collection response (privacy filtered)."""
 
     id: str
-    case_id: str
+    case_id: Optional[str] = None  # Optional - can be None for family-file-only collections
+    family_file_id: Optional[str] = None  # Optional - for family file context
     owner_id: str
     name: str  # Filtered for non-owners
     color: str  # Filtered for non-owners
@@ -131,6 +132,7 @@ class ScheduleEventCreate(BaseModel):
     """Create a new schedule event."""
 
     collection_id: str
+    agreement_id: Optional[str] = None  # SharedCare Agreement context
     title: str = Field(..., min_length=1)
     start_time: datetime
     end_time: datetime
@@ -170,8 +172,10 @@ class ScheduleEventResponse(BaseModel):
     """Schedule event response (privacy filtered)."""
 
     id: str
-    case_id: str
+    case_id: Optional[str] = None  # Court case context (legacy)
+    family_file_id: Optional[str] = None  # Family file context
     collection_id: Optional[str] = None
+    agreement_id: Optional[str] = None  # SharedCare Agreement context
     created_by: Optional[str] = None
     title: str  # Filtered for non-creators
     description: Optional[str] = None  # Filtered

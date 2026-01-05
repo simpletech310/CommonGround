@@ -2,32 +2,315 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import Link from 'next/link';
 import { childrenAPI, ChildProfile } from '@/lib/api';
+import { Navigation } from '@/components/navigation';
+import { ProtectedRoute } from '@/components/protected-route';
+import {
+  ArrowLeft,
+  User,
+  Heart,
+  GraduationCap,
+  Star,
+  Phone,
+  Pencil,
+  X,
+  Check,
+  Loader2,
+  Package,
+  AlertCircle,
+  Clock,
+  CheckCircle,
+  Stethoscope,
+  Calendar,
+  Shirt,
+  Moon,
+  Activity,
+  Users,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 
-const TABS = [
-  { id: 'basic', label: 'Basic Info' },
-  { id: 'medical', label: 'Medical' },
-  { id: 'education', label: 'Education' },
-  { id: 'preferences', label: 'Preferences' },
-  { id: 'emergency', label: 'Emergency' },
-];
+/* =============================================================================
+   HELPER FUNCTIONS
+   ============================================================================= */
 
-function calculateAge(dateOfBirth: string): number {
+function calculateAge(dateOfBirth: string): { years: number; months: number } {
   const today = new Date();
   const birth = new Date(dateOfBirth);
-  let age = today.getFullYear() - birth.getFullYear();
-  const monthDiff = today.getMonth() - birth.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-    age--;
+  let years = today.getFullYear() - birth.getFullYear();
+  let months = today.getMonth() - birth.getMonth();
+
+  if (months < 0 || (months === 0 && today.getDate() < birth.getDate())) {
+    years--;
+    months += 12;
   }
-  return age;
+
+  return { years, months };
 }
 
-export default function ChildProfilePage() {
+function formatAge(dateOfBirth: string): string {
+  const { years, months } = calculateAge(dateOfBirth);
+  if (years < 2) {
+    return `${years * 12 + months} months`;
+  }
+  return `${years} years old`;
+}
+
+/* =============================================================================
+   TAB DEFINITIONS
+   ============================================================================= */
+
+const TABS = [
+  { id: 'basic', label: 'About', icon: User },
+  { id: 'medical', label: 'Medical', icon: Heart },
+  { id: 'education', label: 'Education', icon: GraduationCap },
+  { id: 'preferences', label: 'Preferences', icon: Star },
+  { id: 'emergency', label: 'Emergency', icon: Phone },
+];
+
+/* =============================================================================
+   HELPER COMPONENTS - Scrapbook Aesthetic
+   ============================================================================= */
+
+function TabButton({
+  tab,
+  isActive,
+  onClick,
+}: {
+  tab: typeof TABS[0];
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const Icon = tab.icon;
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${
+        isActive
+          ? 'bg-cg-sage text-white shadow-md'
+          : 'bg-transparent text-muted-foreground hover:bg-cg-sage-subtle hover:text-cg-sage'
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      <span className="hidden sm:inline">{tab.label}</span>
+    </button>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { icon: React.ReactNode; className: string; label: string }> = {
+    active: {
+      icon: <CheckCircle className="h-3.5 w-3.5" />,
+      className: 'bg-cg-success-subtle text-cg-success border-cg-success/20',
+      label: 'Active',
+    },
+    pending_approval: {
+      icon: <Clock className="h-3.5 w-3.5" />,
+      className: 'bg-cg-amber-subtle text-cg-amber border-cg-amber/20',
+      label: 'Pending Approval',
+    },
+    archived: {
+      icon: <X className="h-3.5 w-3.5" />,
+      className: 'bg-muted text-muted-foreground border-border',
+      label: 'Archived',
+    },
+  };
+
+  const { icon, className, label } = config[status] || config.active;
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full border ${className}`}>
+      {icon}
+      {label}
+    </span>
+  );
+}
+
+function InfoField({
+  label,
+  value,
+  emptyText = 'Not specified',
+  className = '',
+}: {
+  label: string;
+  value: string | null | undefined;
+  emptyText?: string;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+        {label}
+      </p>
+      <p className={`text-foreground ${value ? '' : 'text-muted-foreground italic'}`}>
+        {value || emptyText}
+      </p>
+    </div>
+  );
+}
+
+function SectionCard({
+  title,
+  icon,
+  children,
+  onEdit,
+  canEdit,
+  editMode,
+  onSave,
+  onCancel,
+  isSaving,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  onEdit?: () => void;
+  canEdit?: boolean;
+  editMode?: boolean;
+  onSave?: () => void;
+  onCancel?: () => void;
+  isSaving?: boolean;
+}) {
+  return (
+    <div className="cg-card overflow-hidden">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-border bg-gradient-to-r from-cg-sage-subtle/30 to-transparent flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-cg-sage-subtle flex items-center justify-center">
+            {icon}
+          </div>
+          <h3 className="font-semibold text-foreground">{title}</h3>
+        </div>
+
+        {editMode ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onCancel}
+              disabled={isSaving}
+              className="p-2 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <button
+              onClick={onSave}
+              disabled={isSaving}
+              className="p-2 rounded-lg bg-cg-sage text-white hover:bg-cg-sage-light transition-colors disabled:opacity-50"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            </button>
+          </div>
+        ) : canEdit ? (
+          <button
+            onClick={onEdit}
+            className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-cg-sage transition-colors"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+
+      {/* Content */}
+      <div className="p-6">{children}</div>
+    </div>
+  );
+}
+
+function FormInput({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  placeholder,
+  className = '',
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  placeholder?: string;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+        {label}
+      </label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="cg-input"
+      />
+    </div>
+  );
+}
+
+function FormTextarea({
+  label,
+  value,
+  onChange,
+  placeholder,
+  rows = 3,
+  className = '',
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  rows?: number;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+        {label}
+      </label>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        className="cg-input resize-none"
+      />
+    </div>
+  );
+}
+
+function FormSelect({
+  label,
+  value,
+  onChange,
+  options,
+  className = '',
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+        {label}
+      </label>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="cg-input">
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/* =============================================================================
+   MAIN COMPONENT
+   ============================================================================= */
+
+function ChildProfileContent() {
   const params = useParams();
   const router = useRouter();
   const caseId = params.id as string;
@@ -41,7 +324,7 @@ export default function ChildProfilePage() {
   const [activeTab, setActiveTab] = useState('basic');
   const [editMode, setEditMode] = useState(false);
 
-  // Form states for each section
+  // Form states
   const [basicForm, setBasicForm] = useState({
     first_name: '',
     middle_name: '',
@@ -90,8 +373,10 @@ export default function ChildProfilePage() {
     calming_strategies: '',
   });
 
-  const [emergencyForm, setEmergencyForm] = useState({
-    emergency_contacts: [] as { name: string; relationship: string; phone: string }[],
+  const [emergencyForm, setEmergencyForm] = useState<{
+    emergency_contacts: { name: string; relationship: string; phone: string }[];
+  }>({
+    emergency_contacts: [],
   });
 
   useEffect(() => {
@@ -104,70 +389,73 @@ export default function ChildProfilePage() {
       setError(null);
       const data = await childrenAPI.get(childId);
       setChild(data);
-
-      // Populate forms
-      setBasicForm({
-        first_name: data.first_name || '',
-        middle_name: data.middle_name || '',
-        last_name: data.last_name || '',
-        preferred_name: data.preferred_name || '',
-        date_of_birth: data.date_of_birth || '',
-        gender: data.gender || '',
-      });
-
-      setMedicalForm({
-        allergies: data.allergies || '',
-        medications: data.medications || '',
-        medical_conditions: data.medical_conditions || '',
-        blood_type: data.blood_type || '',
-        pediatrician_name: data.pediatrician_name || '',
-        pediatrician_phone: data.pediatrician_phone || '',
-        dentist_name: data.dentist_name || '',
-        dentist_phone: data.dentist_phone || '',
-        therapist_name: data.therapist_name || '',
-        therapist_phone: data.therapist_phone || '',
-        insurance_provider: data.insurance_provider || '',
-        insurance_policy_number: data.insurance_policy_number || '',
-      });
-
-      setEducationForm({
-        school_name: data.school_name || '',
-        school_phone: data.school_phone || '',
-        grade_level: data.grade_level || '',
-        teacher_name: data.teacher_name || '',
-        teacher_email: data.teacher_email || '',
-        has_iep: data.has_iep || false,
-        has_504_plan: data.has_504_plan || false,
-        education_notes: data.education_notes || '',
-      });
-
-      setPreferencesForm({
-        favorite_foods: data.favorite_foods || '',
-        food_dislikes: data.food_dislikes || '',
-        favorite_activities: data.favorite_activities || '',
-        comfort_items: data.comfort_items || '',
-        bedtime_routine: data.bedtime_routine || '',
-        clothing_size: data.clothing_size || '',
-        shoe_size: data.shoe_size || '',
-        temperament_notes: data.temperament_notes || '',
-        fears_anxieties: data.fears_anxieties || '',
-        calming_strategies: data.calming_strategies || '',
-      });
-
-      if (data.emergency_contacts) {
-        try {
-          const contacts = typeof data.emergency_contacts === 'string'
-            ? JSON.parse(data.emergency_contacts)
-            : data.emergency_contacts;
-          setEmergencyForm({ emergency_contacts: contacts });
-        } catch {
-          setEmergencyForm({ emergency_contacts: [] });
-        }
-      }
+      populateForms(data);
     } catch (err: any) {
       setError(err.message || 'Failed to load child profile');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const populateForms = (data: ChildProfile) => {
+    setBasicForm({
+      first_name: data.first_name || '',
+      middle_name: data.middle_name || '',
+      last_name: data.last_name || '',
+      preferred_name: data.preferred_name || '',
+      date_of_birth: data.date_of_birth || '',
+      gender: data.gender || '',
+    });
+
+    setMedicalForm({
+      allergies: data.allergies || '',
+      medications: data.medications || '',
+      medical_conditions: data.medical_conditions || '',
+      blood_type: data.blood_type || '',
+      pediatrician_name: data.pediatrician_name || '',
+      pediatrician_phone: data.pediatrician_phone || '',
+      dentist_name: data.dentist_name || '',
+      dentist_phone: data.dentist_phone || '',
+      therapist_name: data.therapist_name || '',
+      therapist_phone: data.therapist_phone || '',
+      insurance_provider: data.insurance_provider || '',
+      insurance_policy_number: data.insurance_policy_number || '',
+    });
+
+    setEducationForm({
+      school_name: data.school_name || '',
+      school_phone: data.school_phone || '',
+      grade_level: data.grade_level || '',
+      teacher_name: data.teacher_name || '',
+      teacher_email: data.teacher_email || '',
+      has_iep: data.has_iep || false,
+      has_504_plan: data.has_504_plan || false,
+      education_notes: data.education_notes || '',
+    });
+
+    setPreferencesForm({
+      favorite_foods: data.favorite_foods || '',
+      food_dislikes: data.food_dislikes || '',
+      favorite_activities: data.favorite_activities || '',
+      comfort_items: data.comfort_items || '',
+      bedtime_routine: data.bedtime_routine || '',
+      clothing_size: data.clothing_size || '',
+      shoe_size: data.shoe_size || '',
+      temperament_notes: data.temperament_notes || '',
+      fears_anxieties: data.fears_anxieties || '',
+      calming_strategies: data.calming_strategies || '',
+    });
+
+    if (data.emergency_contacts) {
+      try {
+        const contacts =
+          typeof data.emergency_contacts === 'string'
+            ? JSON.parse(data.emergency_contacts)
+            : data.emergency_contacts;
+        setEmergencyForm({ emergency_contacts: contacts });
+      } catch {
+        setEmergencyForm({ emergency_contacts: [] });
+      }
     }
   };
 
@@ -185,76 +473,17 @@ export default function ChildProfilePage() {
     }
   };
 
-  const handleSaveBasic = async () => {
+  const handleSave = async (saveFunction: () => Promise<void>) => {
     try {
       setSaving(true);
       setError(null);
-      await childrenAPI.updateBasic(childId, basicForm);
-      setSuccess('Basic information saved!');
+      await saveFunction();
+      setSuccess('Changes saved!');
       setEditMode(false);
       loadChild();
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
-      setError(err.message || 'Failed to save basic information');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveMedical = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      await childrenAPI.updateMedical(childId, medicalForm);
-      setSuccess('Medical information saved!');
-      setEditMode(false);
-      loadChild();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save medical information');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveEducation = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      await childrenAPI.updateEducation(childId, educationForm);
-      setSuccess('Education information saved!');
-      setEditMode(false);
-      loadChild();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save education information');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSavePreferences = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      await childrenAPI.updatePreferences(childId, preferencesForm);
-      setSuccess('Preferences saved!');
-      setEditMode(false);
-      loadChild();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save preferences');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveEmergency = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      await childrenAPI.updateEmergencyContacts(childId, emergencyForm);
-      setSuccess('Emergency contacts saved!');
-      setEditMode(false);
-      loadChild();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save emergency contacts');
+      setError(err.message || 'Failed to save changes');
     } finally {
       setSaving(false);
     }
@@ -262,10 +491,7 @@ export default function ChildProfilePage() {
 
   const addEmergencyContact = () => {
     setEmergencyForm({
-      emergency_contacts: [
-        ...emergencyForm.emergency_contacts,
-        { name: '', relationship: '', phone: '' },
-      ],
+      emergency_contacts: [...emergencyForm.emergency_contacts, { name: '', relationship: '', phone: '' }],
     });
   };
 
@@ -281,953 +507,835 @@ export default function ChildProfilePage() {
     setEmergencyForm({ emergency_contacts: contacts });
   };
 
-  if (loading) {
-    return (
-      <div className="container mx-auto py-8">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!child) {
-    return (
-      <div className="container mx-auto py-8">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="text-red-600 mb-4">{error || 'Child not found'}</p>
-              <Button onClick={() => router.push(`/cases/${caseId}/children`)}>
-                Back to Children
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  const isPending = child.status === 'pending_approval';
-  const age = calculateAge(child.date_of_birth);
+  const canEdit = child?.status === 'active';
 
   return (
-    <div className="container mx-auto py-8">
-      {/* Header */}
-      <div className="flex justify-between items-start mb-6">
-        <Button
-          variant="ghost"
-          onClick={() => router.push(`/cases/${caseId}/children`)}
-        >
-          &larr; Back to Children
-        </Button>
+    <div className="min-h-screen bg-cg-sand">
+      <Navigation />
+
+      {/* Back Link */}
+      <div className="bg-card border-b border-border">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <Link
+            href={`/cases/${caseId}/children`}
+            className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-cg-sage transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Children
+          </Link>
+        </div>
       </div>
 
-      {/* Pending Approval Banner */}
-      {isPending && (
-        <Card className="mb-6 bg-yellow-50 border-yellow-300">
-          <CardContent className="pt-6">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Loading State */}
+        {loading && (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <Loader2 className="h-12 w-12 animate-spin text-cg-sage mx-auto" />
+              <p className="mt-4 text-muted-foreground">Loading profile...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && !child && (
+          <div className="cg-card p-6 bg-cg-error-subtle border-cg-error/20">
             <div className="flex items-start gap-4">
-              <div className="text-2xl">⏳</div>
-              <div className="flex-1">
-                <h3 className="font-semibold text-yellow-900">Pending Approval</h3>
-                <p className="text-sm text-yellow-800 mb-4">
-                  This profile is awaiting approval from the other parent.
-                  Once both parents approve, the profile will become active and
-                  both parents can add additional information.
-                </p>
-                <Button onClick={handleApprove} disabled={saving}>
-                  {saving ? 'Approving...' : 'Approve This Profile'}
-                </Button>
+              <AlertCircle className="h-6 w-6 text-cg-error flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-cg-error">Error Loading Profile</p>
+                <p className="text-sm text-cg-error/80 mt-1">{error}</p>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <button onClick={() => router.push(`/cases/${caseId}/children`)} className="mt-4 cg-btn-secondary">
+              Back to Children
+            </button>
+          </div>
+        )}
 
-      {/* Profile Header */}
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-6">
-            {/* Profile Photo */}
-            <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
-              {child.photo_url ? (
-                <img
-                  src={child.photo_url}
-                  alt={`${child.first_name}'s photo`}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <span className="text-4xl">👤</span>
-              )}
-            </div>
+        {/* Success Message */}
+        {success && (
+          <div className="mb-6 p-4 bg-cg-success-subtle border border-cg-success/20 rounded-xl flex items-center gap-3">
+            <CheckCircle className="h-5 w-5 text-cg-success flex-shrink-0" />
+            <p className="text-sm text-cg-success font-medium">{success}</p>
+          </div>
+        )}
 
-            {/* Profile Info */}
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                <h1 className="text-2xl font-bold">
-                  {child.preferred_name || child.first_name} {child.last_name}
-                </h1>
-                <span
-                  className={`text-xs px-2 py-1 rounded-full ${
-                    child.status === 'active'
-                      ? 'bg-green-100 text-green-800'
-                      : child.status === 'pending_approval'
-                      ? 'bg-yellow-100 text-yellow-800'
-                      : 'bg-gray-100 text-gray-500'
-                  }`}
-                >
-                  {child.status === 'active'
-                    ? 'Active'
-                    : child.status === 'pending_approval'
-                    ? 'Pending Approval'
-                    : 'Archived'}
-                </span>
-              </div>
-              <p className="text-gray-600">
-                {age} years old
-                {child.school_name && ` • ${child.school_name}`}
-                {child.grade_level && `, ${child.grade_level}`}
-              </p>
-              {child.preferred_name && child.preferred_name !== child.first_name && (
-                <p className="text-sm text-gray-500">
-                  Full name: {child.first_name} {child.middle_name} {child.last_name}
-                </p>
-              )}
-            </div>
+        {/* Error Message */}
+        {error && child && (
+          <div className="mb-6 p-4 bg-cg-error-subtle border border-cg-error/20 rounded-xl flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-cg-error flex-shrink-0" />
+            <p className="text-sm text-cg-error font-medium">{error}</p>
+          </div>
+        )}
 
-            {/* Quick Actions */}
-            {child.status === 'active' && (
-              <div className="ml-auto">
-                <Button
-                  onClick={() => router.push(`/cases/${caseId}/children/${childId}/cubbie`)}
-                >
-                  📦 {child.first_name}'s Cubbie
-                </Button>
+        {/* Main Content */}
+        {!loading && child && (
+          <div className="space-y-6">
+            {/* Pending Approval Banner */}
+            {child.status === 'pending_approval' && (
+              <div className="cg-card p-5 bg-cg-amber-subtle/50 border-cg-amber/20">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-cg-amber/20 flex items-center justify-center flex-shrink-0">
+                    <Clock className="h-6 w-6 text-cg-amber" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-foreground">Pending Approval</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      This profile is waiting for approval from the other parent. Once both parents approve, the profile
+                      becomes active.
+                    </p>
+                    <button
+                      onClick={handleApprove}
+                      disabled={saving}
+                      className="mt-4 cg-btn-primary text-sm py-2"
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Approving...
+                        </>
+                      ) : (
+                        'Approve This Profile'
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Success/Error Messages */}
-      {success && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md text-green-600 text-sm">
-          {success}
-        </div>
-      )}
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-600 text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="flex gap-2 mb-6 border-b">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => {
-              setActiveTab(tab.id);
-              setEditMode(false);
-              setError(null);
-              setSuccess(null);
-            }}
-            className={`px-4 py-2 border-b-2 transition-colors ${
-              activeTab === tab.id
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Content */}
-      <Card>
-        <CardContent className="pt-6">
-          {/* Basic Info Tab */}
-          {activeTab === 'basic' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Basic Information</h2>
-                {!editMode && child.status === 'active' && (
-                  <Button variant="outline" onClick={() => setEditMode(true)}>
-                    Edit
-                  </Button>
-                )}
+            {/* Profile Header - Scrapbook Style */}
+            <div className="cg-card overflow-hidden">
+              {/* Decorative Header */}
+              <div className="h-24 bg-gradient-to-r from-cg-sage via-cg-sage-light to-cg-amber relative">
+                <div className="absolute inset-0 opacity-20">
+                  <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                    <defs>
+                      <pattern id="hearts" patternUnits="userSpaceOnUse" width="20" height="20">
+                        <path
+                          d="M10 6 Q8 2 5 4 Q2 6 2 9 Q2 12 10 18 Q18 12 18 9 Q18 6 15 4 Q12 2 10 6"
+                          fill="currentColor"
+                          className="text-white"
+                        />
+                      </pattern>
+                    </defs>
+                    <rect width="100%" height="100%" fill="url(#hearts)" />
+                  </svg>
+                </div>
               </div>
 
-              {editMode ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>First Name</Label>
-                      <Input
+              {/* Profile Photo & Info */}
+              <div className="px-6 pb-6 -mt-12">
+                <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                  {/* Photo */}
+                  <div className="w-24 h-24 rounded-2xl bg-white shadow-lg border-4 border-white overflow-hidden flex-shrink-0">
+                    {child.photo_url ? (
+                      <img src={child.photo_url} alt={child.first_name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-cg-sage-subtle to-cg-amber-subtle flex items-center justify-center">
+                        <span className="text-4xl">
+                          {child.gender === 'male' ? '👦' : child.gender === 'female' ? '👧' : '👶'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 pt-2">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h1 className="text-2xl font-bold text-foreground">
+                          {child.preferred_name || child.first_name} {child.last_name}
+                        </h1>
+                        <p className="text-muted-foreground mt-1">
+                          {formatAge(child.date_of_birth)}
+                          {child.school_name && ` • ${child.school_name}`}
+                          {child.grade_level && `, ${child.grade_level}`}
+                        </p>
+                        {child.preferred_name && child.preferred_name !== child.first_name && (
+                          <p className="text-sm text-muted-foreground mt-0.5">
+                            Full name: {child.first_name} {child.middle_name} {child.last_name}
+                          </p>
+                        )}
+                      </div>
+                      <StatusBadge status={child.status} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Actions */}
+                {child.status === 'active' && (
+                  <div className="mt-6 pt-4 border-t border-border">
+                    <Link href={`/cases/${caseId}/children/${childId}/cubbie`}>
+                      <button className="cg-btn-secondary text-sm py-2.5">
+                        <Package className="h-4 w-4 mr-2" />
+                        {child.first_name}'s Cubbie
+                      </button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+              {TABS.map((tab) => (
+                <TabButton
+                  key={tab.id}
+                  tab={tab}
+                  isActive={activeTab === tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    setEditMode(false);
+                    setError(null);
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Tab Content */}
+            {/* Basic Info Tab */}
+            {activeTab === 'basic' && (
+              <SectionCard
+                title="About"
+                icon={<User className="h-4 w-4 text-cg-sage" />}
+                canEdit={canEdit}
+                editMode={editMode}
+                onEdit={() => setEditMode(true)}
+                onCancel={() => {
+                  setEditMode(false);
+                  populateForms(child);
+                }}
+                onSave={() =>
+                  handleSave(async () => {
+                    await childrenAPI.updateBasic(childId, basicForm);
+                  })
+                }
+                isSaving={saving}
+              >
+                {editMode ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormInput
+                        label="First Name"
                         value={basicForm.first_name}
-                        onChange={(e) =>
-                          setBasicForm({ ...basicForm, first_name: e.target.value })
-                        }
+                        onChange={(v) => setBasicForm({ ...basicForm, first_name: v })}
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Middle Name</Label>
-                      <Input
+                      <FormInput
+                        label="Middle Name"
                         value={basicForm.middle_name}
-                        onChange={(e) =>
-                          setBasicForm({ ...basicForm, middle_name: e.target.value })
-                        }
+                        onChange={(v) => setBasicForm({ ...basicForm, middle_name: v })}
                       />
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Last Name</Label>
-                    <Input
+                    <FormInput
+                      label="Last Name"
                       value={basicForm.last_name}
-                      onChange={(e) =>
-                        setBasicForm({ ...basicForm, last_name: e.target.value })
-                      }
+                      onChange={(v) => setBasicForm({ ...basicForm, last_name: v })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Preferred Name</Label>
-                    <Input
+                    <FormInput
+                      label="Preferred Name"
                       value={basicForm.preferred_name}
-                      onChange={(e) =>
-                        setBasicForm({ ...basicForm, preferred_name: e.target.value })
-                      }
+                      onChange={(v) => setBasicForm({ ...basicForm, preferred_name: v })}
+                      placeholder="Nickname or name they go by"
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Date of Birth</Label>
-                    <Input
+                    <FormInput
+                      label="Date of Birth"
                       type="date"
                       value={basicForm.date_of_birth}
-                      onChange={(e) =>
-                        setBasicForm({ ...basicForm, date_of_birth: e.target.value })
-                      }
+                      onChange={(v) => setBasicForm({ ...basicForm, date_of_birth: v })}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Gender</Label>
-                    <select
+                    <FormSelect
+                      label="Gender"
                       value={basicForm.gender}
-                      onChange={(e) =>
-                        setBasicForm({ ...basicForm, gender: e.target.value })
+                      onChange={(v) => setBasicForm({ ...basicForm, gender: v })}
+                      options={[
+                        { value: '', label: 'Prefer not to say' },
+                        { value: 'male', label: 'Male' },
+                        { value: 'female', label: 'Female' },
+                        { value: 'non_binary', label: 'Non-binary' },
+                        { value: 'other', label: 'Other' },
+                      ]}
+                    />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-6">
+                    <InfoField label="First Name" value={child.first_name} />
+                    <InfoField label="Middle Name" value={child.middle_name} />
+                    <InfoField label="Last Name" value={child.last_name} />
+                    <InfoField label="Preferred Name" value={child.preferred_name} />
+                    <InfoField
+                      label="Date of Birth"
+                      value={
+                        child.date_of_birth
+                          ? new Date(child.date_of_birth).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                            })
+                          : null
                       }
-                      className="w-full p-2 border rounded-md"
-                    >
-                      <option value="">Prefer not to say</option>
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="non_binary">Non-binary</option>
-                      <option value="other">Other</option>
-                    </select>
+                    />
+                    <InfoField label="Gender" value={child.gender ? child.gender.replace('_', '-') : null} />
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => setEditMode(false)}>
-                      Cancel
-                    </Button>
-                    <Button onClick={handleSaveBasic} disabled={saving}>
-                      {saving ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-gray-500">First Name</Label>
-                      <p>{child.first_name}</p>
-                    </div>
-                    <div>
-                      <Label className="text-gray-500">Middle Name</Label>
-                      <p>{child.middle_name || '-'}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Last Name</Label>
-                    <p>{child.last_name}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Preferred Name</Label>
-                    <p>{child.preferred_name || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Date of Birth</Label>
-                    <p>
-                      {new Date(child.date_of_birth).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                      })}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Gender</Label>
-                    <p>{child.gender || 'Not specified'}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Medical Tab */}
-          {activeTab === 'medical' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Medical Information</h2>
-                {!editMode && child.status === 'active' && (
-                  <Button variant="outline" onClick={() => setEditMode(true)}>
-                    Edit
-                  </Button>
                 )}
-              </div>
+              </SectionCard>
+            )}
 
-              {editMode ? (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Allergies</Label>
-                    <textarea
+            {/* Medical Tab */}
+            {activeTab === 'medical' && (
+              <SectionCard
+                title="Medical Information"
+                icon={<Heart className="h-4 w-4 text-cg-sage" />}
+                canEdit={canEdit}
+                editMode={editMode}
+                onEdit={() => setEditMode(true)}
+                onCancel={() => {
+                  setEditMode(false);
+                  populateForms(child);
+                }}
+                onSave={() =>
+                  handleSave(async () => {
+                    await childrenAPI.updateMedical(childId, medicalForm);
+                  })
+                }
+                isSaving={saving}
+              >
+                {editMode ? (
+                  <div className="space-y-6">
+                    <FormTextarea
+                      label="Allergies"
                       value={medicalForm.allergies}
-                      onChange={(e) =>
-                        setMedicalForm({ ...medicalForm, allergies: e.target.value })
-                      }
-                      className="w-full p-2 border rounded-md min-h-[80px]"
-                      placeholder="List any allergies (food, medication, environmental)"
+                      onChange={(v) => setMedicalForm({ ...medicalForm, allergies: v })}
+                      placeholder="Food, medication, environmental allergies"
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Medications</Label>
-                    <textarea
+                    <FormTextarea
+                      label="Medications"
                       value={medicalForm.medications}
-                      onChange={(e) =>
-                        setMedicalForm({ ...medicalForm, medications: e.target.value })
-                      }
-                      className="w-full p-2 border rounded-md min-h-[80px]"
-                      placeholder="List any medications and dosages"
+                      onChange={(v) => setMedicalForm({ ...medicalForm, medications: v })}
+                      placeholder="Current medications and dosages"
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Medical Conditions</Label>
-                    <textarea
+                    <FormTextarea
+                      label="Medical Conditions"
                       value={medicalForm.medical_conditions}
-                      onChange={(e) =>
-                        setMedicalForm({ ...medicalForm, medical_conditions: e.target.value })
-                      }
-                      className="w-full p-2 border rounded-md min-h-[80px]"
-                      placeholder="Any ongoing medical conditions or health concerns"
+                      onChange={(v) => setMedicalForm({ ...medicalForm, medical_conditions: v })}
+                      placeholder="Ongoing conditions or health concerns"
                     />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Blood Type</Label>
-                      <select
-                        value={medicalForm.blood_type}
-                        onChange={(e) =>
-                          setMedicalForm({ ...medicalForm, blood_type: e.target.value })
-                        }
-                        className="w-full p-2 border rounded-md"
-                      >
-                        <option value="">Unknown</option>
-                        <option value="A+">A+</option>
-                        <option value="A-">A-</option>
-                        <option value="B+">B+</option>
-                        <option value="B-">B-</option>
-                        <option value="AB+">AB+</option>
-                        <option value="AB-">AB-</option>
-                        <option value="O+">O+</option>
-                        <option value="O-">O-</option>
-                      </select>
-                    </div>
-                  </div>
-                  <h3 className="font-medium pt-4">Healthcare Providers</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Pediatrician Name</Label>
-                      <Input
-                        value={medicalForm.pediatrician_name}
-                        onChange={(e) =>
-                          setMedicalForm({ ...medicalForm, pediatrician_name: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Pediatrician Phone</Label>
-                      <Input
-                        value={medicalForm.pediatrician_phone}
-                        onChange={(e) =>
-                          setMedicalForm({ ...medicalForm, pediatrician_phone: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Dentist Name</Label>
-                      <Input
-                        value={medicalForm.dentist_name}
-                        onChange={(e) =>
-                          setMedicalForm({ ...medicalForm, dentist_name: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Dentist Phone</Label>
-                      <Input
-                        value={medicalForm.dentist_phone}
-                        onChange={(e) =>
-                          setMedicalForm({ ...medicalForm, dentist_phone: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Therapist/Counselor Name</Label>
-                      <Input
-                        value={medicalForm.therapist_name}
-                        onChange={(e) =>
-                          setMedicalForm({ ...medicalForm, therapist_name: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Therapist/Counselor Phone</Label>
-                      <Input
-                        value={medicalForm.therapist_phone}
-                        onChange={(e) =>
-                          setMedicalForm({ ...medicalForm, therapist_phone: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <h3 className="font-medium pt-4">Insurance</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Insurance Provider</Label>
-                      <Input
-                        value={medicalForm.insurance_provider}
-                        onChange={(e) =>
-                          setMedicalForm({ ...medicalForm, insurance_provider: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Policy Number</Label>
-                      <Input
-                        value={medicalForm.insurance_policy_number}
-                        onChange={(e) =>
-                          setMedicalForm({ ...medicalForm, insurance_policy_number: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2 pt-4">
-                    <Button variant="outline" onClick={() => setEditMode(false)}>
-                      Cancel
-                    </Button>
-                    <Button onClick={handleSaveMedical} disabled={saving}>
-                      {saving ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-gray-500">Allergies</Label>
-                    <p>{child.allergies || 'None reported'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Medications</Label>
-                    <p>{child.medications || 'None'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Medical Conditions</Label>
-                    <p>{child.medical_conditions || 'None reported'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Blood Type</Label>
-                    <p>{child.blood_type || 'Unknown'}</p>
-                  </div>
-                  <h3 className="font-medium pt-4">Healthcare Providers</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-gray-500">Pediatrician</Label>
-                      <p>{child.pediatrician_name || '-'}</p>
-                      <p className="text-sm text-gray-500">{child.pediatrician_phone}</p>
-                    </div>
-                    <div>
-                      <Label className="text-gray-500">Dentist</Label>
-                      <p>{child.dentist_name || '-'}</p>
-                      <p className="text-sm text-gray-500">{child.dentist_phone}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Therapist/Counselor</Label>
-                    <p>{child.therapist_name || '-'}</p>
-                    <p className="text-sm text-gray-500">{child.therapist_phone}</p>
-                  </div>
-                  <h3 className="font-medium pt-4">Insurance</h3>
-                  <div>
-                    <Label className="text-gray-500">Provider</Label>
-                    <p>{child.insurance_provider || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Policy Number</Label>
-                    <p>{child.insurance_policy_number || '-'}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+                    <FormSelect
+                      label="Blood Type"
+                      value={medicalForm.blood_type}
+                      onChange={(v) => setMedicalForm({ ...medicalForm, blood_type: v })}
+                      options={[
+                        { value: '', label: 'Unknown' },
+                        { value: 'A+', label: 'A+' },
+                        { value: 'A-', label: 'A-' },
+                        { value: 'B+', label: 'B+' },
+                        { value: 'B-', label: 'B-' },
+                        { value: 'AB+', label: 'AB+' },
+                        { value: 'AB-', label: 'AB-' },
+                        { value: 'O+', label: 'O+' },
+                        { value: 'O-', label: 'O-' },
+                      ]}
+                    />
 
-          {/* Education Tab */}
-          {activeTab === 'education' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Education</h2>
-                {!editMode && child.status === 'active' && (
-                  <Button variant="outline" onClick={() => setEditMode(true)}>
-                    Edit
-                  </Button>
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
+                        <Stethoscope className="h-4 w-4 text-cg-sage" />
+                        Healthcare Providers
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormInput
+                          label="Pediatrician"
+                          value={medicalForm.pediatrician_name}
+                          onChange={(v) => setMedicalForm({ ...medicalForm, pediatrician_name: v })}
+                        />
+                        <FormInput
+                          label="Pediatrician Phone"
+                          value={medicalForm.pediatrician_phone}
+                          onChange={(v) => setMedicalForm({ ...medicalForm, pediatrician_phone: v })}
+                        />
+                        <FormInput
+                          label="Dentist"
+                          value={medicalForm.dentist_name}
+                          onChange={(v) => setMedicalForm({ ...medicalForm, dentist_name: v })}
+                        />
+                        <FormInput
+                          label="Dentist Phone"
+                          value={medicalForm.dentist_phone}
+                          onChange={(v) => setMedicalForm({ ...medicalForm, dentist_phone: v })}
+                        />
+                        <FormInput
+                          label="Therapist/Counselor"
+                          value={medicalForm.therapist_name}
+                          onChange={(v) => setMedicalForm({ ...medicalForm, therapist_name: v })}
+                        />
+                        <FormInput
+                          label="Therapist Phone"
+                          value={medicalForm.therapist_phone}
+                          onChange={(v) => setMedicalForm({ ...medicalForm, therapist_phone: v })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="font-medium text-foreground mb-4">Insurance</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormInput
+                          label="Provider"
+                          value={medicalForm.insurance_provider}
+                          onChange={(v) => setMedicalForm({ ...medicalForm, insurance_provider: v })}
+                        />
+                        <FormInput
+                          label="Policy Number"
+                          value={medicalForm.insurance_policy_number}
+                          onChange={(v) => setMedicalForm({ ...medicalForm, insurance_policy_number: v })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-6">
+                      <InfoField label="Allergies" value={child.allergies} emptyText="None reported" />
+                      <InfoField label="Blood Type" value={child.blood_type} emptyText="Unknown" />
+                    </div>
+                    <InfoField label="Medications" value={child.medications} emptyText="None" />
+                    <InfoField label="Medical Conditions" value={child.medical_conditions} emptyText="None reported" />
+
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
+                        <Stethoscope className="h-4 w-4 text-cg-sage" />
+                        Healthcare Providers
+                      </h4>
+                      <div className="grid grid-cols-2 gap-6">
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase mb-1">Pediatrician</p>
+                          <p className="text-foreground">{child.pediatrician_name || '-'}</p>
+                          {child.pediatrician_phone && (
+                            <p className="text-sm text-muted-foreground">{child.pediatrician_phone}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase mb-1">Dentist</p>
+                          <p className="text-foreground">{child.dentist_name || '-'}</p>
+                          {child.dentist_phone && (
+                            <p className="text-sm text-muted-foreground">{child.dentist_phone}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase mb-1">
+                            Therapist/Counselor
+                          </p>
+                          <p className="text-foreground">{child.therapist_name || '-'}</p>
+                          {child.therapist_phone && (
+                            <p className="text-sm text-muted-foreground">{child.therapist_phone}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="font-medium text-foreground mb-4">Insurance</h4>
+                      <div className="grid grid-cols-2 gap-6">
+                        <InfoField label="Provider" value={child.insurance_provider} />
+                        <InfoField label="Policy Number" value={child.insurance_policy_number} />
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </div>
+              </SectionCard>
+            )}
 
-              {editMode ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>School Name</Label>
-                      <Input
+            {/* Education Tab */}
+            {activeTab === 'education' && (
+              <SectionCard
+                title="Education"
+                icon={<GraduationCap className="h-4 w-4 text-cg-sage" />}
+                canEdit={canEdit}
+                editMode={editMode}
+                onEdit={() => setEditMode(true)}
+                onCancel={() => {
+                  setEditMode(false);
+                  populateForms(child);
+                }}
+                onSave={() =>
+                  handleSave(async () => {
+                    await childrenAPI.updateEducation(childId, educationForm);
+                  })
+                }
+                isSaving={saving}
+              >
+                {editMode ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormInput
+                        label="School Name"
                         value={educationForm.school_name}
-                        onChange={(e) =>
-                          setEducationForm({ ...educationForm, school_name: e.target.value })
-                        }
+                        onChange={(v) => setEducationForm({ ...educationForm, school_name: v })}
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>School Phone</Label>
-                      <Input
+                      <FormInput
+                        label="School Phone"
                         value={educationForm.school_phone}
-                        onChange={(e) =>
-                          setEducationForm({ ...educationForm, school_phone: e.target.value })
-                        }
+                        onChange={(v) => setEducationForm({ ...educationForm, school_phone: v })}
                       />
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Grade Level</Label>
-                    <Input
+                    <FormInput
+                      label="Grade Level"
                       value={educationForm.grade_level}
-                      onChange={(e) =>
-                        setEducationForm({ ...educationForm, grade_level: e.target.value })
-                      }
+                      onChange={(v) => setEducationForm({ ...educationForm, grade_level: v })}
                       placeholder="e.g., 3rd Grade, Kindergarten"
                     />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Teacher Name</Label>
-                      <Input
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormInput
+                        label="Teacher Name"
                         value={educationForm.teacher_name}
-                        onChange={(e) =>
-                          setEducationForm({ ...educationForm, teacher_name: e.target.value })
-                        }
+                        onChange={(v) => setEducationForm({ ...educationForm, teacher_name: v })}
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Teacher Email</Label>
-                      <Input
+                      <FormInput
+                        label="Teacher Email"
                         type="email"
                         value={educationForm.teacher_email}
-                        onChange={(e) =>
-                          setEducationForm({ ...educationForm, teacher_email: e.target.value })
-                        }
+                        onChange={(v) => setEducationForm({ ...educationForm, teacher_email: v })}
                       />
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="has_iep"
-                        checked={educationForm.has_iep}
-                        onChange={(e) =>
-                          setEducationForm({ ...educationForm, has_iep: e.target.checked })
-                        }
-                      />
-                      <Label htmlFor="has_iep">Has IEP (Individualized Education Program)</Label>
+                    <div className="flex gap-6">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={educationForm.has_iep}
+                          onChange={(e) => setEducationForm({ ...educationForm, has_iep: e.target.checked })}
+                          className="w-4 h-4 text-cg-sage border-border rounded"
+                        />
+                        <span className="text-sm">Has IEP</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={educationForm.has_504_plan}
+                          onChange={(e) => setEducationForm({ ...educationForm, has_504_plan: e.target.checked })}
+                          className="w-4 h-4 text-cg-sage border-border rounded"
+                        />
+                        <span className="text-sm">Has 504 Plan</span>
+                      </label>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="has_504"
-                        checked={educationForm.has_504_plan}
-                        onChange={(e) =>
-                          setEducationForm({ ...educationForm, has_504_plan: e.target.checked })
-                        }
-                      />
-                      <Label htmlFor="has_504">Has 504 Plan</Label>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Education Notes</Label>
-                    <textarea
+                    <FormTextarea
+                      label="Education Notes"
                       value={educationForm.education_notes}
-                      onChange={(e) =>
-                        setEducationForm({ ...educationForm, education_notes: e.target.value })
-                      }
-                      className="w-full p-2 border rounded-md min-h-[80px]"
-                      placeholder="Any additional notes about education"
+                      onChange={(v) => setEducationForm({ ...educationForm, education_notes: v })}
+                      placeholder="Additional notes about education"
                     />
                   </div>
-                  <div className="flex gap-2 pt-4">
-                    <Button variant="outline" onClick={() => setEditMode(false)}>
-                      Cancel
-                    </Button>
-                    <Button onClick={handleSaveEducation} disabled={saving}>
-                      {saving ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-gray-500">School</Label>
-                    <p>{child.school_name || '-'}</p>
-                    <p className="text-sm text-gray-500">{child.school_phone}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Grade Level</Label>
-                    <p>{child.grade_level || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Teacher</Label>
-                    <p>{child.teacher_name || '-'}</p>
-                    <p className="text-sm text-gray-500">{child.teacher_email}</p>
-                  </div>
-                  <div className="flex gap-4">
-                    {child.has_iep && (
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-sm rounded">
-                        Has IEP
-                      </span>
-                    )}
-                    {child.has_504_plan && (
-                      <span className="px-2 py-1 bg-purple-100 text-purple-800 text-sm rounded">
-                        Has 504 Plan
-                      </span>
-                    )}
-                  </div>
-                  {child.education_notes && (
+                ) : (
+                  <div className="space-y-6">
                     <div>
-                      <Label className="text-gray-500">Notes</Label>
-                      <p>{child.education_notes}</p>
+                      <p className="text-xs font-medium text-muted-foreground uppercase mb-1">School</p>
+                      <p className="text-foreground text-lg font-medium">{child.school_name || '-'}</p>
+                      {child.school_phone && <p className="text-sm text-muted-foreground">{child.school_phone}</p>}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                    <InfoField label="Grade Level" value={child.grade_level} />
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase mb-1">Teacher</p>
+                      <p className="text-foreground">{child.teacher_name || '-'}</p>
+                      {child.teacher_email && <p className="text-sm text-muted-foreground">{child.teacher_email}</p>}
+                    </div>
 
-          {/* Preferences Tab */}
-          {activeTab === 'preferences' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Preferences & Personality</h2>
-                {!editMode && child.status === 'active' && (
-                  <Button variant="outline" onClick={() => setEditMode(true)}>
-                    Edit
-                  </Button>
-                )}
-              </div>
-
-              {editMode ? (
-                <div className="space-y-4">
-                  <h3 className="font-medium">Food</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Favorite Foods</Label>
-                      <textarea
-                        value={preferencesForm.favorite_foods}
-                        onChange={(e) =>
-                          setPreferencesForm({ ...preferencesForm, favorite_foods: e.target.value })
-                        }
-                        className="w-full p-2 border rounded-md min-h-[60px]"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Food Dislikes</Label>
-                      <textarea
-                        value={preferencesForm.food_dislikes}
-                        onChange={(e) =>
-                          setPreferencesForm({ ...preferencesForm, food_dislikes: e.target.value })
-                        }
-                        className="w-full p-2 border rounded-md min-h-[60px]"
-                      />
-                    </div>
-                  </div>
-                  <h3 className="font-medium pt-2">Activities & Comfort</h3>
-                  <div className="space-y-2">
-                    <Label>Favorite Activities</Label>
-                    <textarea
-                      value={preferencesForm.favorite_activities}
-                      onChange={(e) =>
-                        setPreferencesForm({ ...preferencesForm, favorite_activities: e.target.value })
-                      }
-                      className="w-full p-2 border rounded-md min-h-[60px]"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Comfort Items</Label>
-                    <textarea
-                      value={preferencesForm.comfort_items}
-                      onChange={(e) =>
-                        setPreferencesForm({ ...preferencesForm, comfort_items: e.target.value })
-                      }
-                      className="w-full p-2 border rounded-md min-h-[60px]"
-                      placeholder="Special toys, blankets, or items that help them feel secure"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Bedtime Routine</Label>
-                    <textarea
-                      value={preferencesForm.bedtime_routine}
-                      onChange={(e) =>
-                        setPreferencesForm({ ...preferencesForm, bedtime_routine: e.target.value })
-                      }
-                      className="w-full p-2 border rounded-md min-h-[60px]"
-                    />
-                  </div>
-                  <h3 className="font-medium pt-2">Sizes</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Clothing Size</Label>
-                      <Input
-                        value={preferencesForm.clothing_size}
-                        onChange={(e) =>
-                          setPreferencesForm({ ...preferencesForm, clothing_size: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Shoe Size</Label>
-                      <Input
-                        value={preferencesForm.shoe_size}
-                        onChange={(e) =>
-                          setPreferencesForm({ ...preferencesForm, shoe_size: e.target.value })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <h3 className="font-medium pt-2">Temperament & Emotional Needs</h3>
-                  <div className="space-y-2">
-                    <Label>Temperament Notes</Label>
-                    <textarea
-                      value={preferencesForm.temperament_notes}
-                      onChange={(e) =>
-                        setPreferencesForm({ ...preferencesForm, temperament_notes: e.target.value })
-                      }
-                      className="w-full p-2 border rounded-md min-h-[60px]"
-                      placeholder="General personality traits and tendencies"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Fears & Anxieties</Label>
-                    <textarea
-                      value={preferencesForm.fears_anxieties}
-                      onChange={(e) =>
-                        setPreferencesForm({ ...preferencesForm, fears_anxieties: e.target.value })
-                      }
-                      className="w-full p-2 border rounded-md min-h-[60px]"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Calming Strategies</Label>
-                    <textarea
-                      value={preferencesForm.calming_strategies}
-                      onChange={(e) =>
-                        setPreferencesForm({ ...preferencesForm, calming_strategies: e.target.value })
-                      }
-                      className="w-full p-2 border rounded-md min-h-[60px]"
-                      placeholder="What helps them calm down when upset"
-                    />
-                  </div>
-                  <div className="flex gap-2 pt-4">
-                    <Button variant="outline" onClick={() => setEditMode(false)}>
-                      Cancel
-                    </Button>
-                    <Button onClick={handleSavePreferences} disabled={saving}>
-                      {saving ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <h3 className="font-medium">Food</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-gray-500">Favorite Foods</Label>
-                      <p>{child.favorite_foods || '-'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-gray-500">Food Dislikes</Label>
-                      <p>{child.food_dislikes || '-'}</p>
-                    </div>
-                  </div>
-                  <h3 className="font-medium pt-2">Activities & Comfort</h3>
-                  <div>
-                    <Label className="text-gray-500">Favorite Activities</Label>
-                    <p>{child.favorite_activities || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Comfort Items</Label>
-                    <p>{child.comfort_items || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Bedtime Routine</Label>
-                    <p>{child.bedtime_routine || '-'}</p>
-                  </div>
-                  <h3 className="font-medium pt-2">Sizes</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-gray-500">Clothing</Label>
-                      <p>{child.clothing_size || '-'}</p>
-                    </div>
-                    <div>
-                      <Label className="text-gray-500">Shoes</Label>
-                      <p>{child.shoe_size || '-'}</p>
-                    </div>
-                  </div>
-                  <h3 className="font-medium pt-2">Temperament & Emotional Needs</h3>
-                  <div>
-                    <Label className="text-gray-500">Temperament</Label>
-                    <p>{child.temperament_notes || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Fears & Anxieties</Label>
-                    <p>{child.fears_anxieties || '-'}</p>
-                  </div>
-                  <div>
-                    <Label className="text-gray-500">Calming Strategies</Label>
-                    <p>{child.calming_strategies || '-'}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Emergency Tab */}
-          {activeTab === 'emergency' && (
-            <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Emergency Contacts</h2>
-                {!editMode && child.status === 'active' && (
-                  <Button variant="outline" onClick={() => setEditMode(true)}>
-                    Edit
-                  </Button>
-                )}
-              </div>
-
-              {editMode ? (
-                <div className="space-y-4">
-                  {emergencyForm.emergency_contacts.map((contact, index) => (
-                    <Card key={index} className="p-4">
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="font-medium">Contact {index + 1}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600"
-                          onClick={() => removeEmergencyContact(index)}
-                        >
-                          Remove
-                        </Button>
+                    {(child.has_iep || child.has_504_plan) && (
+                      <div className="flex gap-2">
+                        {child.has_iep && (
+                          <span className="px-3 py-1 bg-cg-sage-subtle text-cg-sage text-sm font-medium rounded-full">
+                            Has IEP
+                          </span>
+                        )}
+                        {child.has_504_plan && (
+                          <span className="px-3 py-1 bg-purple-100 text-purple-700 text-sm font-medium rounded-full">
+                            Has 504 Plan
+                          </span>
+                        )}
                       </div>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                          <Label>Name</Label>
-                          <Input
+                    )}
+
+                    {child.education_notes && <InfoField label="Notes" value={child.education_notes} />}
+                  </div>
+                )}
+              </SectionCard>
+            )}
+
+            {/* Preferences Tab */}
+            {activeTab === 'preferences' && (
+              <SectionCard
+                title="Preferences & Personality"
+                icon={<Star className="h-4 w-4 text-cg-sage" />}
+                canEdit={canEdit}
+                editMode={editMode}
+                onEdit={() => setEditMode(true)}
+                onCancel={() => {
+                  setEditMode(false);
+                  populateForms(child);
+                }}
+                onSave={() =>
+                  handleSave(async () => {
+                    await childrenAPI.updatePreferences(childId, preferencesForm);
+                  })
+                }
+                isSaving={saving}
+              >
+                {editMode ? (
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="font-medium text-foreground mb-4">Food</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormTextarea
+                          label="Favorite Foods"
+                          value={preferencesForm.favorite_foods}
+                          onChange={(v) => setPreferencesForm({ ...preferencesForm, favorite_foods: v })}
+                          rows={2}
+                        />
+                        <FormTextarea
+                          label="Food Dislikes"
+                          value={preferencesForm.food_dislikes}
+                          onChange={(v) => setPreferencesForm({ ...preferencesForm, food_dislikes: v })}
+                          rows={2}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-cg-sage" />
+                        Activities & Comfort
+                      </h4>
+                      <div className="space-y-4">
+                        <FormTextarea
+                          label="Favorite Activities"
+                          value={preferencesForm.favorite_activities}
+                          onChange={(v) => setPreferencesForm({ ...preferencesForm, favorite_activities: v })}
+                        />
+                        <FormTextarea
+                          label="Comfort Items"
+                          value={preferencesForm.comfort_items}
+                          onChange={(v) => setPreferencesForm({ ...preferencesForm, comfort_items: v })}
+                          placeholder="Special toys, blankets, or items"
+                        />
+                        <FormTextarea
+                          label="Bedtime Routine"
+                          value={preferencesForm.bedtime_routine}
+                          onChange={(v) => setPreferencesForm({ ...preferencesForm, bedtime_routine: v })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
+                        <Shirt className="h-4 w-4 text-cg-sage" />
+                        Sizes
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormInput
+                          label="Clothing Size"
+                          value={preferencesForm.clothing_size}
+                          onChange={(v) => setPreferencesForm({ ...preferencesForm, clothing_size: v })}
+                        />
+                        <FormInput
+                          label="Shoe Size"
+                          value={preferencesForm.shoe_size}
+                          onChange={(v) => setPreferencesForm({ ...preferencesForm, shoe_size: v })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
+                        <Moon className="h-4 w-4 text-cg-sage" />
+                        Temperament & Emotional Needs
+                      </h4>
+                      <div className="space-y-4">
+                        <FormTextarea
+                          label="Temperament Notes"
+                          value={preferencesForm.temperament_notes}
+                          onChange={(v) => setPreferencesForm({ ...preferencesForm, temperament_notes: v })}
+                          placeholder="General personality traits"
+                        />
+                        <FormTextarea
+                          label="Fears & Anxieties"
+                          value={preferencesForm.fears_anxieties}
+                          onChange={(v) => setPreferencesForm({ ...preferencesForm, fears_anxieties: v })}
+                        />
+                        <FormTextarea
+                          label="Calming Strategies"
+                          value={preferencesForm.calming_strategies}
+                          onChange={(v) => setPreferencesForm({ ...preferencesForm, calming_strategies: v })}
+                          placeholder="What helps them calm down when upset"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="font-medium text-foreground mb-4">Food</h4>
+                      <div className="grid grid-cols-2 gap-6">
+                        <InfoField label="Favorites" value={child.favorite_foods} />
+                        <InfoField label="Dislikes" value={child.food_dislikes} />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-cg-sage" />
+                        Activities & Comfort
+                      </h4>
+                      <div className="space-y-4">
+                        <InfoField label="Favorite Activities" value={child.favorite_activities} />
+                        <InfoField label="Comfort Items" value={child.comfort_items} />
+                        <InfoField label="Bedtime Routine" value={child.bedtime_routine} />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
+                        <Shirt className="h-4 w-4 text-cg-sage" />
+                        Sizes
+                      </h4>
+                      <div className="grid grid-cols-2 gap-6">
+                        <InfoField label="Clothing" value={child.clothing_size} />
+                        <InfoField label="Shoes" value={child.shoe_size} />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-border">
+                      <h4 className="font-medium text-foreground mb-4 flex items-center gap-2">
+                        <Moon className="h-4 w-4 text-cg-sage" />
+                        Temperament & Emotional Needs
+                      </h4>
+                      <div className="space-y-4">
+                        <InfoField label="Temperament" value={child.temperament_notes} />
+                        <InfoField label="Fears & Anxieties" value={child.fears_anxieties} />
+                        <InfoField label="Calming Strategies" value={child.calming_strategies} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </SectionCard>
+            )}
+
+            {/* Emergency Tab */}
+            {activeTab === 'emergency' && (
+              <SectionCard
+                title="Emergency Contacts"
+                icon={<Phone className="h-4 w-4 text-cg-sage" />}
+                canEdit={canEdit}
+                editMode={editMode}
+                onEdit={() => setEditMode(true)}
+                onCancel={() => {
+                  setEditMode(false);
+                  populateForms(child);
+                }}
+                onSave={() =>
+                  handleSave(async () => {
+                    await childrenAPI.updateEmergencyContacts(childId, emergencyForm);
+                  })
+                }
+                isSaving={saving}
+              >
+                {editMode ? (
+                  <div className="space-y-4">
+                    {emergencyForm.emergency_contacts.map((contact, index) => (
+                      <div key={index} className="p-4 bg-muted/30 rounded-xl space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-foreground">Contact {index + 1}</span>
+                          <button
+                            onClick={() => removeEmergencyContact(index)}
+                            className="p-2 rounded-lg hover:bg-cg-error-subtle text-muted-foreground hover:text-cg-error transition-colors"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          <FormInput
+                            label="Name"
                             value={contact.name}
-                            onChange={(e) =>
-                              updateEmergencyContact(index, 'name', e.target.value)
-                            }
+                            onChange={(v) => updateEmergencyContact(index, 'name', v)}
                           />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Relationship</Label>
-                          <Input
+                          <FormInput
+                            label="Relationship"
                             value={contact.relationship}
-                            onChange={(e) =>
-                              updateEmergencyContact(index, 'relationship', e.target.value)
-                            }
-                            placeholder="e.g., Grandmother, Uncle"
+                            onChange={(v) => updateEmergencyContact(index, 'relationship', v)}
+                            placeholder="e.g., Grandmother"
                           />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>Phone</Label>
-                          <Input
+                          <FormInput
+                            label="Phone"
                             value={contact.phone}
-                            onChange={(e) =>
-                              updateEmergencyContact(index, 'phone', e.target.value)
-                            }
+                            onChange={(v) => updateEmergencyContact(index, 'phone', v)}
                           />
                         </div>
                       </div>
-                    </Card>
-                  ))}
-                  <Button variant="outline" onClick={addEmergencyContact}>
-                    + Add Emergency Contact
-                  </Button>
-                  <div className="flex gap-2 pt-4">
-                    <Button variant="outline" onClick={() => setEditMode(false)}>
-                      Cancel
-                    </Button>
-                    <Button onClick={handleSaveEmergency} disabled={saving}>
-                      {saving ? 'Saving...' : 'Save Changes'}
-                    </Button>
+                    ))}
+
+                    <button
+                      onClick={addEmergencyContact}
+                      className="w-full p-4 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:text-cg-sage hover:border-cg-sage transition-colors flex items-center justify-center gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Emergency Contact
+                    </button>
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {emergencyForm.emergency_contacts.length > 0 ? (
-                    emergencyForm.emergency_contacts.map((contact, index) => (
-                      <Card key={index} className="p-4">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-                            <span className="text-xl">👤</span>
-                          </div>
-                          <div>
-                            <p className="font-medium">{contact.name}</p>
-                            <p className="text-sm text-gray-500">{contact.relationship}</p>
-                          </div>
-                          <div className="ml-auto">
-                            <p className="text-gray-600">{contact.phone}</p>
-                          </div>
+                ) : emergencyForm.emergency_contacts.length > 0 ? (
+                  <div className="space-y-4">
+                    {emergencyForm.emergency_contacts.map((contact, index) => (
+                      <div key={index} className="p-4 bg-muted/30 rounded-xl flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-cg-sage-subtle flex items-center justify-center flex-shrink-0">
+                          <Users className="h-5 w-5 text-cg-sage" />
                         </div>
-                      </Card>
-                    ))
-                  ) : (
-                    <div className="text-center py-8 text-gray-500">
-                      <p>No emergency contacts added yet.</p>
-                      {child.status === 'active' && (
-                        <Button
-                          variant="outline"
-                          onClick={() => setEditMode(true)}
-                          className="mt-4"
+                        <div className="flex-1">
+                          <p className="font-medium text-foreground">{contact.name}</p>
+                          <p className="text-sm text-muted-foreground">{contact.relationship}</p>
+                        </div>
+                        <a
+                          href={`tel:${contact.phone}`}
+                          className="px-4 py-2 bg-cg-sage text-white rounded-full text-sm font-medium hover:bg-cg-sage-light transition-colors"
                         >
-                          Add Emergency Contact
-                        </Button>
-                      )}
+                          {contact.phone}
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
+                      <Phone className="h-8 w-8 text-muted-foreground" />
                     </div>
-                  )}
-                </div>
-              )}
+                    <p className="text-muted-foreground mb-4">No emergency contacts added yet</p>
+                    {canEdit && (
+                      <button onClick={() => setEditMode(true)} className="cg-btn-secondary text-sm py-2">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Emergency Contact
+                      </button>
+                    )}
+                  </div>
+                )}
+              </SectionCard>
+            )}
+
+            {/* Both Parents Can Add Indicator */}
+            <div className="cg-card p-4 bg-cg-sage-subtle/30 border-cg-sage/10">
+              <div className="flex items-center gap-3">
+                <Users className="h-5 w-5 text-cg-sage flex-shrink-0" />
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-medium text-foreground">Both parents can contribute</span> to this profile.
+                  Changes are tracked for transparency.
+                </p>
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </div>
+        )}
+      </main>
     </div>
+  );
+}
+
+export default function ChildProfilePage() {
+  return (
+    <ProtectedRoute>
+      <ChildProfileContent />
+    </ProtectedRoute>
   );
 }

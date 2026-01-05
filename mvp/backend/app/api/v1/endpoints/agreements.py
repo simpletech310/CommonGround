@@ -64,6 +64,7 @@ async def get_agreement(
         "agreement": AgreementResponse(
             id=agreement.id,
             case_id=agreement.case_id,
+            family_file_id=agreement.family_file_id,
             title=agreement.title,
             version=agreement.version,
             status=agreement.status,

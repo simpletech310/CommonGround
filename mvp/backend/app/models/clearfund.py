@@ -86,10 +86,19 @@ class Obligation(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "obligations"
 
-    # Case and source
-    case_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("cases.id"), index=True
+    # Case or Family File - at least one should be set
+    case_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("cases.id"), index=True, nullable=True
+    )  # Court case context (legacy)
+    family_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("family_files.id"), index=True, nullable=True
+    )  # Family file context (preferred)
+
+    # Agreement link (primary - obligations belong to a specific SharedCare Agreement)
+    agreement_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("agreements.id"), index=True, nullable=True
     )
+
     source_type: Mapped[str] = mapped_column(
         String(20)
     )  # court_order, agreement, request

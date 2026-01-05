@@ -2,8 +2,17 @@
 
 import { useState } from 'react';
 import { ARIAAnalysisResponse } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Sparkles,
+  CheckCircle,
+  AlertTriangle,
+  XCircle,
+  Edit3,
+  RefreshCw,
+  Send,
+  X,
+  ChevronDown,
+} from 'lucide-react';
 
 interface ARIAInterventionProps {
   analysis: ARIAAnalysisResponse;
@@ -15,6 +24,14 @@ interface ARIAInterventionProps {
   onCancel: () => void;
 }
 
+/**
+ * ARIA Guardian Intervention Component
+ *
+ * Design: Amber glowing guardian aesthetic
+ * - Warm amber colors for attention
+ * - Soft, non-threatening design
+ * - Clear action paths
+ */
 export function ARIAIntervention({
   analysis,
   originalMessage,
@@ -26,253 +43,304 @@ export function ARIAIntervention({
 }: ARIAInterventionProps) {
   const [action, setAction] = useState<'none' | 'modify' | 'reject'>('none');
   const [editedMessage, setEditedMessage] = useState(analysis.suggestion || '');
+  const [showDetails, setShowDetails] = useState(false);
 
-  const getLevelColor = (level: string) => {
+  const getLevelConfig = (level: string) => {
     switch (level) {
       case 'green':
-        return 'border-green-200 bg-green-50';
+        return {
+          bg: 'bg-cg-success-subtle',
+          border: 'border-cg-success/30',
+          icon: <CheckCircle className="h-6 w-6 text-cg-success" />,
+          title: 'Message looks good!',
+          subtitle: 'Your message maintains a constructive tone.',
+          color: 'text-cg-success',
+        };
       case 'yellow':
-        return 'border-yellow-200 bg-yellow-50';
+        return {
+          bg: 'bg-cg-amber-subtle',
+          border: 'border-cg-amber/30',
+          icon: <Sparkles className="h-6 w-6 text-cg-amber" />,
+          title: 'ARIA has a suggestion',
+          subtitle: 'A small adjustment could improve the tone.',
+          color: 'text-cg-amber',
+        };
       case 'orange':
-        return 'border-orange-200 bg-orange-50';
+        return {
+          bg: 'bg-cg-warning-subtle',
+          border: 'border-cg-warning/50',
+          icon: <AlertTriangle className="h-6 w-6 text-cg-warning" />,
+          title: 'Tone check recommended',
+          subtitle: 'This message may escalate conflict.',
+          color: 'text-cg-warning',
+        };
       case 'red':
-        return 'border-red-200 bg-red-50';
+        return {
+          bg: 'bg-cg-error-subtle',
+          border: 'border-cg-error/30',
+          icon: <XCircle className="h-6 w-6 text-cg-error" />,
+          title: 'Please revise your message',
+          subtitle: 'This message has high conflict potential.',
+          color: 'text-cg-error',
+        };
       default:
-        return 'border-gray-200 bg-gray-50';
+        return {
+          bg: 'bg-cg-amber-subtle',
+          border: 'border-cg-amber/30',
+          icon: <Sparkles className="h-6 w-6 text-cg-amber" />,
+          title: 'ARIA Review',
+          subtitle: 'Analysis complete.',
+          color: 'text-cg-amber',
+        };
     }
   };
 
-  const getLevelIcon = (level: string) => {
-    switch (level) {
-      case 'green':
-        return (
-          <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        );
-      case 'yellow':
-        return (
-          <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        );
-      case 'orange':
-        return (
-          <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        );
-      case 'red':
-        return (
-          <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        );
-      default:
-        return null;
-    }
-  };
-
-  const getLevelTitle = (level: string) => {
-    switch (level) {
-      case 'green':
-        return 'Message looks good!';
-      case 'yellow':
-        return 'ARIA suggests a rewrite';
-      case 'orange':
-        return 'Strong warning: This message may escalate conflict';
-      case 'red':
-        return 'This message requires revision before sending';
-      default:
-        return 'Analysis complete';
-    }
-  };
-
+  const config = getLevelConfig(analysis.toxicity_level);
   const canSendAnyway = analysis.toxicity_level !== 'red';
 
   return (
-    <Card className={`border-2 ${getLevelColor(analysis.toxicity_level)}`}>
-      <CardHeader>
-        <div className="flex items-start gap-3">
-          {getLevelIcon(analysis.toxicity_level)}
-          <div className="flex-1">
-            <CardTitle className="text-lg">{getLevelTitle(analysis.toxicity_level)}</CardTitle>
-            <CardDescription className="mt-1">{analysis.explanation}</CardDescription>
+    <div className={`aria-guardian ${config.bg} ${config.border} overflow-hidden`}>
+      {/* Header */}
+      <div className="p-4 sm:p-5">
+        <div className="flex items-start gap-3 sm:gap-4">
+          {/* Animated Icon */}
+          <div className="flex-shrink-0">
+            <div className="w-12 h-12 rounded-full bg-white/50 flex items-center justify-center aria-glow">
+              {config.icon}
+            </div>
           </div>
+
+          {/* Title & Subtitle */}
+          <div className="flex-1 min-w-0">
+            <h3 className={`font-semibold text-lg ${config.color}`}>
+              {config.title}
+            </h3>
+            <p className="text-sm text-foreground/70 mt-0.5">
+              {config.subtitle}
+            </p>
+          </div>
+
+          {/* Close Button */}
+          <button
+            onClick={onCancel}
+            className="p-2 rounded-lg hover:bg-black/5 transition-smooth flex-shrink-0"
+          >
+            <X className="h-5 w-5 text-foreground/50" />
+          </button>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Toxicity Score */}
-        <div>
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-sm font-medium text-gray-700">Conflict Risk</span>
-            <span className="text-sm font-medium text-gray-900">
+
+        {/* Explanation */}
+        {analysis.explanation && (
+          <p className="mt-4 text-sm text-foreground leading-relaxed">
+            {analysis.explanation}
+          </p>
+        )}
+
+        {/* Conflict Risk Meter */}
+        <div className="mt-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-xs font-medium text-foreground/70">Conflict Risk</span>
+            <span className="text-xs font-semibold text-foreground">
               {Math.round(analysis.toxicity_score * 100)}%
             </span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-2">
+          <div className="h-2 bg-white/50 rounded-full overflow-hidden">
             <div
-              className={`h-2 rounded-full ${
+              className={`h-full rounded-full transition-all duration-500 ${
                 analysis.toxicity_level === 'green'
-                  ? 'bg-green-500'
+                  ? 'bg-cg-success'
                   : analysis.toxicity_level === 'yellow'
-                  ? 'bg-yellow-500'
+                  ? 'bg-cg-amber'
                   : analysis.toxicity_level === 'orange'
-                  ? 'bg-orange-500'
-                  : 'bg-red-500'
+                  ? 'bg-cg-warning'
+                  : 'bg-cg-error'
               }`}
               style={{ width: `${analysis.toxicity_score * 100}%` }}
             />
           </div>
         </div>
 
-        {/* Categories */}
-        {analysis.categories.length > 0 && (
+        {/* Expandable Details */}
+        {(analysis.categories.length > 0 || analysis.triggers.length > 0) && (
+          <div className="mt-4">
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              className="flex items-center gap-2 text-xs font-medium text-foreground/70 hover:text-foreground transition-smooth"
+            >
+              <ChevronDown className={`h-4 w-4 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
+              {showDetails ? 'Hide details' : 'Show details'}
+            </button>
+
+            {showDetails && (
+              <div className="mt-3 space-y-3 animate-in slide-in-from-top-2 duration-200">
+                {/* Categories */}
+                {analysis.categories.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-foreground/70 mb-2">Detected patterns:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {analysis.categories.map((category, index) => (
+                        <span
+                          key={index}
+                          className="px-2 py-1 bg-white/50 rounded-lg text-xs font-medium text-foreground/80"
+                        >
+                          {category.replace(/_/g, ' ')}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Triggers */}
+                {analysis.triggers.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-foreground/70 mb-2">Specific concerns:</p>
+                    <ul className="space-y-1">
+                      {analysis.triggers.map((trigger, index) => (
+                        <li key={index} className="text-xs text-foreground/70 pl-3 relative">
+                          <span className="absolute left-0">•</span>
+                          "{trigger}"
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Messages Comparison */}
+      <div className="border-t border-black/5">
+        <div className="p-4 sm:p-5 space-y-4">
+          {/* Original Message */}
           <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">Detected Issues:</p>
-            <div className="flex flex-wrap gap-2">
-              {analysis.categories.map((category, index) => (
-                <span
-                  key={index}
-                  className="px-2 py-1 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700"
-                >
-                  {category.replace(/_/g, ' ')}
-                </span>
-              ))}
+            <p className="text-xs font-medium text-foreground/70 mb-2">Your message:</p>
+            <div className="p-3 bg-white/30 rounded-xl text-sm text-foreground border border-black/5">
+              {originalMessage}
             </div>
           </div>
-        )}
 
-        {/* Triggers */}
-        {analysis.triggers.length > 0 && (
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">Specific Concerns:</p>
-            <ul className="list-disc list-inside space-y-1">
-              {analysis.triggers.map((trigger, index) => (
-                <li key={index} className="text-sm text-gray-600">
-                  "{trigger}"
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+          {/* Suggestion */}
+          {analysis.suggestion && action === 'none' && (
+            <div>
+              <p className="text-xs font-medium text-foreground/70 mb-2 flex items-center gap-1.5">
+                <Sparkles className="h-3 w-3 text-cg-amber" />
+                ARIA's suggestion:
+              </p>
+              <div className="p-3 bg-white rounded-xl text-sm text-foreground border-2 border-cg-amber/30 shadow-sm">
+                {analysis.suggestion}
+              </div>
+            </div>
+          )}
 
-        {/* Original Message */}
-        <div>
-          <p className="text-sm font-medium text-gray-700 mb-2">Your Original Message:</p>
-          <div className="p-3 bg-white border border-gray-300 rounded text-sm text-gray-900">
-            {originalMessage}
-          </div>
+          {/* Edit Mode */}
+          {(action === 'modify' || action === 'reject') && (
+            <div>
+              <p className="text-xs font-medium text-foreground/70 mb-2">
+                {action === 'modify' ? 'Edit the suggestion:' : 'Write your alternative:'}
+              </p>
+              <textarea
+                value={editedMessage}
+                onChange={(e) => setEditedMessage(e.target.value)}
+                placeholder="Type your message here..."
+                className="w-full p-3 bg-white rounded-xl text-sm text-foreground border-2 border-cg-sage/30 focus:border-cg-sage focus:ring-2 focus:ring-cg-sage/20 outline-none transition-all resize-none"
+                rows={4}
+                autoFocus
+              />
+            </div>
+          )}
         </div>
+      </div>
 
-        {/* Suggestion */}
-        {analysis.suggestion && (
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">ARIA's Suggested Alternative:</p>
-            <div className="p-3 bg-white border-2 border-blue-300 rounded text-sm text-gray-900">
-              {analysis.suggestion}
-            </div>
-          </div>
-        )}
-
-        {/* Edit Actions */}
-        {action === 'none' && (
-          <div className="space-y-2 pt-4">
+      {/* Actions */}
+      <div className="border-t border-black/5 p-4 sm:p-5 bg-white/30">
+        {action === 'none' ? (
+          <div className="space-y-2">
+            {/* Primary Action - Accept Suggestion */}
             {analysis.suggestion && (
-              <Button className="w-full" onClick={onAccept}>
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Accept ARIA's Suggestion
-              </Button>
+              <button
+                onClick={onAccept}
+                className="w-full cg-btn-primary flex items-center justify-center gap-2"
+              >
+                <CheckCircle className="h-4 w-4" />
+                Use ARIA's Suggestion
+              </button>
             )}
 
-            {analysis.suggestion && (
-              <Button variant="outline" className="w-full" onClick={() => setAction('modify')}>
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                Modify Suggestion
-              </Button>
-            )}
-
-            <Button variant="outline" className="w-full" onClick={() => setAction('reject')}>
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Rewrite Myself
-            </Button>
-
+            {/* Secondary Actions */}
             <div className="flex gap-2">
-              {canSendAnyway && (
-                <Button variant="outline" className="flex-1" onClick={onSendAnyway}>
-                  Send Original Anyway
-                </Button>
+              {analysis.suggestion && (
+                <button
+                  onClick={() => setAction('modify')}
+                  className="flex-1 cg-btn-secondary flex items-center justify-center gap-2 py-2.5"
+                >
+                  <Edit3 className="h-4 w-4" />
+                  <span className="hidden sm:inline">Edit</span>
+                  <span className="sm:hidden">Edit</span>
+                </button>
               )}
-              <Button variant="outline" className="flex-1" onClick={onCancel}>
+
+              <button
+                onClick={() => {
+                  setEditedMessage('');
+                  setAction('reject');
+                }}
+                className="flex-1 cg-btn-secondary flex items-center justify-center gap-2 py-2.5"
+              >
+                <RefreshCw className="h-4 w-4" />
+                <span className="hidden sm:inline">Rewrite</span>
+                <span className="sm:hidden">New</span>
+              </button>
+            </div>
+
+            {/* Send Anyway / Cancel */}
+            <div className="flex gap-2 pt-2">
+              {canSendAnyway && (
+                <button
+                  onClick={onSendAnyway}
+                  className="flex-1 text-sm font-medium text-foreground/60 hover:text-foreground py-2 transition-smooth"
+                >
+                  Send Original
+                </button>
+              )}
+              <button
+                onClick={onCancel}
+                className="flex-1 text-sm font-medium text-foreground/60 hover:text-foreground py-2 transition-smooth"
+              >
                 Cancel
-              </Button>
+              </button>
             </div>
 
             {!canSendAnyway && (
-              <p className="text-xs text-red-600 text-center mt-2">
-                This message has a high conflict risk and requires revision before sending.
+              <p className="text-xs text-cg-error text-center pt-2">
+                This message requires revision before sending.
               </p>
             )}
           </div>
-        )}
-
-        {/* Modify Mode */}
-        {action === 'modify' && (
-          <div className="space-y-3 pt-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Edit ARIA's Suggestion:
-              </label>
-              <textarea
-                value={editedMessage}
-                onChange={(e) => setEditedMessage(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                rows={4}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button className="flex-1" onClick={() => onModify(editedMessage)}>
-                Send Modified Message
-              </Button>
-              <Button variant="outline" onClick={() => setAction('none')}>
-                Back
-              </Button>
-            </div>
+        ) : (
+          /* Edit Mode Actions */
+          <div className="space-y-2">
+            <button
+              onClick={() => action === 'modify' ? onModify(editedMessage) : onReject(editedMessage)}
+              disabled={!editedMessage.trim()}
+              className="w-full cg-btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Send className="h-4 w-4" />
+              Send Message
+            </button>
+            <button
+              onClick={() => {
+                setAction('none');
+                setEditedMessage(analysis.suggestion || '');
+              }}
+              className="w-full text-sm font-medium text-foreground/60 hover:text-foreground py-2 transition-smooth"
+            >
+              Back
+            </button>
           </div>
         )}
-
-        {/* Reject/Rewrite Mode */}
-        {action === 'reject' && (
-          <div className="space-y-3 pt-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Write Your Alternative:
-              </label>
-              <textarea
-                value={editedMessage}
-                onChange={(e) => setEditedMessage(e.target.value)}
-                placeholder="Type your new message here..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                rows={4}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button className="flex-1" onClick={() => onReject(editedMessage)}>
-                Send Rewritten Message
-              </Button>
-              <Button variant="outline" onClick={() => setAction('none')}>
-                Back
-              </Button>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

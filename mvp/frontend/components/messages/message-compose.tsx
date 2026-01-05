@@ -2,18 +2,41 @@
 
 import { useState } from 'react';
 import { messagesAPI, ARIAAnalysisResponse } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { ARIAIntervention } from './aria-intervention';
+import {
+  Send,
+  Sparkles,
+  Shield,
+  AlertCircle,
+  CheckCircle,
+  Loader2,
+} from 'lucide-react';
 
 interface MessageComposeProps {
-  caseId: string;
+  caseId?: string;
+  familyFileId?: string;
+  agreementId?: string;
   recipientId: string;
   onMessageSent: () => void;
   ariaEnabled?: boolean;
 }
 
-export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled = true }: MessageComposeProps) {
+/**
+ * Message Compose Component - The Neutral Zone
+ *
+ * Features:
+ * - ARIA Guardian integration
+ * - Real-time tone analysis
+ * - Organic minimalist design
+ */
+export function MessageCompose({
+  caseId,
+  familyFileId,
+  agreementId,
+  recipientId,
+  onMessageSent,
+  ariaEnabled = true,
+}: MessageComposeProps) {
   const [message, setMessage] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -29,8 +52,7 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
     try {
       setIsAnalyzing(true);
       setError(null);
-      // Use case-level ARIA settings (backend reads from case)
-      const result = await messagesAPI.analyze(caseId, message);
+      const result = await messagesAPI.analyze(message, { caseId, familyFileId });
       setAnalysis(result);
     } catch (err: any) {
       console.error('Analysis failed:', err);
@@ -45,31 +67,21 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
       setIsSending(true);
       setError(null);
 
-      // Debug: Check if we have auth token
-      const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-      console.log('Sending message with auth token:', token ? 'Present' : 'Missing');
-      console.log('Message payload:', {
-        case_id: caseId,
-        recipient_id: recipientId,
-        content: content.substring(0, 50) + '...',
-        message_type: 'text',
-      });
-
       await messagesAPI.send({
         case_id: caseId,
+        family_file_id: familyFileId,
+        agreement_id: agreementId,
         recipient_id: recipientId,
         content,
         message_type: 'text',
       });
 
-      // Clear form
       setMessage('');
       setAnalysis(null);
       onMessageSent();
     } catch (err: any) {
       console.error('Failed to send message:', err);
 
-      // More detailed error messages
       let errorMessage = 'Failed to send message';
       if (err.status === 401) {
         errorMessage = 'Authentication error. Please try logging in again.';
@@ -111,7 +123,6 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
   };
 
   const handleQuickSend = async () => {
-    // If ARIA is enabled, automatically analyze before sending
     if (ariaEnabled) {
       if (!message.trim()) {
         setError('Please enter a message');
@@ -122,17 +133,14 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
         setIsAnalyzing(true);
         setError(null);
 
-        // Analyze the message with ARIA
-        const result = await messagesAPI.analyze(caseId, message);
+        const result = await messagesAPI.analyze(message, { caseId, familyFileId });
 
-        // If flagged, show intervention UI
         if (result.is_flagged) {
           setAnalysis(result);
           setIsAnalyzing(false);
-          return; // Don't send automatically - wait for user decision
+          return;
         }
 
-        // Not flagged - send automatically
         setIsAnalyzing(false);
         await handleSendDirect(message);
       } catch (err: any) {
@@ -141,8 +149,14 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
         setIsAnalyzing(false);
       }
     } else {
-      // ARIA disabled - send directly without analysis
       await handleSendDirect(message);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleQuickSend();
     }
   };
 
@@ -150,19 +164,13 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
     <div className="space-y-4">
       {/* Error Alert */}
       {error && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-3 p-4 bg-cg-error-subtle border border-cg-error/20 rounded-xl">
+          <AlertCircle className="h-5 w-5 text-cg-error flex-shrink-0" />
+          <p className="text-sm text-cg-error">{error}</p>
+        </div>
       )}
 
-      {/* ARIA Intervention */}
+      {/* ARIA Intervention Modal */}
       {analysis && analysis.is_flagged && (
         <ARIAIntervention
           analysis={analysis}
@@ -177,109 +185,90 @@ export function MessageCompose({ caseId, recipientId, onMessageSent, ariaEnabled
 
       {/* Compose Form */}
       {!analysis?.is_flagged && (
-        <Card>
-          <CardContent className="pt-4 sm:pt-6 space-y-3 sm:space-y-4">
-            {/* Message Input */}
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Your Message
-              </label>
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Type your message here..."
-                className="w-full px-3 py-2 border border-input rounded-md focus:outline-none focus:ring-2 focus:ring-ring bg-background text-foreground resize-none"
-                rows={4}
-                disabled={isSending}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                {message.length} / 10000 characters
-              </p>
+        <div className="space-y-4">
+          {/* ARIA Status Indicator */}
+          {ariaEnabled && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <div className="relative">
+                <Shield className="h-4 w-4 text-cg-amber" />
+                <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-cg-success rounded-full" />
+              </div>
+              <span>ARIA Guardian active</span>
+            </div>
+          )}
+
+          {/* Text Input */}
+          <div className="relative">
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type your message..."
+              className="w-full cg-input min-h-[100px] pr-24 resize-none"
+              disabled={isSending || isAnalyzing}
+            />
+
+            {/* Character Count */}
+            <div className="absolute bottom-3 left-4 text-xs text-muted-foreground">
+              {message.length} / 10,000
             </div>
 
-            {/* Analysis Result (Green) */}
-            {analysis && !analysis.is_flagged && (
-              <Card className="border-cg-success/30 bg-cg-success/10">
-                <CardContent className="pt-4 pb-4">
-                  <div className="flex items-center gap-3">
-                    <svg className="w-5 h-5 sm:w-6 sm:h-6 text-cg-success flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <div>
-                      <p className="font-medium text-cg-success">Message looks good!</p>
-                      <p className="text-sm text-cg-success/80 hidden sm:block">No conflict detected. Safe to send.</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex flex-col-reverse sm:flex-row gap-2 sm:gap-3">
-              <Button
+            {/* Send Button */}
+            <div className="absolute bottom-3 right-3 flex gap-2">
+              {/* Preview Button */}
+              <button
                 onClick={handleAnalyze}
-                variant="outline"
                 disabled={!message.trim() || isAnalyzing || isSending}
-                className="w-full sm:w-auto"
+                className="p-2 rounded-lg text-muted-foreground hover:text-cg-amber hover:bg-cg-amber-subtle transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Preview with ARIA"
               >
                 {isAnalyzing ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-foreground mr-2"></div>
-                    Analyzing...
-                  </>
+                  <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
-                  <>
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                    </svg>
-                    <span className="hidden sm:inline">Preview with ARIA</span>
-                    <span className="sm:hidden">Preview</span>
-                  </>
+                  <Sparkles className="h-5 w-5" />
                 )}
-              </Button>
+              </button>
 
-              <Button
+              {/* Send Button */}
+              <button
                 onClick={handleQuickSend}
                 disabled={!message.trim() || isAnalyzing || isSending}
-                className="w-full sm:flex-1"
+                className="p-2 rounded-lg bg-cg-sage text-white hover:bg-cg-sage-light transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Send message"
               >
-                {isAnalyzing ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    {ariaEnabled ? 'Checking...' : 'Processing...'}
-                  </>
-                ) : isSending ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Sending...
-                  </>
+                {isSending ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
-                  <>
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                    </svg>
-                    Send Message
-                  </>
+                  <Send className="h-5 w-5" />
                 )}
-              </Button>
+              </button>
             </div>
+          </div>
 
-            {/* Help Text - Hidden on mobile for cleaner UI */}
-            <div className="hidden sm:flex items-start gap-2 p-3 bg-cg-primary-subtle border border-cg-primary/20 rounded-md">
-              <svg className="w-5 h-5 text-cg-primary flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div className="text-xs text-foreground/80">
-                <p className="font-medium">ARIA helps you communicate effectively</p>
-                <p className="mt-1">
-                  {ariaEnabled
-                    ? "Messages are automatically analyzed before sending."
-                    : "ARIA is disabled. Click 'Preview' to analyze your message."}
-                </p>
+          {/* Analysis Result (Green - Message OK) */}
+          {analysis && !analysis.is_flagged && (
+            <div className="flex items-center gap-3 p-3 bg-cg-success-subtle border border-cg-success/20 rounded-xl">
+              <CheckCircle className="h-5 w-5 text-cg-success flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-cg-success">Message looks good!</p>
+                <p className="text-xs text-cg-success/80">No conflict patterns detected.</p>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          )}
+
+          {/* Help Text */}
+          <div className="flex items-start gap-2 text-xs text-muted-foreground">
+            <Shield className="h-4 w-4 text-cg-sage flex-shrink-0 mt-0.5" />
+            <div>
+              <p>
+                <span className="font-medium text-foreground/80">Tip:</span>{' '}
+                {ariaEnabled
+                  ? 'Press Enter to send. ARIA will automatically check your message.'
+                  : 'Click the sparkle icon to preview your message with ARIA.'}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

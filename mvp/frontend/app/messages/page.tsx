@@ -1,161 +1,433 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
-import { casesAPI, messagesAPI, courtSettingsAPI, Case, Message, CourtSettingsPublic } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Switch } from '@/components/ui/switch';
+import { familyFilesAPI, agreementsAPI, messagesAPI, FamilyFile, FamilyFileDetail, Agreement, Message } from '@/lib/api';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
-import { PageContainer, EmptyState } from '@/components/layout';
+import { PageContainer } from '@/components/layout';
 import { MessageCompose } from '@/components/messages/message-compose';
 import {
   MessageSquare,
-  Plus,
-  X,
-  Sparkles,
-  Lock,
-  AlertTriangle,
+  Shield,
   Send,
+  MoreVertical,
+  Phone,
+  Video,
+  Info,
+  ChevronLeft,
   Clock,
-  CheckCircle,
-  Lightbulb,
+  CheckCheck,
+  AlertTriangle,
+  Sparkles,
+  Users,
+  FileText,
+  Plus,
 } from 'lucide-react';
+
+interface FamilyFileWithAgreements {
+  familyFile: FamilyFile | FamilyFileDetail;
+  agreements: Agreement[];
+}
+
+/**
+ * The Neutral Zone - ARIA-Protected Co-Parenting Chat
+ *
+ * Design Philosophy: Safe space for communication
+ * - User bubbles: Sage Green
+ * - Partner bubbles: Neutral Grey
+ * - ARIA Guardian: Glowing amber presence
+ */
+
+// ARIA Guardian indicator component
+function ARIAGuardianBadge() {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-cg-amber-subtle border border-cg-amber/20 rounded-full">
+      <div className="relative">
+        <div className="w-2 h-2 bg-cg-amber rounded-full" />
+        <div className="absolute inset-0 w-2 h-2 bg-cg-amber rounded-full animate-ping opacity-50" />
+      </div>
+      <span className="text-xs font-medium text-cg-amber">ARIA Protected</span>
+    </div>
+  );
+}
+
+// Message bubble component
+function MessageBubble({
+  message,
+  isOwn,
+  showAvatar = true,
+  userName
+}: {
+  message: Message;
+  isOwn: boolean;
+  showAvatar?: boolean;
+  userName?: string;
+}) {
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  };
+
+  return (
+    <div className={`flex gap-3 ${isOwn ? 'flex-row-reverse' : ''}`}>
+      {/* Avatar */}
+      {showAvatar && (
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+          isOwn ? 'bg-cg-sage' : 'bg-cg-slate'
+        }`}>
+          <span className="text-xs font-medium text-white">
+            {isOwn ? 'You' : (userName?.charAt(0) || 'P')}
+          </span>
+        </div>
+      )}
+      {!showAvatar && <div className="w-8" />}
+
+      {/* Bubble */}
+      <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'}`}>
+        <div className={`relative group ${
+          isOwn
+            ? 'chat-bubble-user'
+            : 'chat-bubble-other'
+        }`}>
+          {/* ARIA Review Badge */}
+          {message.was_flagged && (
+            <div className={`flex items-center gap-1.5 mb-2 pb-2 border-b ${
+              isOwn ? 'border-white/20' : 'border-border'
+            }`}>
+              <Sparkles className="h-3 w-3 text-cg-amber" />
+              <span className={`text-xs ${isOwn ? 'text-white/70' : 'text-muted-foreground'}`}>
+                Reviewed by ARIA
+              </span>
+            </div>
+          )}
+
+          {/* Message Content */}
+          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+            {message.content}
+          </p>
+
+          {/* Original Content (if ARIA modified) */}
+          {message.original_content && (
+            <details className={`mt-2 pt-2 border-t ${
+              isOwn ? 'border-white/20' : 'border-border'
+            }`}>
+              <summary className={`text-xs cursor-pointer ${
+                isOwn ? 'text-white/60' : 'text-muted-foreground'
+              }`}>
+                View original
+              </summary>
+              <p className={`text-xs mt-1 italic ${
+                isOwn ? 'text-white/50' : 'text-muted-foreground'
+              }`}>
+                "{message.original_content}"
+              </p>
+            </details>
+          )}
+        </div>
+
+        {/* Timestamp and Status */}
+        <div className={`flex items-center gap-1.5 mt-1 text-xs text-muted-foreground ${
+          isOwn ? 'justify-end' : 'justify-start'
+        }`}>
+          <span>{formatTime(message.sent_at)}</span>
+          {isOwn && <CheckCheck className="h-3 w-3 text-cg-sage" />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Empty chat state
+function EmptyChatState({ onCompose }: { onCompose: () => void }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+      <div className="w-20 h-20 rounded-full bg-cg-sage-subtle flex items-center justify-center mb-6">
+        <Shield className="h-10 w-10 text-cg-sage" />
+      </div>
+      <h3 className="text-xl font-semibold text-foreground mb-2">
+        The Neutral Zone
+      </h3>
+      <p className="text-muted-foreground max-w-sm mb-6">
+        This is a safe space for co-parenting communication. ARIA Guardian monitors conversations
+        to help maintain a constructive tone.
+      </p>
+      <button
+        onClick={onCompose}
+        className="cg-btn-primary flex items-center gap-2"
+      >
+        <Send className="h-4 w-4" />
+        Start Conversation
+      </button>
+    </div>
+  );
+}
+
+// Chat header component
+function ChatHeader({
+  familyFileName,
+  agreementTitle,
+  onBack
+}: {
+  familyFileName: string;
+  agreementTitle: string;
+  onBack?: () => void;
+}) {
+  return (
+    <div className="cg-glass border-b border-border sticky top-0 z-10">
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="lg:hidden p-2 -ml-2 rounded-xl hover:bg-cg-sage-subtle transition-smooth"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+          )}
+          <div className="w-10 h-10 rounded-full bg-cg-sage-subtle flex items-center justify-center">
+            <Users className="h-5 w-5 text-cg-sage" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-foreground">{familyFileName}</h2>
+            <p className="text-xs text-muted-foreground">{agreementTitle}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <ARIAGuardianBadge />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Conversation selector for sidebar
+function ConversationSelector({
+  familyFilesWithAgreements,
+  selectedFamilyFile,
+  selectedAgreement,
+  onSelectFamilyFile,
+  onSelectAgreement,
+  isLoading,
+}: {
+  familyFilesWithAgreements: FamilyFileWithAgreements[];
+  selectedFamilyFile: FamilyFile | FamilyFileDetail | null;
+  selectedAgreement: Agreement | null;
+  onSelectFamilyFile: (ff: FamilyFile | FamilyFileDetail) => void;
+  onSelectAgreement: (agreement: Agreement, ff?: FamilyFile | FamilyFileDetail) => void;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="w-8 h-8 border-2 border-cg-sage border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (familyFilesWithAgreements.length === 0) {
+    return (
+      <div className="text-center py-8 px-4">
+        <div className="w-16 h-16 rounded-full bg-cg-sage-subtle flex items-center justify-center mx-auto mb-4">
+          <Users className="h-8 w-8 text-cg-sage" />
+        </div>
+        <h3 className="font-medium text-foreground mb-2">No Family Files</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Create a family file to start messaging
+        </p>
+        <Link href="/family-files/new" className="cg-btn-primary text-sm py-2 px-4">
+          Create Family File
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 p-4">
+      {familyFilesWithAgreements.map((item) => (
+        <div key={item.familyFile.id}>
+          {/* Family File Header */}
+          <button
+            onClick={() => onSelectFamilyFile(item.familyFile)}
+            className={`w-full text-left p-3 rounded-xl transition-smooth ${
+              selectedFamilyFile?.id === item.familyFile.id && !selectedAgreement
+                ? 'bg-cg-sage-subtle border border-cg-sage/30'
+                : 'hover:bg-muted'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-cg-sage-subtle flex items-center justify-center flex-shrink-0">
+                <Users className="h-5 w-5 text-cg-sage" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-foreground truncate">{item.familyFile.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {item.agreements.length} agreement{item.agreements.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+          </button>
+
+          {/* Agreements under this family file */}
+          {selectedFamilyFile?.id === item.familyFile.id && item.agreements.length > 0 && (
+            <div className="ml-6 mt-2 space-y-1 border-l-2 border-border pl-3">
+              {item.agreements.map((agreement) => (
+                <button
+                  key={agreement.id}
+                  onClick={() => onSelectAgreement(agreement)}
+                  className={`w-full text-left p-2.5 rounded-lg transition-smooth flex items-center gap-2 ${
+                    selectedAgreement?.id === agreement.id
+                      ? 'bg-cg-sage text-white'
+                      : 'hover:bg-muted text-foreground'
+                  }`}
+                >
+                  <FileText className="h-4 w-4 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{agreement.title}</p>
+                    <span className={`text-xs ${
+                      selectedAgreement?.id === agreement.id ? 'text-white/70' : 'text-muted-foreground'
+                    }`}>
+                      {agreement.status === 'approved' || agreement.status === 'active' ? 'Active' : agreement.status}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* No agreements message */}
+          {selectedFamilyFile?.id === item.familyFile.id && item.agreements.length === 0 && (
+            <div className="ml-6 mt-2 border-l-2 border-border pl-3">
+              <div className="p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-2">No agreements yet</p>
+                <Link
+                  href={`/agreements?familyFileId=${item.familyFile.id}`}
+                  className="text-xs font-medium text-cg-sage hover:underline"
+                >
+                  Create Agreement
+                </Link>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function MessagesContent() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const caseIdParam = searchParams.get('case');
+  const agreementIdParam = searchParams.get('agreement');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [cases, setCases] = useState<Case[]>([]);
-  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [familyFilesWithAgreements, setFamilyFilesWithAgreements] = useState<FamilyFileWithAgreements[]>([]);
+  const [selectedFamilyFile, setSelectedFamilyFile] = useState<FamilyFile | FamilyFileDetail | null>(null);
+  const [selectedAgreement, setSelectedAgreement] = useState<Agreement | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoadingCases, setIsLoadingCases] = useState(true);
+  const [isLoadingFamilyFiles, setIsLoadingFamilyFiles] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCompose, setShowCompose] = useState(false);
-  const [ariaSettings, setAriaSettings] = useState<{
-    aria_enabled: boolean;
-    aria_provider: string;
-    aria_disabled_at?: string;
-    aria_disabled_by?: string;
-  } | null>(null);
-  const [isUpdatingAria, setIsUpdatingAria] = useState(false);
-  const [courtSettings, setCourtSettings] = useState<CourtSettingsPublic | null>(null);
+  const [showSidebar, setShowSidebar] = useState(true);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   useEffect(() => {
-    loadCases();
+    loadFamilyFilesAndAgreements();
   }, []);
 
   useEffect(() => {
-    if (caseIdParam && cases.length > 0) {
-      const caseToSelect = cases.find((c) => c.id === caseIdParam);
-      if (caseToSelect) {
-        handleSelectCase(caseToSelect);
+    if (familyFilesWithAgreements.length > 0 && agreementIdParam) {
+      for (const item of familyFilesWithAgreements) {
+        const agreement = item.agreements.find(a => a.id === agreementIdParam);
+        if (agreement) {
+          setSelectedFamilyFile(item.familyFile);
+          handleSelectAgreement(agreement, item.familyFile);
+          break;
+        }
       }
     }
-  }, [caseIdParam, cases]);
+  }, [agreementIdParam, familyFilesWithAgreements]);
 
-  const loadCases = async () => {
+  const loadFamilyFilesAndAgreements = async () => {
     try {
-      setIsLoadingCases(true);
+      setIsLoadingFamilyFiles(true);
       setError(null);
-      const data = await casesAPI.list();
-      // Show both pending and active cases
-      const availableCases = data.filter((c) => c.status === 'active' || c.status === 'pending');
-      setCases(availableCases);
 
-      // Auto-select first available case if available
-      if (availableCases.length > 0 && !selectedCase) {
-        handleSelectCase(availableCases[0]);
+      const familyFilesResponse = await familyFilesAPI.list();
+      const familyFiles = familyFilesResponse.items || [];
+
+      const filesWithAgreements: FamilyFileWithAgreements[] = [];
+
+      for (const ff of familyFiles) {
+        try {
+          const agreementsResponse = await agreementsAPI.listForFamilyFile(ff.id);
+          filesWithAgreements.push({
+            familyFile: ff,
+            agreements: agreementsResponse.items || [],
+          });
+        } catch (err) {
+          console.error(`Failed to load agreements for family file ${ff.id}:`, err);
+          filesWithAgreements.push({
+            familyFile: ff,
+            agreements: [],
+          });
+        }
+      }
+
+      setFamilyFilesWithAgreements(filesWithAgreements);
+
+      if (filesWithAgreements.length > 0 && !selectedFamilyFile) {
+        const firstWithAgreements = filesWithAgreements.find(f => f.agreements.length > 0);
+        if (firstWithAgreements) {
+          setSelectedFamilyFile(firstWithAgreements.familyFile);
+          if (firstWithAgreements.agreements.length > 0) {
+            handleSelectAgreement(firstWithAgreements.agreements[0], firstWithAgreements.familyFile);
+          }
+        } else {
+          setSelectedFamilyFile(filesWithAgreements[0].familyFile);
+        }
       }
     } catch (err: any) {
-      console.error('Failed to load cases:', err);
-      setError(err.message || 'Failed to load cases');
+      console.error('Failed to load family files:', err);
+      setError(err.message || 'Failed to load family files');
     } finally {
-      setIsLoadingCases(false);
+      setIsLoadingFamilyFiles(false);
     }
   };
 
-  const handleSelectCase = async (caseItem: Case) => {
-    setSelectedCase(caseItem);
+  const handleSelectFamilyFile = (familyFile: FamilyFile | FamilyFileDetail) => {
+    setSelectedFamilyFile(familyFile);
+    setSelectedAgreement(null);
+    setMessages([]);
     setShowCompose(false);
-    setCourtSettings(null);
-    await loadMessages(caseItem.id);
-    await loadAriaSettings(caseItem.id);
-    await loadCourtSettings(caseItem.id);
   };
 
-  const loadCourtSettings = async (caseId: string) => {
-    try {
-      const settings = await courtSettingsAPI.getSettings(caseId);
-      setCourtSettings(settings);
-    } catch (err) {
-      console.error('Failed to load court settings:', err);
-      setCourtSettings(null);
+  const handleSelectAgreement = async (agreement: Agreement, familyFile?: FamilyFile | FamilyFileDetail) => {
+    if (familyFile) {
+      setSelectedFamilyFile(familyFile);
     }
+    setSelectedAgreement(agreement);
+    setShowCompose(false);
+    setShowSidebar(false); // Hide sidebar on mobile when selecting
+    await loadMessages(agreement.id);
   };
 
-  const loadAriaSettings = async (caseId: string) => {
-    try {
-      const response = await fetch(`http://localhost:8000/api/v1/cases/${caseId}/aria-settings`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-        },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setAriaSettings(data);
-      }
-    } catch (err) {
-      console.error('Failed to load ARIA settings:', err);
-    }
-  };
-
-  const toggleAriaEnabled = async () => {
-    if (!selectedCase || !ariaSettings) return;
-
-    try {
-      setIsUpdatingAria(true);
-      const response = await fetch(`http://localhost:8000/api/v1/cases/${selectedCase.id}/aria-settings`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          aria_enabled: !ariaSettings.aria_enabled,
-          aria_provider: ariaSettings.aria_provider,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setAriaSettings(data);
-      } else {
-        const errorData = await response.json();
-        alert(`Failed to update ARIA settings: ${errorData.detail || 'Unknown error'}`);
-      }
-    } catch (err) {
-      console.error('Failed to update ARIA settings:', err);
-      alert('Failed to update ARIA settings');
-    } finally {
-      setIsUpdatingAria(false);
-    }
-  };
-
-  const loadMessages = async (caseId: string) => {
+  const loadMessages = async (agreementId: string) => {
     try {
       setIsLoadingMessages(true);
       setError(null);
-      const data = await messagesAPI.list(caseId);
-      setMessages(data.reverse()); // Reverse to show oldest first
+      const data = await messagesAPI.listByAgreement(agreementId);
+      setMessages(data.reverse());
     } catch (err: any) {
       console.error('Failed to load messages:', err);
       setError(err.message || 'Failed to load messages');
@@ -166,32 +438,17 @@ function MessagesContent() {
 
   const handleMessageSent = () => {
     setShowCompose(false);
-    if (selectedCase) {
-      loadMessages(selectedCase.id);
+    if (selectedAgreement) {
+      loadMessages(selectedAgreement.id);
     }
   };
 
   const getOtherParentId = () => {
-    if (!selectedCase || !user) return '';
-    // Find the other parent from case participants
-    const otherParticipant = selectedCase.participants?.find(
-      (p) => p.user_id !== user.id
-    );
-    return otherParticipant?.user_id || '';
-  };
-
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-
-    if (diffInHours < 24) {
-      return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    } else if (diffInHours < 48) {
-      return 'Yesterday ' + date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    if (!selectedFamilyFile || !user) return '';
+    if (selectedFamilyFile.parent_a_id === user.id) {
+      return selectedFamilyFile.parent_b_id || '';
     } else {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
-        date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      return selectedFamilyFile.parent_a_id;
     }
   };
 
@@ -199,313 +456,172 @@ function MessagesContent() {
     <div className="min-h-screen bg-background">
       <Navigation />
 
-      <PageContainer className="max-w-7xl">
-        {/* Mobile Case Selector */}
-        <div className="lg:hidden mb-4">
-          <Card>
-            <CardContent className="py-3">
-              <label className="text-sm font-medium text-muted-foreground block mb-2">
-                Select Case
-              </label>
-              {isLoadingCases ? (
-                <div className="flex items-center justify-center py-2">
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-primary border-t-transparent" />
+      <div className="max-w-7xl mx-auto">
+        <div className="flex h-[calc(100vh-4rem)] lg:h-[calc(100vh-5rem)]">
+          {/* Sidebar - Conversations */}
+          <aside className={`
+            ${showSidebar ? 'flex' : 'hidden lg:flex'}
+            w-full lg:w-80 flex-col border-r border-border bg-card
+            absolute lg:relative inset-0 lg:inset-auto z-20 lg:z-auto
+          `}>
+            {/* Sidebar Header */}
+            <div className="p-4 border-b border-border">
+              <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-cg-sage" />
+                Comms
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">The Neutral Zone</p>
+            </div>
+
+            {/* Conversations List */}
+            <div className="flex-1 overflow-y-auto">
+              <ConversationSelector
+                familyFilesWithAgreements={familyFilesWithAgreements}
+                selectedFamilyFile={selectedFamilyFile}
+                selectedAgreement={selectedAgreement}
+                onSelectFamilyFile={handleSelectFamilyFile}
+                onSelectAgreement={handleSelectAgreement}
+                isLoading={isLoadingFamilyFiles}
+              />
+            </div>
+          </aside>
+
+          {/* Main Chat Area */}
+          <main className={`
+            ${!showSidebar || selectedAgreement ? 'flex' : 'hidden lg:flex'}
+            flex-1 flex flex-col bg-background pb-20 lg:pb-0
+          `}>
+            {!selectedAgreement ? (
+              /* No Agreement Selected */
+              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                <div className="w-24 h-24 rounded-full bg-cg-sage-subtle flex items-center justify-center mb-6">
+                  <Shield className="h-12 w-12 text-cg-sage" />
                 </div>
-              ) : cases.length === 0 ? (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">No active cases</span>
-                  <Link href="/cases/new">
-                    <Button size="sm">Create Case</Button>
-                  </Link>
-                </div>
-              ) : (
-                <select
-                  value={selectedCase?.id || ''}
-                  onChange={(e) => {
-                    const caseItem = cases.find((c) => c.id === e.target.value);
-                    if (caseItem) handleSelectCase(caseItem);
-                  }}
-                  className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                <h2 className="text-2xl font-semibold text-foreground mb-3">
+                  Welcome to The Neutral Zone
+                </h2>
+                <p className="text-muted-foreground max-w-md mb-2">
+                  A safe space for co-parenting communication, protected by ARIA Guardian.
+                </p>
+                <p className="text-sm text-muted-foreground max-w-md mb-6">
+                  Select a family file and agreement from the sidebar to start messaging.
+                </p>
+                <button
+                  onClick={() => setShowSidebar(true)}
+                  className="lg:hidden cg-btn-primary"
                 >
-                  <option value="">Select a case...</option>
-                  {cases.map((caseItem) => (
-                    <option key={caseItem.id} value={caseItem.id}>
-                      {caseItem.case_name} {caseItem.status === 'pending' ? '(Pending)' : ''}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                  Select Conversation
+                </button>
+              </div>
+            ) : (
+              /* Chat View */
+              <>
+                {/* Chat Header */}
+                <ChatHeader
+                  familyFileName={selectedFamilyFile?.title || 'Family'}
+                  agreementTitle={selectedAgreement.title}
+                  onBack={() => setShowSidebar(true)}
+                />
 
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Sidebar - Case List (Desktop only) */}
-          <div className="hidden lg:block w-80 flex-shrink-0">
-            <Card className="sticky top-24">
-              <CardHeader>
-                <CardTitle>Cases</CardTitle>
-                <CardDescription>Select a case to view messages</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 max-h-[calc(100vh-200px)] overflow-y-auto">
-                {isLoadingCases && (
-                  <div className="text-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent mx-auto" />
-                  </div>
-                )}
-
-                {!isLoadingCases && cases.length === 0 && (
-                  <div className="text-center py-8">
-                    <p className="text-sm text-muted-foreground mb-4">No active cases</p>
-                    <Link href="/cases/new">
-                      <Button size="sm">Create Case</Button>
-                    </Link>
-                  </div>
-                )}
-
-                {cases.map((caseItem) => (
-                  <button
-                    key={caseItem.id}
-                    onClick={() => handleSelectCase(caseItem)}
-                    className={`w-full text-left p-3 rounded-lg transition-smooth ${
-                      selectedCase?.id === caseItem.id
-                        ? 'bg-cg-primary-subtle border-2 border-cg-primary/30'
-                        : 'bg-secondary/50 border-2 border-transparent hover:bg-secondary'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium text-foreground">{caseItem.case_name}</p>
-                      {caseItem.status === 'pending' && (
-                        <Badge variant="warning" size="sm">Pending</Badge>
-                      )}
+                {/* Messages Area */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {isLoadingMessages ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="w-8 h-8 border-2 border-cg-sage border-t-transparent rounded-full animate-spin" />
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1">{caseItem.state}</p>
-                  </button>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Main Area - Messages */}
-          <div className="flex-1 min-w-0">
-            {!selectedCase && (
-              <Card>
-                <CardContent className="py-12">
-                  <EmptyState
-                    icon={MessageSquare}
-                    title="Select a case to view messages"
-                    description="Choose a case from the sidebar to start communicating"
-                  />
-                </CardContent>
-              </Card>
-            )}
-
-            {selectedCase && (
-              <div className="space-y-6">
-                {/* Court Controls Notice */}
-                {courtSettings && (courtSettings.in_app_communication_only || courtSettings.aria_enforcement_locked) && (
-                  <Alert variant="default" className="bg-cg-warning-subtle border-cg-warning/30">
-                    <AlertTriangle className="h-4 w-4 text-cg-warning" />
-                    <AlertDescription>
-                      <div className="font-medium text-foreground mb-2">Court-Ordered Controls Active</div>
-                      <div className="flex flex-wrap gap-2">
-                        {courtSettings.in_app_communication_only && (
-                          <Badge variant="warning" size="sm">In-App Communication Only</Badge>
-                        )}
-                        {courtSettings.aria_enforcement_locked && (
-                          <Badge variant="warning" size="sm">ARIA Moderation Required</Badge>
-                        )}
-                      </div>
-                      {courtSettings.in_app_communication_only && (
-                        <p className="text-sm text-muted-foreground mt-2">
-                          You are required to use this platform for all communication with the other parent.
-                        </p>
-                      )}
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {/* Case Header */}
-                <Card>
-                  <CardHeader>
-                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-                      <div className="flex-1 min-w-0">
-                        <CardTitle className="truncate">{selectedCase.case_name}</CardTitle>
-                        <CardDescription className="hidden sm:block">AI-powered communication with conflict prevention</CardDescription>
-
-                        {/* ARIA Toggle */}
-                        {ariaSettings && (
-                          <div className="flex items-center gap-3 sm:gap-4 mt-4 pt-4 border-t border-border">
-                            <Switch
-                              checked={ariaSettings.aria_enabled}
-                              onCheckedChange={courtSettings?.aria_enforcement_locked ? undefined : toggleAriaEnabled}
-                              disabled={isUpdatingAria || courtSettings?.aria_enforcement_locked}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Sparkles className="h-4 w-4 text-cg-primary flex-shrink-0" />
-                                <span className="text-sm font-medium text-foreground">
-                                  ARIA
-                                </span>
-                                <Badge
-                                  variant={ariaSettings.aria_enabled ? 'success' : 'secondary'}
-                                  size="sm"
-                                >
-                                  {ariaSettings.aria_enabled ? 'ON' : 'OFF'}
-                                </Badge>
-                                {courtSettings?.aria_enforcement_locked && (
-                                  <Badge variant="warning" size="sm">
-                                    <Lock className="h-3 w-3 mr-1" />
-                                    Locked
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">
-                                {courtSettings?.aria_enforcement_locked
-                                  ? 'ARIA moderation is required by court order.'
-                                  : ariaSettings.aria_enabled
-                                    ? `AI monitoring active`
-                                    : 'ARIA is disabled'}
-                              </p>
-                            </div>
+                  ) : messages.length === 0 ? (
+                    <EmptyChatState onCompose={() => setShowCompose(true)} />
+                  ) : (
+                    <>
+                      {/* ARIA Welcome Message */}
+                      <div className="flex justify-center mb-6">
+                        <div className="aria-guardian px-4 py-3 flex items-center gap-3 max-w-md">
+                          <div className="w-8 h-8 rounded-full bg-cg-amber/20 flex items-center justify-center flex-shrink-0 aria-glow">
+                            <Sparkles className="h-4 w-4 text-cg-amber" />
                           </div>
-                        )}
+                          <p className="text-sm text-foreground">
+                            ARIA Guardian is monitoring this conversation to help maintain a constructive tone.
+                          </p>
+                        </div>
                       </div>
-                      <Button
-                        onClick={() => setShowCompose(!showCompose)}
-                        disabled={!getOtherParentId()}
-                        title={!getOtherParentId() ? "Waiting for other parent to join case" : ""}
-                        className="w-full sm:w-auto flex-shrink-0"
-                      >
-                        {showCompose ? (
-                          <>
-                            <X className="h-4 w-4 mr-2" />
-                            Cancel
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="h-4 w-4 mr-2" />
-                            New Message
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </CardHeader>
-                </Card>
+
+                      {/* Messages */}
+                      {messages.map((message, index) => {
+                        const isOwn = message.sender_id === user?.id;
+                        const prevMessage = index > 0 ? messages[index - 1] : null;
+                        const showAvatar = !prevMessage || prevMessage.sender_id !== message.sender_id;
+
+                        return (
+                          <MessageBubble
+                            key={message.id}
+                            message={message}
+                            isOwn={isOwn}
+                            showAvatar={showAvatar}
+                            userName={isOwn ? undefined : 'Co-Parent'}
+                          />
+                        );
+                      })}
+                      <div ref={messagesEndRef} />
+                    </>
+                  )}
+                </div>
 
                 {/* Compose Area */}
-                {showCompose && selectedCase && (
-                  <>
+                {showCompose ? (
+                  <div className="border-t border-border p-4 bg-card">
                     {getOtherParentId() ? (
                       <MessageCompose
-                        caseId={selectedCase.id}
+                        caseId={selectedAgreement.case_id || undefined}
+                        familyFileId={selectedFamilyFile?.id}
+                        agreementId={selectedAgreement.id}
                         recipientId={getOtherParentId()}
                         onMessageSent={handleMessageSent}
-                        ariaEnabled={ariaSettings?.aria_enabled ?? true}
+                        ariaEnabled={true}
                       />
                     ) : (
-                      <Alert variant="default" className="bg-cg-warning-subtle border-cg-warning/30">
-                        <AlertTriangle className="h-4 w-4 text-cg-warning" />
-                        <AlertDescription>
-                          <p className="font-medium text-foreground">Can't send messages yet</p>
-                          <p className="text-sm text-muted-foreground mt-1">
-                            The other parent needs to accept your case invitation before you can exchange messages.
-                            {selectedCase.status === 'pending' && (
-                              <span className="block mt-2">
-                                Case status: <Badge variant="warning" size="sm">Pending</Badge> - Waiting for other parent to join
-                              </span>
-                            )}
+                      <div className="aria-guardian p-4 flex items-center gap-3">
+                        <AlertTriangle className="h-5 w-5 text-cg-amber flex-shrink-0" />
+                        <div>
+                          <p className="font-medium text-foreground">Waiting for co-parent</p>
+                          <p className="text-sm text-muted-foreground">
+                            The other parent needs to join before you can exchange messages.
                           </p>
-                        </AlertDescription>
-                      </Alert>
+                        </div>
+                      </div>
                     )}
-                  </>
+                    <button
+                      onClick={() => setShowCompose(false)}
+                      className="mt-3 text-sm text-muted-foreground hover:text-foreground transition-smooth"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  /* Quick Compose Button */
+                  <div className="border-t border-border p-4 bg-card">
+                    <button
+                      onClick={() => setShowCompose(true)}
+                      disabled={!getOtherParentId()}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-smooth ${
+                        getOtherParentId()
+                          ? 'border-border hover:border-cg-sage hover:bg-cg-sage-subtle/50 cursor-pointer'
+                          : 'border-border bg-muted cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full bg-cg-sage-subtle flex items-center justify-center">
+                        <Send className="h-4 w-4 text-cg-sage" />
+                      </div>
+                      <span className="text-muted-foreground">
+                        {getOtherParentId() ? 'Write a message...' : 'Waiting for co-parent to join'}
+                      </span>
+                    </button>
+                  </div>
                 )}
-
-                {/* Messages Thread */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg">Messages</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {isLoadingMessages && (
-                      <div className="text-center py-12">
-                        <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent mx-auto" />
-                        <p className="mt-4 text-muted-foreground">Loading messages...</p>
-                      </div>
-                    )}
-
-                    {!isLoadingMessages && messages.length === 0 && (
-                      <EmptyState
-                        icon={MessageSquare}
-                        title="No messages yet"
-                        description="Start the conversation by sending a message"
-                        action={{
-                          label: 'Send First Message',
-                          onClick: () => setShowCompose(true),
-                        }}
-                      />
-                    )}
-
-                    {!isLoadingMessages && messages.length > 0 && (
-                      <div className="space-y-3 sm:space-y-4">
-                        {messages.map((message) => {
-                          const isSent = message.sender_id === user?.id;
-
-                          return (
-                            <div
-                              key={message.id}
-                              className={`flex ${isSent ? 'justify-end' : 'justify-start'}`}
-                            >
-                              <div className={`max-w-[85%] sm:max-w-md ${isSent ? 'ml-4 sm:ml-12' : 'mr-4 sm:mr-12'}`}>
-                                <div
-                                  className={`rounded-2xl px-3 sm:px-4 py-2 sm:py-3 ${
-                                    isSent
-                                      ? 'bg-cg-primary text-white rounded-br-md'
-                                      : 'bg-secondary text-foreground rounded-bl-md'
-                                  }`}
-                                >
-                                  {message.was_flagged && (
-                                    <div className={`flex items-center gap-2 mb-2 pb-2 border-b ${isSent ? 'border-white/20' : 'border-border'}`}>
-                                      <Lightbulb className="h-3 w-3" />
-                                      <span className="text-xs opacity-75">ARIA reviewed</span>
-                                    </div>
-                                  )}
-
-                                  <p className="text-sm whitespace-pre-wrap leading-relaxed break-words">{message.content}</p>
-
-                                  {message.original_content && (
-                                    <details className={`mt-2 pt-2 border-t ${isSent ? 'border-white/20' : 'border-border'}`}>
-                                      <summary className="text-xs opacity-75 cursor-pointer">
-                                        View original
-                                      </summary>
-                                      <p className="text-xs opacity-75 mt-1 italic break-words">
-                                        "{message.original_content}"
-                                      </p>
-                                    </details>
-                                  )}
-                                </div>
-
-                                <div className={`flex items-center gap-1.5 sm:gap-2 mt-1 text-xs text-muted-foreground ${isSent ? 'justify-end' : 'justify-start'}`}>
-                                  <Clock className="h-3 w-3" />
-                                  <span>{formatTime(message.sent_at)}</span>
-                                  {isSent && (
-                                    <CheckCircle className="h-3 w-3 text-cg-success" />
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
+              </>
             )}
-          </div>
+          </main>
         </div>
-      </PageContainer>
+      </div>
     </div>
   );
 }

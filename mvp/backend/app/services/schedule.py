@@ -1,5 +1,7 @@
 """
 Schedule service for parenting time management and compliance tracking.
+
+Supports both Cases and Family Files for access control.
 """
 
 from datetime import datetime, timedelta
@@ -11,13 +13,15 @@ from fastapi import HTTPException, status
 from app.models.schedule import ScheduleEvent, ExchangeCheckIn
 from app.models.case import Case, CaseParticipant
 from app.models.child import Child
+from app.models.family_file import FamilyFile
+from app.models.my_time_collection import MyTimeCollection
 from app.models.user import User
 from app.schemas.schedule import (
     ScheduleEventCreate,
     ScheduleEventUpdate,
     ExchangeCheckInCreate,
 )
-from app.services.case import CaseService
+from app.services.access_control import check_case_or_family_file_access
 
 
 class ScheduleService:
@@ -31,7 +35,6 @@ class ScheduleService:
             db: Database session
         """
         self.db = db
-        self.case_service = CaseService(db)
 
     async def create_event(
         self,
@@ -42,7 +45,7 @@ class ScheduleService:
         Create a schedule event.
 
         Args:
-            event_data: Event data
+            event_data: Event data with collection_id
             user: User creating the event
 
         Returns:
@@ -51,34 +54,61 @@ class ScheduleService:
         Raises:
             HTTPException: If creation fails
         """
-        # Verify access to case
-        await self.case_service.get_case(event_data.case_id, user)
+        # Get the collection first
+        collection_result = await self.db.execute(
+            select(MyTimeCollection).where(MyTimeCollection.id == event_data.collection_id)
+        )
+        collection = collection_result.scalar_one_or_none()
 
-        # Verify custodial parent is a participant
-        await self._verify_participant(event_data.case_id, event_data.custodial_parent_id)
+        if not collection:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Collection not found"
+            )
 
-        # Verify children belong to case
-        await self._verify_children(event_data.case_id, event_data.child_ids)
+        # Determine case_id - use family_file_id if case_id is not set
+        case_or_ff_id = collection.case_id or collection.family_file_id
+        if not case_or_ff_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Collection must belong to a case or family file"
+            )
 
-        # Create event
+        # Verify access to case or family file
+        access = await check_case_or_family_file_access(
+            self.db, case_or_ff_id, user.id
+        )
+        if not access.has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No access to this case"
+            )
+
+        # Verify children belong to case/family file
+        await self._verify_children(case_or_ff_id, event_data.child_ids, access.is_family_file)
+
+        # Create event - set case_id or family_file_id based on access type
+        # Use collection owner as custodial parent, event_category determines exchange status
         event = ScheduleEvent(
-            case_id=event_data.case_id,
-            event_type=event_data.event_type,
+            case_id=access.effective_case_id if not access.is_family_file else None,
+            family_file_id=case_or_ff_id if access.is_family_file else None,
+            collection_id=event_data.collection_id,
+            created_by=user.id,
+            event_type="regular",  # Default event type
+            event_category=event_data.event_category,
+            category_data=event_data.category_data,
             start_time=event_data.start_time,
             end_time=event_data.end_time,
             all_day=event_data.all_day,
-            custodial_parent_id=event_data.custodial_parent_id,
-            transition_from_id=event_data.transition_from_id,
-            transition_to_id=event_data.transition_to_id,
+            custodial_parent_id=collection.owner_id,  # Collection owner is the custodial parent
             child_ids=event_data.child_ids,
             title=event_data.title,
             description=event_data.description,
             location=event_data.location,
-            is_exchange=event_data.is_exchange,
-            exchange_location=event_data.exchange_location,
-            exchange_lat=event_data.exchange_lat,
-            exchange_lng=event_data.exchange_lng,
-            grace_period_minutes=event_data.grace_period_minutes,
+            visibility=event_data.visibility,
+            location_shared=event_data.location_shared,
+            agreement_id=event_data.agreement_id,
+            is_exchange=event_data.event_category == "exchange",  # Exchange category implies exchange event
         )
 
         self.db.add(event)
@@ -97,10 +127,10 @@ class ScheduleService:
         custodial_parent_id: Optional[str] = None
     ) -> List[ScheduleEvent]:
         """
-        Get schedule events for a case.
+        Get schedule events for a case or family file.
 
         Args:
-            case_id: ID of the case
+            case_id: ID of the case or family file
             user: User requesting events
             start_date: Optional start date filter
             end_date: Optional end date filter
@@ -111,14 +141,26 @@ class ScheduleService:
             List of events
         """
         # Verify access
-        await self.case_service.get_case(case_id, user)
+        access = await check_case_or_family_file_access(self.db, case_id, user.id)
+        if not access.has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No access to this case"
+            )
 
-        # Build query
-        query = (
-            select(ScheduleEvent)
-            .where(ScheduleEvent.case_id == case_id)
-            .order_by(ScheduleEvent.start_time)
-        )
+        # Build query - check case_id or family_file_id based on access type
+        if access.is_family_file:
+            query = (
+                select(ScheduleEvent)
+                .where(ScheduleEvent.family_file_id == case_id)
+                .order_by(ScheduleEvent.start_time)
+            )
+        else:
+            query = (
+                select(ScheduleEvent)
+                .where(ScheduleEvent.case_id == access.effective_case_id)
+                .order_by(ScheduleEvent.start_time)
+            )
 
         if start_date:
             query = query.where(ScheduleEvent.start_time >= start_date)
@@ -169,8 +211,13 @@ class ScheduleService:
                 detail="Event not found"
             )
 
-        # Verify access to case
-        await self.case_service.get_case(event.case_id, user)
+        # Verify access to case (event.case_id is always the effective case_id)
+        access = await check_case_or_family_file_access(self.db, event.case_id, user.id)
+        if not access.has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No access to this case"
+            )
 
         # Update fields
         if event_data.start_time is not None:
@@ -224,7 +271,12 @@ class ScheduleService:
             )
 
         # Verify access to case
-        await self.case_service.get_case(event.case_id, user)
+        access = await check_case_or_family_file_access(self.db, event.case_id, user.id)
+        if not access.has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No access to this case"
+            )
 
         # Calculate timeliness
         now = datetime.utcnow()
@@ -289,7 +341,12 @@ class ScheduleService:
             )
 
         # Verify access
-        await self.case_service.get_case(event.case_id, user)
+        access = await check_case_or_family_file_access(self.db, event.case_id, user.id)
+        if not access.has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No access to this case"
+            )
 
         # Get check-ins
         result = await self.db.execute(
@@ -321,7 +378,14 @@ class ScheduleService:
             Compliance metrics
         """
         # Verify access
-        await self.case_service.get_case(case_id, user)
+        access = await check_case_or_family_file_access(self.db, case_id, user.id)
+        if not access.has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No access to this case"
+            )
+        # Use effective_case_id for queries
+        effective_case_id = access.effective_case_id
 
         since = datetime.utcnow() - timedelta(days=days)
 
@@ -330,7 +394,7 @@ class ScheduleService:
             select(ScheduleEvent)
             .where(
                 and_(
-                    ScheduleEvent.case_id == case_id,
+                    ScheduleEvent.case_id == effective_case_id,
                     ScheduleEvent.is_exchange == True,
                     ScheduleEvent.start_time >= since
                 )
@@ -369,12 +433,12 @@ class ScheduleService:
             if late_check_ins else 0.0
         )
 
-        # Determine trend
-        trend = await self._calculate_compliance_trend(case_id, user_id, days)
+        # Determine trend (use effective_case_id for query)
+        trend = await self._calculate_compliance_trend(effective_case_id, user_id, days)
 
         return {
             "user_id": user_id or "all",
-            "case_id": case_id,
+            "case_id": effective_case_id,
             "total_exchanges": total_exchanges,
             "on_time_count": on_time_count,
             "late_count": late_count,
@@ -388,38 +452,70 @@ class ScheduleService:
 
     # Helper methods
 
-    async def _verify_participant(self, case_id: str, user_id: str):
-        """Verify user is a participant in the case"""
-        result = await self.db.execute(
-            select(CaseParticipant)
-            .where(
-                and_(
-                    CaseParticipant.case_id == case_id,
-                    CaseParticipant.user_id == user_id,
-                    CaseParticipant.is_active == True
-                )
-            )
-        )
-        participant = result.scalar_one_or_none()
-
-        if not participant:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User is not a participant in this case"
-            )
-
-    async def _verify_children(self, case_id: str, child_ids: List[str]):
-        """Verify children belong to case"""
-        for child_id in child_ids:
+    async def _verify_participant(self, case_id: str, user_id: str, is_family_file: bool = False):
+        """Verify user is a participant in the case or family file."""
+        if is_family_file:
+            # Check family file participants
             result = await self.db.execute(
-                select(Child).where(
-                    and_(
-                        Child.id == child_id,
-                        Child.case_id == case_id,
-                        Child.is_active == True
+                select(FamilyFile).where(
+                    FamilyFile.id == case_id,
+                    or_(
+                        FamilyFile.parent_a_id == user_id,
+                        FamilyFile.parent_b_id == user_id
                     )
                 )
             )
+            family_file = result.scalar_one_or_none()
+            if not family_file:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User is not a participant in this family file"
+                )
+        else:
+            # Check case participants
+            result = await self.db.execute(
+                select(CaseParticipant)
+                .where(
+                    and_(
+                        CaseParticipant.case_id == case_id,
+                        CaseParticipant.user_id == user_id,
+                        CaseParticipant.is_active == True
+                    )
+                )
+            )
+            participant = result.scalar_one_or_none()
+
+            if not participant:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User is not a participant in this case"
+                )
+
+    async def _verify_children(self, case_id: str, child_ids: List[str], is_family_file: bool = False):
+        """Verify children belong to case or family file."""
+        for child_id in child_ids:
+            if is_family_file:
+                # Check child belongs to family file
+                result = await self.db.execute(
+                    select(Child).where(
+                        and_(
+                            Child.id == child_id,
+                            Child.family_file_id == case_id,
+                            Child.is_active == True
+                        )
+                    )
+                )
+            else:
+                # Check child belongs to case
+                result = await self.db.execute(
+                    select(Child).where(
+                        and_(
+                            Child.id == child_id,
+                            Child.case_id == case_id,
+                            Child.is_active == True
+                        )
+                    )
+                )
             child = result.scalar_one_or_none()
 
             if not child:

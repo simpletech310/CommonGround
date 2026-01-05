@@ -80,6 +80,7 @@ async def create_from_request(
 @router.get("/obligations/")
 async def list_obligations(
     case_id: str = Query(..., description="Case ID"),
+    agreement_id: Optional[str] = Query(None, description="Filter by SharedCare Agreement ID"),
     status_filter: Optional[str] = Query(None, alias="status", description="Filter by status(es), comma-separated"),
     category: Optional[str] = Query(None, description="Filter by category(ies), comma-separated"),
     is_overdue: Optional[bool] = Query(None, description="Only overdue obligations"),
@@ -91,7 +92,7 @@ async def list_obligations(
     """
     List obligations for a case with optional filters.
 
-    Supports filtering by status, category, and overdue state.
+    Supports filtering by status, category, overdue state, and agreement_id.
     Results are paginated.
     """
     # Build filters
@@ -99,6 +100,7 @@ async def list_obligations(
         status=status_filter.split(",") if status_filter else None,
         purpose_category=category.split(",") if category else None,
         is_overdue=is_overdue,
+        agreement_id=agreement_id,
     )
 
     service = ClearFundService(db)

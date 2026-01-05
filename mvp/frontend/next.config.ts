@@ -6,9 +6,9 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  // Next.js needs unsafe-inline/eval for dev
-      "style-src 'self' 'unsafe-inline'",  // Tailwind needs unsafe-inline
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  // Tailwind + Google Fonts
       "img-src 'self' data: https:",
-      "font-src 'self'",
+      "font-src 'self' https://fonts.gstatic.com",  // Google Fonts
       "connect-src 'self' http://localhost:8000 ws://localhost:8000",  // Backend API
       "frame-ancestors 'none'",
       "base-uri 'self'",

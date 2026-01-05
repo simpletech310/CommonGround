@@ -20,8 +20,10 @@ from sqlalchemy.orm import selectinload
 from app.models.cubbie import CubbieItem, CubbieExchangeItem, ChildPhoto
 from app.models.child import Child
 from app.models.case import Case, CaseParticipant
+from app.models.family_file import FamilyFile
 from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
 from app.models.user import User
+from app.services.access_control import check_case_or_family_file_access, AccessResult
 from app.schemas.cubbie import (
     CubbieItemCreate,
     CubbieItemUpdate,
@@ -41,24 +43,17 @@ class CubbieService:
 
     async def _verify_case_access(
         self, case_id: str, user_id: str
-    ) -> CaseParticipant:
-        """Verify user has access to the case."""
-        result = await self.db.execute(
-            select(CaseParticipant).where(
-                and_(
-                    CaseParticipant.case_id == case_id,
-                    CaseParticipant.user_id == user_id,
-                    CaseParticipant.is_active == True,
-                )
-            )
+    ) -> AccessResult:
+        """Verify user has access to the case or family file."""
+        access = await check_case_or_family_file_access(
+            self.db, case_id, user_id
         )
-        participant = result.scalar_one_or_none()
-        if not participant:
+        if not access.has_access:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have access to this case",
             )
-        return participant
+        return access
 
     async def _get_child_with_case(self, child_id: str) -> Child:
         """Get child and verify it exists."""
@@ -92,12 +87,15 @@ class CubbieService:
         """
         # Get child and verify access
         child = await self._get_child_with_case(item_data.child_id)
-        await self._verify_case_access(child.case_id, user.id)
+        # Use case_id or family_file_id depending on which is set
+        case_or_ff_id = child.case_id or child.family_file_id
+        await self._verify_case_access(case_or_ff_id, user.id)
 
-        # Create the item
+        # Create the item - set case_id or family_file_id based on child's parent
         item = CubbieItem(
             child_id=child.id,
-            case_id=child.case_id,
+            case_id=child.case_id,  # Will be None for family file children
+            family_file_id=child.family_file_id,  # Will be None for case children
             name=item_data.name,
             description=item_data.description,
             category=item_data.category.value,
@@ -130,8 +128,9 @@ class CubbieService:
                 detail="Item not found",
             )
 
-        # Verify access
-        await self._verify_case_access(item.case_id, user.id)
+        # Verify access - use case_id or family_file_id
+        case_or_ff_id = item.case_id or item.family_file_id
+        await self._verify_case_access(case_or_ff_id, user.id)
         return item
 
     async def list_items_for_child(
@@ -147,7 +146,8 @@ class CubbieService:
             Tuple of (child, items, total_value)
         """
         child = await self._get_child_with_case(child_id)
-        await self._verify_case_access(child.case_id, user.id)
+        case_or_ff_id = child.case_id or child.family_file_id
+        await self._verify_case_access(case_or_ff_id, user.id)
 
         query = select(CubbieItem).where(CubbieItem.child_id == child_id)
         if not include_inactive:
@@ -171,22 +171,32 @@ class CubbieService:
         include_inactive: bool = False,
     ) -> dict:
         """
-        List all cubbie items for a case, grouped by child.
+        List all cubbie items for a case or family file, grouped by child.
 
         Returns:
             Dict with children and their items
         """
-        await self._verify_case_access(case_id, user.id)
+        access = await self._verify_case_access(case_id, user.id)
 
-        # Get all children for the case
-        children_result = await self.db.execute(
-            select(Child).where(
-                and_(
-                    Child.case_id == case_id,
-                    Child.is_active == True,
+        # Get all children for the case or family file
+        if access.is_family_file:
+            children_result = await self.db.execute(
+                select(Child).where(
+                    and_(
+                        Child.family_file_id == case_id,
+                        Child.is_active == True,
+                    )
                 )
             )
-        )
+        else:
+            children_result = await self.db.execute(
+                select(Child).where(
+                    and_(
+                        Child.case_id == access.effective_case_id,
+                        Child.is_active == True,
+                    )
+                )
+            )
         children = children_result.scalars().all()
 
         result = {}
@@ -457,7 +467,8 @@ class CubbieService:
     ) -> ChildPhoto:
         """Add a photo to a child's gallery."""
         child = await self._get_child_with_case(child_id)
-        await self._verify_case_access(child.case_id, user.id)
+        case_or_ff_id = child.case_id or child.family_file_id
+        await self._verify_case_access(case_or_ff_id, user.id)
 
         # If setting as profile photo, unset other profile photos
         if photo_data.is_profile_photo:
@@ -508,7 +519,8 @@ class CubbieService:
     ) -> List[ChildPhoto]:
         """Get all photos for a child."""
         child = await self._get_child_with_case(child_id)
-        await self._verify_case_access(child.case_id, user.id)
+        case_or_ff_id = child.case_id or child.family_file_id
+        await self._verify_case_access(case_or_ff_id, user.id)
 
         result = await self.db.execute(
             select(ChildPhoto)
@@ -530,7 +542,8 @@ class CubbieService:
     ) -> ChildPhoto:
         """Set a photo as the child's profile photo."""
         child = await self._get_child_with_case(child_id)
-        await self._verify_case_access(child.case_id, user.id)
+        case_or_ff_id = child.case_id or child.family_file_id
+        await self._verify_case_access(case_or_ff_id, user.id)
 
         # Get the photo
         result = await self.db.execute(

@@ -56,8 +56,11 @@ class CubbieItem(Base, UUIDMixin, TimestampMixin):
     child_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("children.id"), index=True
     )
-    case_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("cases.id"), index=True
+    case_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("cases.id"), index=True, nullable=True
+    )
+    family_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("family_files.id"), index=True, nullable=True
     )
 
     # Item details
@@ -90,7 +93,8 @@ class CubbieItem(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     child: Mapped["Child"] = relationship("Child", back_populates="cubbie_items")
-    case: Mapped["Case"] = relationship("Case")
+    case: Mapped[Optional["Case"]] = relationship("Case")
+    family_file: Mapped[Optional["FamilyFile"]] = relationship("FamilyFile")
     added_by_user: Mapped["User"] = relationship("User")
     exchange_items: Mapped[list["CubbieExchangeItem"]] = relationship(
         "CubbieExchangeItem", back_populates="cubbie_item"

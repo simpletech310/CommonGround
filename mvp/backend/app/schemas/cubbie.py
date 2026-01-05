@@ -82,7 +82,8 @@ class CubbieItemResponse(CubbieItemBase):
     """Cubbie item response."""
     id: str
     child_id: str
-    case_id: str
+    case_id: Optional[str] = None
+    family_file_id: Optional[str] = None
     photo_url: Optional[str] = None
     added_by: str
     is_active: bool

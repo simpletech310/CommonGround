@@ -9,6 +9,7 @@ import CourtEventDetails from './court-event-details';
 
 interface CalendarViewProps {
   caseId: string;
+  agreementId?: string;  // Filter events by SharedCare Agreement
   onCreateEvent?: (date: Date) => void;
   onEventClick?: (event: EventV2) => void;
   onExchangeClick?: (exchange: ExchangeInstanceForCalendar) => void;
@@ -16,6 +17,7 @@ interface CalendarViewProps {
 
 export default function CalendarView({
   caseId,
+  agreementId,
   onCreateEvent,
   onEventClick,
   onExchangeClick,
@@ -161,7 +163,7 @@ export default function CalendarView({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="text-gray-500">Loading calendar...</div>
+        <div className="text-muted-foreground">Loading calendar...</div>
       </div>
     );
   }
@@ -169,10 +171,10 @@ export default function CalendarView({
   return (
     <div className="space-y-4">
       {/* Calendar Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">{monthName}</h2>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <h2 className="text-xl sm:text-2xl font-bold text-foreground">{monthName}</h2>
         <div className="flex items-center gap-2">
-          <Button onClick={today} variant="outline" size="sm">
+          <Button onClick={today} variant="outline" size="sm" className="text-xs sm:text-sm">
             Today
           </Button>
           <Button onClick={previousMonth} variant="outline" size="sm">
@@ -185,56 +187,57 @@ export default function CalendarView({
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+        <div className="bg-cg-error-subtle border border-cg-error/30 text-cg-error px-4 py-3 rounded-lg">
           {error}
         </div>
       )}
 
       {/* Collections Legend */}
       {calendarData && calendarData.my_collections.length > 0 && (
-        <div className="flex items-center gap-4 flex-wrap">
-          <span className="text-sm font-medium text-gray-700">My Collections:</span>
+        <div className="flex items-center gap-3 sm:gap-4 flex-wrap text-xs sm:text-sm bg-cg-cream p-3 rounded-lg border border-cg-sand-dark">
+          <span className="font-medium text-foreground">My Collections:</span>
           {calendarData.my_collections.map(collection => (
-            <div key={collection.id} className="flex items-center gap-2">
+            <div key={collection.id} className="flex items-center gap-1.5">
               <div
                 className="w-3 h-3 rounded-full"
                 style={{ backgroundColor: collection.color }}
               />
-              <span className="text-sm text-gray-600">{collection.name}</span>
+              <span className="text-muted-foreground">{collection.name}</span>
             </div>
           ))}
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-purple-500" />
-            <span className="text-sm text-gray-600">Pickup/Dropoff</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-cg-amber" />
+            <span className="text-muted-foreground">Pickup/Dropoff</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-600" />
-            <span className="text-sm text-gray-600">Court Event</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-cg-error" />
+            <span className="text-muted-foreground">Court Event</span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gray-400" />
-            <span className="text-sm text-gray-600">Other Parent (Busy)</span>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-cg-slate-light" />
+            <span className="text-muted-foreground">Other Parent (Busy)</span>
           </div>
         </div>
       )}
 
       {/* Calendar Grid */}
-      <Card className="overflow-x-auto">
-        <div className="min-w-[600px]">
+      <Card className="overflow-x-auto bg-cg-cream border-cg-sand-dark">
+        <div className="min-w-[320px] sm:min-w-[600px]">
           {/* Weekday Headers */}
-          <div className="grid grid-cols-7 bg-gray-100 border-b">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-              <div key={day} className="p-2 text-center text-xs sm:text-sm font-semibold text-gray-700">
-                {day}
+          <div className="grid grid-cols-7 bg-cg-sage text-white border-b border-cg-sage-dark">
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => (
+              <div key={day} className="p-2 sm:p-3 text-center text-xs sm:text-sm font-semibold">
+                <span className="hidden sm:inline">{day}</span>
+                <span className="sm:hidden">{day.charAt(0)}</span>
               </div>
             ))}
           </div>
 
           {/* Calendar Days */}
-          <div className="grid grid-cols-7 auto-rows-fr min-h-[400px] sm:min-h-[500px]">
+          <div className="grid grid-cols-7 auto-rows-fr min-h-[350px] sm:min-h-[500px]">
           {calendarDays.map((date, index) => {
             if (!date) {
-              return <div key={`empty-${index}`} className="border-r border-b bg-gray-50" />;
+              return <div key={`empty-${index}`} className="border-r border-b border-cg-sand-dark bg-cg-sand/30" />;
             }
 
             const events = getEventsForDate(date);
@@ -246,37 +249,37 @@ export default function CalendarView({
             return (
               <div
                 key={date.toISOString()}
-                className={`border-r border-b p-2 min-h-[100px] hover:bg-gray-50 transition-colors ${
-                  isTodayDate ? 'bg-blue-50' : ''
+                className={`border-r border-b border-cg-sand-dark p-1 sm:p-2 min-h-[70px] sm:min-h-[100px] hover:bg-cg-sage-subtle/50 transition-colors ${
+                  isTodayDate ? 'bg-cg-sage-subtle' : 'bg-white dark:bg-card'
                 }`}
               >
                 {/* Day Number */}
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-1 sm:mb-2">
                   <span
-                    className={`text-sm font-medium ${
-                      isTodayDate ? 'bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center' : 'text-gray-700'
+                    className={`text-xs sm:text-sm font-medium ${
+                      isTodayDate ? 'bg-cg-sage text-white rounded-full w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center' : 'text-foreground'
                     }`}
                   >
                     {date.getDate()}
                   </span>
                   <button
                     onClick={() => onCreateEvent?.(date)}
-                    className="opacity-0 hover:opacity-100 transition-opacity"
+                    className="opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity p-1"
                     aria-label="Add event"
                   >
-                    <Plus className="h-4 w-4 text-gray-400 hover:text-blue-600" />
+                    <Plus className="h-3 w-3 sm:h-4 sm:w-4 text-cg-sage hover:text-cg-sage-dark" />
                   </button>
                 </div>
 
                 {/* Events */}
-                <div className="space-y-1">
-                  {events.slice(0, 3).map(event => {
+                <div className="space-y-0.5 sm:space-y-1">
+                  {events.slice(0, 2).map(event => {
                     const collection = calendarData?.my_collections.find(
                       c => c.id === event.collection_id
                     );
                     const eventColor = event.is_owner
-                      ? collection?.color || '#3B82F6'
-                      : '#6B7280'; // Gray for shared events
+                      ? collection?.color || '#4A6C58'
+                      : '#64748B'; // Slate for shared events
 
                     // RSVP indicator
                     const rsvpStatus = event.my_attendance?.rsvp_status;
@@ -288,7 +291,7 @@ export default function CalendarView({
                       <button
                         key={event.id}
                         onClick={() => onEventClick?.(event)}
-                        className="w-full text-left px-2 py-1 rounded text-xs hover:opacity-80 transition-opacity truncate flex items-center gap-1"
+                        className="w-full text-left px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-xs hover:opacity-80 transition-opacity truncate flex items-center gap-1"
                         style={{
                           backgroundColor: eventColor,
                           color: 'white',
@@ -304,7 +307,7 @@ export default function CalendarView({
                           </span>
                         )}
                         <span className="truncate">
-                          {formatEventTime(event.start_time)} {event.title}
+                          <span className="hidden sm:inline">{formatEventTime(event.start_time)} </span>{event.title}
                         </span>
                       </button>
                     );
@@ -315,12 +318,12 @@ export default function CalendarView({
                     <button
                       key={exchange.id}
                       onClick={() => onExchangeClick?.(exchange)}
-                      className="w-full px-2 py-1 rounded text-xs bg-purple-500 text-white truncate flex items-center gap-1 hover:bg-purple-600 transition-colors text-left cursor-pointer"
+                      className="w-full px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-xs bg-cg-amber text-white truncate flex items-center gap-1 hover:bg-cg-amber/80 transition-colors text-left cursor-pointer"
                       title={`${exchange.title} - ${exchange.location || 'No location'} - Click to check in`}
                     >
-                      <RefreshCw className="h-3 w-3 flex-shrink-0" />
+                      <RefreshCw className="h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0" />
                       <span className="truncate">
-                        {formatEventTime(exchange.scheduled_time)} {exchange.title}
+                        <span className="hidden sm:inline">{formatEventTime(exchange.scheduled_time)} </span>{exchange.title}
                       </span>
                     </button>
                   ))}
@@ -337,30 +340,30 @@ export default function CalendarView({
                       <button
                         key={courtEvent.id}
                         onClick={() => setSelectedCourtEvent(courtEvent)}
-                        className={`w-full px-2 py-1 rounded text-xs text-white truncate flex items-center gap-1 hover:opacity-80 transition-opacity cursor-pointer text-left ${
-                          courtEvent.is_mandatory ? 'bg-red-600' : 'bg-slate-600'
+                        className={`w-full px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-xs text-white truncate flex items-center gap-1 hover:opacity-80 transition-opacity cursor-pointer text-left ${
+                          courtEvent.is_mandatory ? 'bg-cg-error' : 'bg-cg-slate'
                         }`}
                         title={`${courtEvent.title}${courtEvent.is_mandatory ? ' (Required)' : ''}${rsvpStatus ? ` - ${rsvpStatus}` : ''} - Click to respond`}
                       >
-                        <Gavel className="h-3 w-3 flex-shrink-0" />
+                        <Gavel className="h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0" />
                         {RsvpIcon && (
-                          <RsvpIcon className={`h-3 w-3 flex-shrink-0 ${
+                          <RsvpIcon className={`h-2.5 w-2.5 sm:h-3 sm:w-3 flex-shrink-0 ${
                             rsvpStatus === 'attending' ? 'text-green-300' :
                             rsvpStatus === 'not_attending' ? 'text-red-300' : 'text-yellow-300'
                           }`} />
                         )}
                         <span className="truncate">
-                          {courtEvent.start_time ? formatTimeString(courtEvent.start_time) : ''} {courtEvent.title}
+                          <span className="hidden sm:inline">{courtEvent.start_time ? formatTimeString(courtEvent.start_time) : ''} </span>{courtEvent.title}
                         </span>
                       </button>
                     );
                   })}
 
                   {/* Busy Periods */}
-                  {busyPeriods.slice(0, 2).map((period, i) => (
+                  {busyPeriods.slice(0, 1).map((period, i) => (
                     <div
                       key={i}
-                      className="px-2 py-1 rounded text-xs bg-gray-300 text-gray-700 truncate"
+                      className="px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-xs bg-cg-slate-subtle text-cg-slate truncate"
                       title={period.label}
                     >
                       {period.label}
@@ -369,7 +372,7 @@ export default function CalendarView({
 
                   {/* Show "more" indicator */}
                   {events.length + exchanges.length + courtEvents.length + busyPeriods.length > 3 && (
-                    <div className="text-xs text-gray-500 px-2">
+                    <div className="text-[10px] sm:text-xs text-muted-foreground px-1">
                       +{events.length + exchanges.length + courtEvents.length + busyPeriods.length - 3} more
                     </div>
                   )}
@@ -383,9 +386,9 @@ export default function CalendarView({
 
       {/* Summary */}
       {calendarData && (
-        <div className="text-sm text-gray-600 text-center">
+        <div className="text-sm text-muted-foreground text-center">
           {calendarData.events.length === 0 && (calendarData.exchanges?.length || 0) === 0 && (calendarData.court_events?.length || 0) === 0 && calendarData.busy_periods.length === 0 ? (
-            <span className="text-gray-400">
+            <span className="text-muted-foreground/60">
               No events this month. Click the + on any day to create one!
             </span>
           ) : (

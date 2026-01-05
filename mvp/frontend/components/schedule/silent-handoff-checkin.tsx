@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { MapPin, Clock, CheckCircle, XCircle, Loader2, QrCode, Navigation } from 'lucide-react';
+import { MapPin, Clock, CheckCircle, XCircle, Loader2, QrCode, Navigation, Users, Package, ArrowDown, ArrowUp } from 'lucide-react';
 import { useGeolocation } from '@/hooks/use-geolocation';
 import {
   exchangesAPI,
+  familyFilesAPI,
   CustodyExchangeInstance,
   WindowStatusResponse,
+  FamilyFileChild,
 } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,12 +16,14 @@ import { Badge } from '@/components/ui/badge';
 
 interface SilentHandoffCheckInProps {
   instance: CustodyExchangeInstance;
+  familyFileId?: string;
   onCheckInComplete?: (instance: CustodyExchangeInstance) => void;
   onClose: () => void;
 }
 
 export default function SilentHandoffCheckIn({
   instance,
+  familyFileId,
   onCheckInComplete,
   onClose,
 }: SilentHandoffCheckInProps) {
@@ -29,13 +33,20 @@ export default function SilentHandoffCheckIn({
   const [checkInError, setCheckInError] = useState<string | null>(null);
   const [checkInSuccess, setCheckInSuccess] = useState<CustodyExchangeInstance | null>(null);
   const [notes, setNotes] = useState('');
+  const [children, setChildren] = useState<FamilyFileChild[]>([]);
 
   const exchange = instance.exchange;
   const hasSilentHandoff = exchange?.silent_handoff_enabled;
   const hasGeofence = exchange?.location_lat != null && exchange?.location_lng != null;
 
+  // Get children involved in this exchange
+  const pickupChildren = children.filter(c => exchange?.pickup_child_ids?.includes(c.id));
+  const dropoffChildren = children.filter(c => exchange?.dropoff_child_ids?.includes(c.id));
+  const hasChildren = pickupChildren.length > 0 || dropoffChildren.length > 0;
+
   useEffect(() => {
     loadWindowStatus();
+    loadChildren();
   }, [instance.id]);
 
   const loadWindowStatus = async () => {
@@ -44,6 +55,19 @@ export default function SilentHandoffCheckIn({
       setWindowStatus(status);
     } catch (err: any) {
       console.error('Failed to load window status:', err);
+    }
+  };
+
+  const loadChildren = async () => {
+    // Try to load children from family file
+    const fileId = familyFileId || exchange?.case_id;
+    if (!fileId) return;
+
+    try {
+      const result = await familyFilesAPI.getChildren(fileId);
+      setChildren(result.items || []);
+    } catch (err) {
+      console.log('Could not load children:', err);
     }
   };
 
@@ -153,7 +177,7 @@ export default function SilentHandoffCheckIn({
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
-              <Navigation className="h-6 w-6 text-purple-600" />
+              <Navigation className="h-6 w-6 text-cg-sage" />
               <h2 className="text-xl font-bold text-foreground">Silent Handoff Check-in</h2>
             </div>
             <button
@@ -165,18 +189,65 @@ export default function SilentHandoffCheckIn({
           </div>
 
           {/* Exchange Info */}
-          <div className="bg-secondary/50 rounded-lg p-4 mb-6">
-            <p className="font-medium text-foreground">{exchange?.title || 'Exchange'}</p>
+          <div className="bg-cg-cream rounded-xl p-4 mb-6 space-y-3 border border-cg-sand-dark shadow-sm">
+            <p className="font-semibold text-foreground text-lg">{exchange?.title || 'Exchange'}</p>
             {exchange?.location && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-                <MapPin className="h-4 w-4" />
+              <p className="text-sm text-foreground flex items-center gap-2">
+                <MapPin className="h-4 w-4 flex-shrink-0 text-cg-sage" />
                 {exchange.location}
               </p>
             )}
-            <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1">
-              <Clock className="h-4 w-4" />
+            <p className="text-sm text-foreground flex items-center gap-2">
+              <Clock className="h-4 w-4 flex-shrink-0 text-cg-sage" />
               {formatTime(instance.scheduled_time)}
             </p>
+
+            {/* Children involved */}
+            {hasChildren && (
+              <div className="pt-3 border-t border-cg-sand-dark">
+                <p className="text-sm font-medium text-foreground flex items-center gap-2 mb-2">
+                  <Users className="h-4 w-4 flex-shrink-0 text-cg-amber" />
+                  Children
+                </p>
+                <div className="space-y-2">
+                  {dropoffChildren.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {dropoffChildren.map(child => (
+                        <Badge key={child.id} className="bg-cg-slate text-white px-3 py-1">
+                          <ArrowUp className="h-3 w-3 mr-1.5" />
+                          {child.first_name}
+                          <span className="ml-1.5 opacity-80 text-xs">drop off</span>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {pickupChildren.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {pickupChildren.map(child => (
+                        <Badge key={child.id} className="bg-cg-sage text-white px-3 py-1">
+                          <ArrowDown className="h-3 w-3 mr-1.5" />
+                          {child.first_name}
+                          <span className="ml-1.5 opacity-80 text-xs">pick up</span>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Items to bring (Cubbie items) */}
+            {exchange?.items_to_bring && (
+              <div className="pt-3 border-t border-cg-sand-dark">
+                <p className="text-sm font-medium text-foreground flex items-center gap-2 mb-1">
+                  <Package className="h-4 w-4 flex-shrink-0 text-cg-amber" />
+                  Items
+                </p>
+                <p className="text-sm text-foreground pl-6">
+                  {exchange.items_to_bring}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Window Status */}
@@ -248,8 +319,8 @@ export default function SilentHandoffCheckIn({
           </div>
 
           {/* Privacy Notice */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-6">
-            <p className="text-sm text-blue-800 dark:text-blue-300">
+          <div className="bg-cg-sage-subtle border border-cg-sage/30 rounded-lg p-3 mb-6">
+            <p className="text-sm text-cg-sage-dark dark:text-cg-sage-light">
               <strong>Privacy:</strong> Your GPS location is captured only at this moment for verification.
               No continuous tracking or location history is recorded.
             </p>
@@ -268,7 +339,7 @@ export default function SilentHandoffCheckIn({
               <Button
                 onClick={handleCheckIn}
                 disabled={!isSupported || isCheckingIn || geoLoading || (windowStatus !== null && !windowStatus.is_within_window)}
-                className="flex-1 bg-purple-600 hover:bg-purple-700"
+                className="flex-1 bg-cg-sage hover:bg-cg-sage-dark"
               >
                 {isCheckingIn || geoLoading ? (
                   <>

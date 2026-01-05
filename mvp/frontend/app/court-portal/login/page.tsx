@@ -81,9 +81,9 @@ export default function CourtLoginPage() {
           <div className="mx-auto w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-4">
             <Scale className="h-8 w-8 text-indigo-600" />
           </div>
-          <CardTitle className="text-2xl">Court Access Portal</CardTitle>
+          <CardTitle className="text-2xl">MediatorMode</CardTitle>
           <CardDescription>
-            Secure access for legal professionals
+            Secure access for court professionals
           </CardDescription>
         </CardHeader>
 

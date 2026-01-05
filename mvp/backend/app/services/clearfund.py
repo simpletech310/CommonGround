@@ -28,7 +28,9 @@ from app.models.clearfund import (
 )
 from app.models.payment import PaymentLedger, ExpenseRequest
 from app.models.case import Case, CaseParticipant
+from app.models.family_file import FamilyFile
 from app.models.user import User
+from app.services.access_control import check_case_or_family_file_access, AccessResult
 from app.schemas.clearfund import (
     ObligationCreate,
     ObligationUpdate,
@@ -52,58 +54,68 @@ class ClearFundService:
     # Access Control Helpers
     # ========================================================================
 
-    async def _verify_case_access(self, case_id: str, user: User) -> Case:
-        """Verify user has access to the case and return it."""
-        result = await self.db.execute(
-            select(Case)
-            .options(selectinload(Case.participants))
-            .where(Case.id == case_id)
-        )
-        case = result.scalar_one_or_none()
+    async def _verify_case_access(self, case_id: str, user: User) -> AccessResult:
+        """
+        Verify user has access to the case or family file.
 
-        if not case:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Case not found"
-            )
+        Args:
+            case_id: Can be Case ID or Family File ID
+            user: User to verify
 
-        # Check if user is a participant
-        is_participant = any(
-            p.user_id == user.id and p.is_active
-            for p in case.participants
+        Returns:
+            AccessResult with has_access, effective_case_id, is_family_file
+        """
+        access = await check_case_or_family_file_access(
+            self.db, case_id, user.id, load_case=True, load_family_file=True
         )
 
-        if not is_participant:
+        if not access.has_access:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have access to this case"
             )
 
-        return case
+        return access
 
-    async def _get_case_participants(self, case_id: str) -> Tuple[str, str]:
-        """Get petitioner and respondent IDs for a case."""
-        result = await self.db.execute(
-            select(CaseParticipant)
-            .where(
-                and_(
-                    CaseParticipant.case_id == case_id,
-                    CaseParticipant.is_active == True
+    async def _get_case_participants(self, case_id: str, is_family_file: bool = False) -> Tuple[str, str]:
+        """
+        Get parent IDs for a case or family file.
+
+        For cases: returns (petitioner_id, respondent_id)
+        For family files: returns (parent_a_id, parent_b_id)
+        """
+        if is_family_file:
+            # For family files, get parents directly
+            result = await self.db.execute(
+                select(FamilyFile).where(FamilyFile.id == case_id)
+            )
+            family_file = result.scalar_one_or_none()
+            if family_file:
+                return family_file.parent_a_id, family_file.parent_b_id
+            return None, None
+        else:
+            # For cases, get from participants
+            result = await self.db.execute(
+                select(CaseParticipant)
+                .where(
+                    and_(
+                        CaseParticipant.case_id == case_id,
+                        CaseParticipant.is_active == True
+                    )
                 )
             )
-        )
-        participants = result.scalars().all()
+            participants = result.scalars().all()
 
-        petitioner_id = None
-        respondent_id = None
+            petitioner_id = None
+            respondent_id = None
 
-        for p in participants:
-            if p.role == "petitioner":
-                petitioner_id = p.user_id
-            elif p.role == "respondent":
-                respondent_id = p.user_id
+            for p in participants:
+                if p.role == "petitioner":
+                    petitioner_id = p.user_id
+                elif p.role == "respondent":
+                    respondent_id = p.user_id
 
-        return petitioner_id, respondent_id
+            return petitioner_id, respondent_id
 
     # ========================================================================
     # Obligation CRUD
@@ -118,7 +130,7 @@ class ClearFundService:
         Create a new obligation.
 
         Args:
-            data: Obligation creation data
+            data: Obligation creation data (case_id can be Case or Family File ID)
             user: User creating the obligation
 
         Returns:
@@ -127,17 +139,18 @@ class ClearFundService:
         Raises:
             HTTPException: If creation fails
         """
-        # Verify case access
-        case = await self._verify_case_access(data.case_id, user)
+        # Verify case access (supports both Case and Family File)
+        access = await self._verify_case_access(data.case_id, user)
 
         try:
             # Calculate shares from percentage
             petitioner_share = data.total_amount * Decimal(data.petitioner_percentage) / 100
             respondent_share = data.total_amount - petitioner_share
 
-            # Create the obligation
+            # Create the obligation - set case_id or family_file_id based on access type
             obligation = Obligation(
-                case_id=data.case_id,
+                case_id=access.effective_case_id if not access.is_family_file else None,
+                family_file_id=data.case_id if access.is_family_file else None,
                 source_type=data.source_type,
                 source_id=data.source_id,
                 purpose_category=data.purpose_category,
@@ -159,7 +172,10 @@ class ClearFundService:
             await self.db.flush()
 
             # Create funding records for each parent
-            petitioner_id, respondent_id = await self._get_case_participants(data.case_id)
+            # For family files, use parent_a/b; for cases, use petitioner/respondent
+            petitioner_id, respondent_id = await self._get_case_participants(
+                data.case_id, is_family_file=access.is_family_file
+            )
 
             if petitioner_id:
                 petitioner_funding = ObligationFunding(
@@ -267,8 +283,15 @@ class ClearFundService:
                 detail="Obligation not found"
             )
 
-        # Verify case access
-        await self._verify_case_access(obligation.case_id, user)
+        # Verify access - check case_id or family_file_id
+        # Family File obligations have family_file_id set and case_id as NULL
+        access_id = obligation.case_id or obligation.family_file_id
+        if not access_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Obligation has no case or family file associated"
+            )
+        await self._verify_case_access(access_id, user)
 
         return obligation
 
@@ -284,7 +307,7 @@ class ClearFundService:
         List obligations for a case with optional filters.
 
         Args:
-            case_id: The case ID
+            case_id: The case ID or Family File ID
             filters: Optional filters
             page: Page number
             page_size: Items per page
@@ -294,19 +317,41 @@ class ClearFundService:
         Returns:
             Tuple of (obligations, total_count)
         """
-        # Verify case access if user provided
+        # Verify case access if user provided and determine if Family File
+        effective_case_id = case_id
+        is_family_file = False
         if user is not None:
-            await self._verify_case_access(case_id, user)
-
-        # Build query
-        query = (
-            select(Obligation)
-            .options(
-                selectinload(Obligation.funding_records),
-                selectinload(Obligation.attestation),
+            access = await self._verify_case_access(case_id, user)
+            effective_case_id = access.effective_case_id
+            is_family_file = access.is_family_file
+        else:
+            # For court access, check if this looks like a family file
+            # by checking if it exists as a family file
+            from app.models.family_file import FamilyFile
+            ff_result = await self.db.execute(
+                select(FamilyFile).where(FamilyFile.id == case_id)
             )
-            .where(Obligation.case_id == case_id)
-        )
+            is_family_file = ff_result.scalar_one_or_none() is not None
+
+        # Build query - use case_id or family_file_id based on type
+        if is_family_file:
+            query = (
+                select(Obligation)
+                .options(
+                    selectinload(Obligation.funding_records),
+                    selectinload(Obligation.attestation),
+                )
+                .where(Obligation.family_file_id == case_id)
+            )
+        else:
+            query = (
+                select(Obligation)
+                .options(
+                    selectinload(Obligation.funding_records),
+                    selectinload(Obligation.attestation),
+                )
+                .where(Obligation.case_id == effective_case_id)
+            )
 
         # Apply filters
         if filters:
@@ -314,6 +359,8 @@ class ClearFundService:
                 query = query.where(Obligation.status.in_(filters.status))
             if filters.purpose_category:
                 query = query.where(Obligation.purpose_category.in_(filters.purpose_category))
+            if filters.agreement_id:
+                query = query.where(Obligation.agreement_id == filters.agreement_id)
             if filters.created_by:
                 query = query.where(Obligation.created_by == filters.created_by)
             if filters.due_before:
@@ -475,12 +522,18 @@ class ClearFundService:
                 obligation.status = "partially_funded"
 
             # Create ledger entry
-            petitioner_id, respondent_id = await self._get_case_participants(obligation.case_id)
+            # Determine if this is a Family File obligation
+            is_family_file = obligation.family_file_id is not None
+            access_id = obligation.case_id or obligation.family_file_id
+            petitioner_id, respondent_id = await self._get_case_participants(
+                access_id, is_family_file=is_family_file
+            )
             other_parent_id = respondent_id if user.id == petitioner_id else petitioner_id
 
             # Calculate running balance (simplified - should aggregate from all entries)
             ledger_entry = PaymentLedger(
-                case_id=obligation.case_id,
+                case_id=obligation.case_id if not is_family_file else None,
+                family_file_id=obligation.family_file_id if is_family_file else None,
                 entry_type="payment",
                 obligor_id=user.id,
                 obligee_id=other_parent_id or user.id,
@@ -513,7 +566,13 @@ class ClearFundService:
     ) -> dict:
         """Get funding status for an obligation."""
         obligation = await self.get_obligation(obligation_id, user)
-        petitioner_id, respondent_id = await self._get_case_participants(obligation.case_id)
+
+        # Determine if this is a Family File obligation
+        is_family_file = obligation.family_file_id is not None
+        access_id = obligation.case_id or obligation.family_file_id
+        petitioner_id, respondent_id = await self._get_case_participants(
+            access_id, is_family_file=is_family_file
+        )
 
         petitioner_funding = None
         respondent_funding = None
@@ -739,19 +798,36 @@ class ClearFundService:
         """Get obligation metrics for a case.
 
         Args:
-            case_id: The case ID
+            case_id: The case ID or Family File ID
             user: Optional user for access verification. If None, skips access check
                   (for court professional access where auth is handled by endpoint).
         """
+        effective_case_id = case_id
+        is_family_file = False
         if user is not None:
-            await self._verify_case_access(case_id, user)
+            access = await self._verify_case_access(case_id, user)
+            effective_case_id = access.effective_case_id
+            is_family_file = access.is_family_file
+        else:
+            # For court access, check if this is a family file
+            from app.models.family_file import FamilyFile
+            ff_result = await self.db.execute(
+                select(FamilyFile).where(FamilyFile.id == case_id)
+            )
+            is_family_file = ff_result.scalar_one_or_none() is not None
+
+        # Build query filter based on case_id or family_file_id
+        if is_family_file:
+            id_filter = Obligation.family_file_id == case_id
+        else:
+            id_filter = Obligation.case_id == effective_case_id
 
         result = await self.db.execute(
             select(
                 Obligation.status,
                 func.count(Obligation.id).label("count")
             )
-            .where(Obligation.case_id == case_id)
+            .where(id_filter)
             .group_by(Obligation.status)
         )
         counts = {row[0]: row[1] for row in result.all()}
@@ -761,7 +837,7 @@ class ClearFundService:
             select(func.count(Obligation.id))
             .where(
                 and_(
-                    Obligation.case_id == case_id,
+                    id_filter,
                     Obligation.due_date < datetime.utcnow(),
                     Obligation.status.notin_(["completed", "cancelled", "expired"])
                 )
@@ -787,21 +863,46 @@ class ClearFundService:
         """Get balance summary for a case.
 
         Args:
-            case_id: The case ID
+            case_id: The case ID or Family File ID
             user: Optional user for access verification. If None, skips access check
                   (for court professional access where auth is handled by endpoint).
         """
+        effective_case_id = case_id
+        is_family_file = False
         if user is not None:
-            await self._verify_case_access(case_id, user)
-        petitioner_id, respondent_id = await self._get_case_participants(case_id)
+            access = await self._verify_case_access(case_id, user)
+            effective_case_id = access.effective_case_id
+            is_family_file = access.is_family_file
+        else:
+            # For court access, check if this is a family file
+            from app.models.family_file import FamilyFile
+            ff_result = await self.db.execute(
+                select(FamilyFile).where(FamilyFile.id == case_id)
+            )
+            is_family_file = ff_result.scalar_one_or_none() is not None
 
-        # Calculate balances from ledger
+        petitioner_id, respondent_id = await self._get_case_participants(
+            case_id, is_family_file=is_family_file
+        )
+
+        # Build obligation filter based on case_id or family_file_id
+        if is_family_file:
+            obligation_filter = Obligation.family_file_id == case_id
+        else:
+            obligation_filter = Obligation.case_id == effective_case_id
+
+        # Calculate balances from ledger - use correct column based on type
+        if is_family_file:
+            ledger_filter = PaymentLedger.family_file_id == case_id
+        else:
+            ledger_filter = PaymentLedger.case_id == effective_case_id
+
         result = await self.db.execute(
             select(
                 PaymentLedger.obligor_id,
                 func.sum(PaymentLedger.amount).label("total")
             )
-            .where(PaymentLedger.case_id == case_id)
+            .where(ledger_filter)
             .group_by(PaymentLedger.obligor_id)
         )
         totals = {row[0]: row[1] for row in result.all()}
@@ -809,7 +910,57 @@ class ClearFundService:
         petitioner_paid = totals.get(petitioner_id, Decimal("0"))
         respondent_paid = totals.get(respondent_id, Decimal("0"))
 
-        # Get obligation counts
+        # Calculate what each party owes from open obligations
+        # The Obligation model has petitioner_share and respondent_share fields
+        open_obligations_result = await self.db.execute(
+            select(
+                func.sum(Obligation.petitioner_share).label("petitioner_total"),
+                func.sum(Obligation.respondent_share).label("respondent_total")
+            )
+            .where(
+                and_(
+                    obligation_filter,
+                    Obligation.status.notin_(["completed", "cancelled", "expired"])
+                )
+            )
+        )
+        shares_row = open_obligations_result.one_or_none()
+
+        petitioner_owes = Decimal(str(shares_row.petitioner_total or 0)) if shares_row else Decimal("0")
+        respondent_owes = Decimal(str(shares_row.respondent_total or 0)) if shares_row else Decimal("0")
+
+        # Subtract what each party has already funded via ObligationFunding
+        if petitioner_id:
+            pet_funded = await self.db.execute(
+                select(func.sum(ObligationFunding.amount_funded))
+                .join(Obligation, ObligationFunding.obligation_id == Obligation.id)
+                .where(
+                    and_(
+                        obligation_filter,
+                        ObligationFunding.parent_id == petitioner_id,
+                        Obligation.status.notin_(["completed", "cancelled", "expired"])
+                    )
+                )
+            )
+            petitioner_funded = pet_funded.scalar() or Decimal("0")
+            petitioner_owes = max(Decimal("0"), petitioner_owes - petitioner_funded)
+
+        if respondent_id:
+            resp_funded = await self.db.execute(
+                select(func.sum(ObligationFunding.amount_funded))
+                .join(Obligation, ObligationFunding.obligation_id == Obligation.id)
+                .where(
+                    and_(
+                        obligation_filter,
+                        ObligationFunding.parent_id == respondent_id,
+                        Obligation.status.notin_(["completed", "cancelled", "expired"])
+                    )
+                )
+            )
+            respondent_funded = resp_funded.scalar() or Decimal("0")
+            respondent_owes = max(Decimal("0"), respondent_owes - respondent_funded)
+
+        # Get obligation counts (pass original case_id since it handles conversion)
         metrics = await self.get_obligation_metrics(case_id, user)
 
         # Get totals this month
@@ -818,7 +969,7 @@ class ClearFundService:
             select(func.sum(Obligation.total_amount))
             .where(
                 and_(
-                    Obligation.case_id == case_id,
+                    obligation_filter,
                     Obligation.created_at >= month_start
                 )
             )
@@ -830,7 +981,7 @@ class ClearFundService:
             select(func.sum(Obligation.total_amount - Obligation.amount_funded))
             .where(
                 and_(
-                    Obligation.case_id == case_id,
+                    obligation_filter,
                     Obligation.due_date < datetime.utcnow(),
                     Obligation.status.notin_(["completed", "cancelled", "expired"])
                 )
@@ -839,14 +990,14 @@ class ClearFundService:
         total_overdue = overdue_result.scalar() or Decimal("0")
 
         return BalanceSummary(
-            case_id=case_id,
+            case_id=effective_case_id,
             petitioner_id=petitioner_id or "",
             respondent_id=respondent_id or "",
             petitioner_balance=petitioner_paid,
             respondent_balance=respondent_paid,
-            petitioner_owes_respondent=Decimal("0"),  # Calculated from obligations
-            respondent_owes_petitioner=Decimal("0"),
-            net_balance=petitioner_paid - respondent_paid,
+            petitioner_owes_respondent=petitioner_owes,
+            respondent_owes_petitioner=respondent_owes,
+            net_balance=respondent_owes - petitioner_owes,  # Positive = respondent owes more
             total_obligations_open=metrics.total_open,
             total_obligations_funded=metrics.total_funded,
             total_obligations_completed=metrics.total_completed,

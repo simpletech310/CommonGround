@@ -9,10 +9,12 @@ from app.utils.sanitize import sanitize_text
 class MessageCreate(BaseModel):
     """Create a new message."""
 
-    case_id: str = Field(..., min_length=1, max_length=100)
+    case_id: Optional[str] = Field(None, max_length=100)  # Court case context (legacy)
+    family_file_id: Optional[str] = Field(None, max_length=100)  # Family file context (preferred)
     recipient_id: str = Field(..., min_length=1, max_length=100)
     content: str = Field(..., min_length=1, max_length=10000)
     thread_id: Optional[str] = Field(None, max_length=100)
+    agreement_id: Optional[str] = Field(None, max_length=100)  # SharedCare Agreement context
     message_type: str = Field(default="text", max_length=50)
 
     @field_validator('content')
@@ -126,17 +128,19 @@ class MessageResponse(BaseModel):
     """Message response with all details."""
 
     id: str
-    case_id: str
-    thread_id: Optional[str]
+    case_id: Optional[str] = None  # Court case context (legacy)
+    family_file_id: Optional[str] = None  # Family file context (preferred)
+    thread_id: Optional[str] = None
+    agreement_id: Optional[str] = None  # SharedCare Agreement context
     sender_id: str
     recipient_id: str
     content: str
     message_type: str
     sent_at: datetime
-    delivered_at: Optional[datetime]
-    read_at: Optional[datetime]
+    delivered_at: Optional[datetime] = None
+    read_at: Optional[datetime] = None
     was_flagged: bool
-    original_content: Optional[str]  # If ARIA intervention occurred
+    original_content: Optional[str] = None  # If ARIA intervention occurred
 
     class Config:
         from_attributes = True
@@ -153,6 +157,7 @@ class ThreadCreate(BaseModel):
     """Create a new message thread."""
 
     case_id: str = Field(..., min_length=1, max_length=100)
+    agreement_id: Optional[str] = Field(None, max_length=100)  # SharedCare Agreement context
     subject: str = Field(..., min_length=1, max_length=200)
     participants: List[str] = Field(..., min_items=2, max_items=10)
 
@@ -186,6 +191,7 @@ class ThreadResponse(BaseModel):
 
     id: str
     case_id: str
+    agreement_id: Optional[str] = None  # SharedCare Agreement context
     subject: str
     participants: List[str]
     last_message_at: Optional[datetime]

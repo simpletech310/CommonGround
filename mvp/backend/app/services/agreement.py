@@ -23,9 +23,11 @@ from openai import OpenAI
 
 from app.models.agreement import Agreement, AgreementSection, AgreementVersion
 from app.models.case import Case, CaseParticipant
+from app.models.family_file import FamilyFile
 from app.models.user import User
 from app.schemas.agreement import SECTION_TEMPLATES, AgreementSectionUpdate
 from app.services.case import CaseService
+from app.services.family_file import FamilyFileService
 from app.services.email import EmailService
 from app.core.config import settings
 
@@ -42,6 +44,7 @@ class AgreementService:
         """
         self.db = db
         self.case_service = CaseService(db)
+        self.family_file_service = FamilyFileService(db)
         self.email_service = EmailService()
 
     async def create_agreement(
@@ -140,8 +143,19 @@ class AgreementService:
                 detail="Agreement not found"
             )
 
-        # Verify user has access to the case
-        await self.case_service.get_case(agreement.case_id, user)
+        # Verify user has access - check family_file_id first, then case_id
+        if agreement.family_file_id:
+            # New flow: agreement belongs to a Family File
+            await self.family_file_service.get_family_file(agreement.family_file_id, user)
+        elif agreement.case_id:
+            # Legacy flow: agreement belongs to a Case
+            await self.case_service.get_case(agreement.case_id, user)
+        else:
+            # Neither - shouldn't happen, but deny access
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Agreement has no associated family file or case"
+            )
 
         return agreement
 
@@ -999,3 +1013,69 @@ KEY_POINTS:
                 "completion_percentage": completion_percentage,
                 "status": agreement.status
             }
+
+    async def create_agreement_for_family_file(
+        self,
+        family_file_id: str,
+        title: str,
+        agreement_type: str,
+        user: User
+    ) -> Agreement:
+        """
+        Create a new SharedCare Agreement for a Family File.
+
+        Initializes agreement with 18 section templates.
+
+        Args:
+            family_file_id: ID of the Family File
+            title: Agreement title
+            agreement_type: Type of agreement (shared_care)
+            user: User creating the agreement
+
+        Returns:
+            Created agreement
+
+        Raises:
+            HTTPException: If creation fails
+        """
+        from app.models.agreement import generate_shared_care_number
+
+        try:
+            # Create agreement with family_file_id (no case_id)
+            agreement = Agreement(
+                family_file_id=family_file_id,
+                case_id=None,  # No legacy case link
+                agreement_number=generate_shared_care_number(),
+                title=title,
+                agreement_type=agreement_type,
+                version=1,
+                status="draft",
+            )
+            self.db.add(agreement)
+            await self.db.flush()
+
+            # Create sections from templates
+            for template in SECTION_TEMPLATES:
+                section = AgreementSection(
+                    agreement_id=agreement.id,
+                    section_number=template["section_number"],
+                    section_title=template["section_title"],
+                    section_type=template["section_type"],
+                    display_order=template["display_order"],
+                    is_required=template["is_required"],
+                    content=template["template"],
+                    is_completed=False,
+                )
+                self.db.add(section)
+
+            await self.db.commit()
+            await self.db.refresh(agreement)
+
+            return agreement
+
+        except Exception as e:
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create agreement: {str(e)}"
+            ) from e

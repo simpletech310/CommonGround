@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.my_time_collection import MyTimeCollection
 from app.models.case import Case, CaseParticipant
 from app.models.user import User
+from app.models.family_file import FamilyFile
 
 
 class CollectionService:
@@ -36,7 +37,7 @@ class CollectionService:
 
         Args:
             db: Database session
-            case_id: Case UUID
+            case_id: Case UUID or Family File UUID
             owner_id: User UUID who owns this collection
             name: Private collection name (e.g., "Time with Dad")
             color: Hex color for calendar display
@@ -45,7 +46,11 @@ class CollectionService:
         Returns:
             Created MyTimeCollection
         """
-        # Verify case access
+        # Check access and determine if this is a Case or Family File
+        effective_case_id = None
+        family_file_id = None
+
+        # First try as Case Participant
         result = await db.execute(
             select(CaseParticipant).where(
                 CaseParticipant.case_id == case_id,
@@ -53,35 +58,82 @@ class CollectionService:
                 CaseParticipant.is_active == True
             )
         )
-        participant = result.scalar_one_or_none()
-        if not participant:
-            raise ValueError("User is not a participant in this case")
+        has_access = result.scalar_one_or_none() is not None
 
-        # If this is set as default, unset other defaults
-        if is_default:
-            existing_defaults = await db.execute(
-                select(MyTimeCollection).where(
-                    MyTimeCollection.case_id == case_id,
-                    MyTimeCollection.owner_id == owner_id,
-                    MyTimeCollection.is_default == True
+        if has_access:
+            # It's a case, use case_id directly
+            effective_case_id = case_id
+        else:
+            # Try as Family File
+            family_file_result = await db.execute(
+                select(FamilyFile).where(
+                    FamilyFile.id == case_id,
+                    ((FamilyFile.parent_a_id == owner_id) | (FamilyFile.parent_b_id == owner_id))
                 )
             )
-            for existing in existing_defaults.scalars():
-                existing.is_default = False
+            family_file = family_file_result.scalar_one_or_none()
+            if family_file:
+                has_access = True
+                family_file_id = family_file.id
+                # If family file has a linked case, use that for case_id
+                if family_file.legacy_case_id:
+                    effective_case_id = family_file.legacy_case_id
+                # Otherwise, effective_case_id stays None
+
+        if not has_access:
+            raise ValueError("User is not a participant in this case or family file")
+
+        # If this is set as default, unset other defaults
+        # Query by either case_id or family_file_id depending on which is set
+        if is_default:
+            if effective_case_id:
+                existing_defaults = await db.execute(
+                    select(MyTimeCollection).where(
+                        MyTimeCollection.case_id == effective_case_id,
+                        MyTimeCollection.owner_id == owner_id,
+                        MyTimeCollection.is_default == True
+                    )
+                )
+            elif family_file_id:
+                existing_defaults = await db.execute(
+                    select(MyTimeCollection).where(
+                        MyTimeCollection.family_file_id == family_file_id,
+                        MyTimeCollection.owner_id == owner_id,
+                        MyTimeCollection.is_default == True
+                    )
+                )
+            else:
+                existing_defaults = None
+
+            if existing_defaults:
+                for existing in existing_defaults.scalars():
+                    existing.is_default = False
 
         # Get display order (append to end)
-        count_result = await db.execute(
-            select(MyTimeCollection).where(
-                MyTimeCollection.case_id == case_id,
-                MyTimeCollection.owner_id == owner_id
+        if effective_case_id:
+            count_result = await db.execute(
+                select(MyTimeCollection).where(
+                    MyTimeCollection.case_id == effective_case_id,
+                    MyTimeCollection.owner_id == owner_id
+                )
             )
-        )
-        display_order = len(count_result.scalars().all())
+        elif family_file_id:
+            count_result = await db.execute(
+                select(MyTimeCollection).where(
+                    MyTimeCollection.family_file_id == family_file_id,
+                    MyTimeCollection.owner_id == owner_id
+                )
+            )
+        else:
+            count_result = None
 
-        # Create collection
+        display_order = len(count_result.scalars().all()) if count_result else 0
+
+        # Create collection with either case_id or family_file_id (or both)
         collection = MyTimeCollection(
             id=str(uuid.uuid4()),
-            case_id=case_id,
+            case_id=effective_case_id,  # Can be None for family-file-only
+            family_file_id=family_file_id,  # Set if this is a family file
             owner_id=owner_id,
             name=name,
             color=color,
@@ -121,15 +173,29 @@ class CollectionService:
         if not collection:
             return None
 
-        # Verify viewer has access to this case
-        access_result = await db.execute(
-            select(CaseParticipant).where(
-                CaseParticipant.case_id == collection.case_id,
-                CaseParticipant.user_id == viewer_id,
-                CaseParticipant.is_active == True
+        # Verify viewer has access - check case participant first
+        has_access = False
+        if collection.case_id:
+            access_result = await db.execute(
+                select(CaseParticipant).where(
+                    CaseParticipant.case_id == collection.case_id,
+                    CaseParticipant.user_id == viewer_id,
+                    CaseParticipant.is_active == True
+                )
             )
-        )
-        if not access_result.scalar_one_or_none():
+            has_access = access_result.scalar_one_or_none() is not None
+
+        # If not a case participant, check family file access
+        if not has_access and collection.family_file_id:
+            family_file_result = await db.execute(
+                select(FamilyFile).where(
+                    FamilyFile.id == collection.family_file_id,
+                    ((FamilyFile.parent_a_id == viewer_id) | (FamilyFile.parent_b_id == viewer_id))
+                )
+            )
+            has_access = family_file_result.scalar_one_or_none() is not None
+
+        if not has_access:
             return None
 
         return collection
@@ -142,18 +208,24 @@ class CollectionService:
         include_other_parent: bool = True
     ) -> List[MyTimeCollection]:
         """
-        List all collections for a case.
+        List all collections for a case or family file.
 
         Args:
             db: Database session
-            case_id: Case UUID
+            case_id: Case UUID or Family File UUID
             viewer_id: User requesting the list
             include_other_parent: Whether to include other parent's collections
 
         Returns:
             List of MyTimeCollection (privacy filtered)
         """
-        # Verify access
+        from sqlalchemy import or_
+
+        # Check access and determine if this is a Case or Family File
+        effective_case_id = None
+        family_file_id = None
+
+        # First try as Case Participant
         access_result = await db.execute(
             select(CaseParticipant).where(
                 CaseParticipant.case_id == case_id,
@@ -161,26 +233,89 @@ class CollectionService:
                 CaseParticipant.is_active == True
             )
         )
-        if not access_result.scalar_one_or_none():
-            raise ValueError("No access to this case")
+        has_access = access_result.scalar_one_or_none() is not None
 
-        if include_other_parent:
-            # Get all collections in case
-            result = await db.execute(
-                select(MyTimeCollection).where(
-                    MyTimeCollection.case_id == case_id,
-                    MyTimeCollection.is_active == True
-                ).order_by(MyTimeCollection.owner_id, MyTimeCollection.display_order)
-            )
+        if has_access:
+            effective_case_id = case_id
         else:
-            # Get only viewer's collections
-            result = await db.execute(
-                select(MyTimeCollection).where(
-                    MyTimeCollection.case_id == case_id,
-                    MyTimeCollection.owner_id == viewer_id,
-                    MyTimeCollection.is_active == True
-                ).order_by(MyTimeCollection.display_order)
+            # Try as Family File
+            family_file_result = await db.execute(
+                select(FamilyFile).where(
+                    FamilyFile.id == case_id,
+                    ((FamilyFile.parent_a_id == viewer_id) | (FamilyFile.parent_b_id == viewer_id))
+                )
             )
+            family_file = family_file_result.scalar_one_or_none()
+            if family_file:
+                has_access = True
+                family_file_id = family_file.id
+                if family_file.legacy_case_id:
+                    effective_case_id = family_file.legacy_case_id
+
+        if not has_access:
+            raise ValueError("No access to this case or family file")
+
+        # Build query based on what IDs we have
+        if effective_case_id and family_file_id:
+            # Query by either case_id or family_file_id
+            if include_other_parent:
+                result = await db.execute(
+                    select(MyTimeCollection).where(
+                        or_(
+                            MyTimeCollection.case_id == effective_case_id,
+                            MyTimeCollection.family_file_id == family_file_id
+                        ),
+                        MyTimeCollection.is_active == True
+                    ).order_by(MyTimeCollection.owner_id, MyTimeCollection.display_order)
+                )
+            else:
+                result = await db.execute(
+                    select(MyTimeCollection).where(
+                        or_(
+                            MyTimeCollection.case_id == effective_case_id,
+                            MyTimeCollection.family_file_id == family_file_id
+                        ),
+                        MyTimeCollection.owner_id == viewer_id,
+                        MyTimeCollection.is_active == True
+                    ).order_by(MyTimeCollection.display_order)
+                )
+        elif effective_case_id:
+            # Query by case_id only
+            if include_other_parent:
+                result = await db.execute(
+                    select(MyTimeCollection).where(
+                        MyTimeCollection.case_id == effective_case_id,
+                        MyTimeCollection.is_active == True
+                    ).order_by(MyTimeCollection.owner_id, MyTimeCollection.display_order)
+                )
+            else:
+                result = await db.execute(
+                    select(MyTimeCollection).where(
+                        MyTimeCollection.case_id == effective_case_id,
+                        MyTimeCollection.owner_id == viewer_id,
+                        MyTimeCollection.is_active == True
+                    ).order_by(MyTimeCollection.display_order)
+                )
+        elif family_file_id:
+            # Query by family_file_id only (no linked case)
+            if include_other_parent:
+                result = await db.execute(
+                    select(MyTimeCollection).where(
+                        MyTimeCollection.family_file_id == family_file_id,
+                        MyTimeCollection.is_active == True
+                    ).order_by(MyTimeCollection.owner_id, MyTimeCollection.display_order)
+                )
+            else:
+                result = await db.execute(
+                    select(MyTimeCollection).where(
+                        MyTimeCollection.family_file_id == family_file_id,
+                        MyTimeCollection.owner_id == viewer_id,
+                        MyTimeCollection.is_active == True
+                    ).order_by(MyTimeCollection.display_order)
+                )
+        else:
+            # No valid IDs
+            return []
 
         return list(result.scalars().all())
 
@@ -314,6 +449,7 @@ class CollectionService:
             return {
                 "id": collection.id,
                 "case_id": collection.case_id,
+                "family_file_id": collection.family_file_id,
                 "owner_id": collection.owner_id,
                 "name": collection.name,
                 "color": collection.color,
@@ -326,34 +462,62 @@ class CollectionService:
             }
         else:
             # Other parent sees generic label
-            # Get owner's parent role
-            participant_result = await db.execute(
-                select(CaseParticipant).where(
-                    CaseParticipant.case_id == collection.case_id,
-                    CaseParticipant.user_id == collection.owner_id
-                )
-            )
-            participant = participant_result.scalar_one_or_none()
+            label = "Other Parent's Time"  # Default fallback
 
-            if participant:
-                # Use parent_type to generate label
-                parent_role = participant.parent_type.replace("_", " ").title()
-                if parent_role == "Parent A":
-                    label = "Parent A's Time"
-                elif parent_role == "Parent B":
-                    label = "Parent B's Time"
-                elif parent_role == "Mother":
-                    label = "Mom's Time"
-                elif parent_role == "Father":
-                    label = "Dad's Time"
-                else:
-                    label = f"{parent_role}'s Time"
-            else:
-                label = "Other Parent's Time"
+            # First try CaseParticipant
+            if collection.case_id:
+                participant_result = await db.execute(
+                    select(CaseParticipant).where(
+                        CaseParticipant.case_id == collection.case_id,
+                        CaseParticipant.user_id == collection.owner_id
+                    )
+                )
+                participant = participant_result.scalar_one_or_none()
+                if participant:
+                    # Use parent_type to generate label
+                    parent_role = participant.parent_type.replace("_", " ").title()
+                    if parent_role == "Parent A":
+                        label = "Parent A's Time"
+                    elif parent_role == "Parent B":
+                        label = "Parent B's Time"
+                    elif parent_role == "Mother":
+                        label = "Mom's Time"
+                    elif parent_role == "Father":
+                        label = "Dad's Time"
+                    else:
+                        label = f"{parent_role}'s Time"
+
+            # If no CaseParticipant, try FamilyFile parent role
+            if label == "Other Parent's Time" and collection.family_file_id:
+                family_file_result = await db.execute(
+                    select(FamilyFile).where(FamilyFile.id == collection.family_file_id)
+                )
+                family_file = family_file_result.scalar_one_or_none()
+                if family_file:
+                    if family_file.parent_a_id == collection.owner_id:
+                        parent_role = family_file.parent_a_role or "parent_a"
+                    elif family_file.parent_b_id == collection.owner_id:
+                        parent_role = family_file.parent_b_role or "parent_b"
+                    else:
+                        parent_role = None
+
+                    if parent_role:
+                        role_label = parent_role.replace("_", " ").title()
+                        if role_label == "Parent A":
+                            label = "Parent A's Time"
+                        elif role_label == "Parent B":
+                            label = "Parent B's Time"
+                        elif role_label == "Mother":
+                            label = "Mom's Time"
+                        elif role_label == "Father":
+                            label = "Dad's Time"
+                        else:
+                            label = f"{role_label}'s Time"
 
             return {
                 "id": collection.id,
                 "case_id": collection.case_id,
+                "family_file_id": collection.family_file_id,
                 "owner_id": collection.owner_id,
                 "name": label,  # Generic label, not real name
                 "color": "#94A3B8",  # Neutral gray

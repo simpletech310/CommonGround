@@ -22,12 +22,29 @@ class CustodyExchange(Base):
     __tablename__ = "custody_exchanges"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    case_id: Mapped[str] = mapped_column(
+    case_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("cases.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,  # Now nullable for Family File exchanges
         index=True
     )
+
+    # Family File link (for exchanges without court involvement)
+    family_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("family_files.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True
+    )
+
+    # Agreement link (primary - exchanges belong to a specific SharedCare Agreement)
+    agreement_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("agreements.id"),
+        nullable=True,
+        index=True
+    )
+
     created_by: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.id"),
@@ -55,8 +72,14 @@ class CustodyExchange(Base):
         nullable=True
     )
 
-    # Children involved (array of child IDs)
+    # Children involved (array of child IDs) - legacy, use pickup/dropoff lists
     child_ids: Mapped[List[str]] = mapped_column(JSON, default=list)
+
+    # Children being picked up (received by the parent creating this exchange)
+    pickup_child_ids: Mapped[List[str]] = mapped_column(JSON, default=list)
+
+    # Children being dropped off (transferred from the parent creating this exchange)
+    dropoff_child_ids: Mapped[List[str]] = mapped_column(JSON, default=list)
 
     # Location details
     location: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -128,6 +151,7 @@ class CustodyExchange(Base):
 
     # Relationships
     case = relationship("Case", back_populates="custody_exchanges")
+    family_file = relationship("FamilyFile", back_populates="custody_exchanges")
     creator = relationship("User", foreign_keys=[created_by])
     from_parent = relationship("User", foreign_keys=[from_parent_id])
     to_parent = relationship("User", foreign_keys=[to_parent_id])
