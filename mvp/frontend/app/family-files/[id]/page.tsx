@@ -28,7 +28,35 @@ import {
   MessageSquare,
   DollarSign,
   CalendarPlus,
+  ArrowLeft,
+  FolderHeart,
+  Users,
+  Baby,
+  FileText,
+  Zap,
+  Scale,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  Mail,
+  Plus,
+  Settings,
+  MessageSquare,
+  DollarSign,
+  CalendarPlus,
+  Send,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 function FamilyFileDetailContent() {
   const { user } = useAuth();
@@ -40,7 +68,17 @@ function FamilyFileDetailContent() {
   const [quickAccords, setQuickAccords] = useState<QuickAccord[]>([]);
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [quickAccords, setQuickAccords] = useState<QuickAccord[]>([]);
+  const [agreements, setAgreements] = useState<Agreement[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Invitation State
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -67,6 +105,39 @@ function FamilyFileDetailContent() {
       setError(err.message || 'Failed to load family file');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleInvite = async () => {
+    if (!inviteEmail) {
+      setInviteError('Please enter an email address');
+      return;
+    }
+
+    try {
+      setIsInviting(true);
+      setInviteError(null);
+      setInviteSuccess(null);
+
+      await familyFilesAPI.inviteParentB(id, inviteEmail);
+
+      setInviteSuccess(`Invitation sent to ${inviteEmail}`);
+      setInviteEmail('');
+
+      // Reload data to update UI
+      await loadData();
+
+      // Close dialog after a delay
+      setTimeout(() => {
+        setIsInviteOpen(false);
+        setInviteSuccess(null);
+      }, 2000);
+
+    } catch (err: any) {
+      console.error('Failed to invite parent:', err);
+      setInviteError(err.message || 'Failed to send invitation');
+    } finally {
+      setIsInviting(false);
     }
   };
 
@@ -235,20 +306,74 @@ function FamilyFileDetailContent() {
                 </Button>
 
                 {!familyFile.parent_b_id && (
-                  <Button
-                    variant="outline"
-                    className="h-auto py-4 justify-start"
-                  >
-                    <div className="flex items-start gap-3">
-                      <Mail className="h-5 w-5 text-cg-sage mt-0.5" />
-                      <div className="text-left">
-                        <div className="font-medium">Invite Co-Parent</div>
-                        <div className="text-xs text-muted-foreground">
-                          Send invitation email
+                  <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-auto py-4 justify-start"
+                      >
+                        <div className="flex items-start gap-3">
+                          <Mail className="h-5 w-5 text-cg-sage mt-0.5" />
+                          <div className="text-left">
+                            <div className="font-medium">Invite Co-Parent</div>
+                            <div className="text-xs text-muted-foreground">
+                              Send invitation email
+                            </div>
+                          </div>
                         </div>
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Invite Co-Parent</DialogTitle>
+                        <DialogDescription>
+                          Send an email invitation to the other parent to join this Family File.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="email">Email Address</Label>
+                          <Input
+                            id="email"
+                            placeholder="name@example.com"
+                            type="email"
+                            value={inviteEmail}
+                            onChange={(e) => setInviteEmail(e.target.value)}
+                          />
+                        </div>
+                        {inviteError && (
+                          <Alert variant="destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertDescription>{inviteError}</AlertDescription>
+                          </Alert>
+                        )}
+                        {inviteSuccess && (
+                          <Alert className="bg-green-50 text-green-700 border-green-200">
+                            <CheckCircle className="h-4 w-4 text-green-700" />
+                            <AlertDescription>{inviteSuccess}</AlertDescription>
+                          </Alert>
+                        )}
                       </div>
-                    </div>
-                  </Button>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsInviteOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={handleInvite} disabled={isInviting || !!inviteSuccess}>
+                          {isInviting ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                              Sending...
+                            </>
+                          ) : (
+                            <>
+                              <Send className="h-4 w-4 mr-2" />
+                              Send Invite
+                            </>
+                          )}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 )}
               </div>
             </CardContent>
