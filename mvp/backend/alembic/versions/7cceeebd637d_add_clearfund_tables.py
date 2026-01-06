@@ -31,7 +31,7 @@ def upgrade() -> None:
         op.create_table(
             'obligations',
             sa.Column('id', sa.String(length=36), primary_key=True),
-            sa.Column('case_id', sa.String(length=36), sa.ForeignKey('cases.id'), nullable=False, index=True),
+            sa.Column('case_id', sa.String(length=36), sa.ForeignKey('cases.id'), nullable=False),
             sa.Column('source_type', sa.String(length=20), nullable=False),
             sa.Column('source_id', sa.String(length=36), nullable=True),
             sa.Column('purpose_category', sa.String(length=30), nullable=False),
@@ -76,8 +76,8 @@ def upgrade() -> None:
         op.create_table(
             'obligation_funding',
             sa.Column('id', sa.String(length=36), primary_key=True),
-            sa.Column('obligation_id', sa.String(length=36), sa.ForeignKey('obligations.id'), nullable=False, index=True),
-            sa.Column('parent_id', sa.String(length=36), nullable=False, index=True),
+            sa.Column('obligation_id', sa.String(length=36), sa.ForeignKey('obligations.id'), nullable=False),
+            sa.Column('parent_id', sa.String(length=36), nullable=False),
             sa.Column('amount_required', sa.Numeric(precision=10, scale=2), nullable=False),
             sa.Column('amount_funded', sa.Numeric(precision=10, scale=2), nullable=False, default=0),
             sa.Column('stripe_payment_intent_id', sa.String(length=100), nullable=True),
@@ -96,8 +96,8 @@ def upgrade() -> None:
         op.create_table(
             'attestations',
             sa.Column('id', sa.String(length=36), primary_key=True),
-            sa.Column('obligation_id', sa.String(length=36), sa.ForeignKey('obligations.id'), nullable=False, unique=True, index=True),
-            sa.Column('attesting_parent_id', sa.String(length=36), nullable=False, index=True),
+            sa.Column('obligation_id', sa.String(length=36), sa.ForeignKey('obligations.id'), nullable=False, unique=True),
+            sa.Column('attesting_parent_id', sa.String(length=36), nullable=False),
             sa.Column('attestation_text', sa.Text(), nullable=False),
             sa.Column('purpose_declaration', sa.Text(), nullable=False),
             sa.Column('receipt_commitment', sa.Boolean(), nullable=False, default=False),
@@ -115,7 +115,7 @@ def upgrade() -> None:
         op.create_table(
             'verification_artifacts',
             sa.Column('id', sa.String(length=36), primary_key=True),
-            sa.Column('obligation_id', sa.String(length=36), sa.ForeignKey('obligations.id'), nullable=False, index=True),
+            sa.Column('obligation_id', sa.String(length=36), sa.ForeignKey('obligations.id'), nullable=False),
             sa.Column('artifact_type', sa.String(length=30), nullable=False),
             sa.Column('stripe_transaction_id', sa.String(length=100), nullable=True),
             sa.Column('vendor_name', sa.String(length=200), nullable=True),
@@ -140,7 +140,7 @@ def upgrade() -> None:
         op.create_table(
             'virtual_card_authorizations',
             sa.Column('id', sa.String(length=36), primary_key=True),
-            sa.Column('obligation_id', sa.String(length=36), sa.ForeignKey('obligations.id'), nullable=False, unique=True, index=True),
+            sa.Column('obligation_id', sa.String(length=36), sa.ForeignKey('obligations.id'), nullable=False, unique=True),
             sa.Column('stripe_card_id', sa.String(length=100), nullable=True),
             sa.Column('stripe_cardholder_id', sa.String(length=100), nullable=True),
             sa.Column('card_last_four', sa.String(length=4), nullable=True),
