@@ -22,8 +22,88 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # Note: cubbie_items, cubbie_exchange_items, child_photos tables already exist
-    # from a previous migration (1c9a6143d966). We only need to add columns to children.
+    # Create cubbie_items table
+    op.create_table('cubbie_items',
+        sa.Column('id', sa.String(length=36), nullable=False),
+        sa.Column('created_at', sa.DateTime(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(), nullable=False),
+        sa.Column('child_id', sa.String(length=36), nullable=False),
+        sa.Column('case_id', sa.String(length=36), nullable=True),
+        sa.Column('family_file_id', sa.String(length=36), nullable=True),
+        sa.Column('name', sa.String(length=200), nullable=False),
+        sa.Column('description', sa.Text(), nullable=True),
+        sa.Column('category', sa.String(length=50), nullable=False),
+        sa.Column('estimated_value', sa.Numeric(precision=10, scale=2), nullable=True),
+        sa.Column('purchase_date', sa.Date(), nullable=True),
+        sa.Column('serial_number', sa.String(length=200), nullable=True),
+        sa.Column('photo_url', sa.String(length=500), nullable=True),
+        sa.Column('added_by', sa.String(length=36), nullable=False),
+        sa.Column('is_active', sa.Boolean(), nullable=False),
+        sa.Column('notes', sa.Text(), nullable=True),
+        sa.Column('current_location', sa.String(length=50), nullable=False),
+        sa.Column('last_location_update', sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(['child_id'], ['children.id'], ),
+        sa.ForeignKeyConstraint(['case_id'], ['cases.id'], ),
+        # Note: family_files might not exist yet depending on migration order, but referenced in model.
+        # Ideally family_file_id is added later if family_files comes later.
+        # But for now we create the column, maybe without FK if family_files doesn't exist?
+        # Actually, the error `relation "cubbie_items" does not exist` happened when ADDING family_file_id later.
+        # So we should NOT add family_file_id here if a later migration adds it.
+        # Checking `ed2ad59f5f2d_add_family_file_id_to_cubbie_items.py` adds it.
+        # So I will OMIT family_file_id here to avoid conflict with `ed2ad59f5f2d`.
+        sa.ForeignKeyConstraint(['added_by'], ['users.id'], ),
+        sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_cubbie_items_child_id'), 'cubbie_items', ['child_id'], unique=False)
+    op.create_index(op.f('ix_cubbie_items_case_id'), 'cubbie_items', ['case_id'], unique=False)
+
+    # Create child_photos table
+    op.create_table('child_photos',
+        sa.Column('id', sa.String(length=36), nullable=False),
+        sa.Column('created_at', sa.DateTime(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(), nullable=False),
+        sa.Column('child_id', sa.String(length=36), nullable=False),
+        sa.Column('uploaded_by', sa.String(length=36), nullable=False),
+        sa.Column('photo_url', sa.String(length=500), nullable=False),
+        sa.Column('thumbnail_url', sa.String(length=500), nullable=True),
+        sa.Column('caption', sa.String(length=500), nullable=True),
+        sa.Column('is_profile_photo', sa.Boolean(), nullable=False),
+        sa.Column('taken_at', sa.Date(), nullable=True),
+        sa.Column('is_active', sa.Boolean(), nullable=False),
+        sa.ForeignKeyConstraint(['child_id'], ['children.id'], ),
+        sa.ForeignKeyConstraint(['uploaded_by'], ['users.id'], ),
+        sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_child_photos_child_id'), 'child_photos', ['child_id'], unique=False)
+
+    # Create cubbie_exchange_items table
+    op.create_table('cubbie_exchange_items',
+        sa.Column('id', sa.String(length=36), nullable=False),
+        sa.Column('created_at', sa.DateTime(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(), nullable=False),
+        sa.Column('exchange_id', sa.String(length=36), nullable=False),
+        sa.Column('cubbie_item_id', sa.String(length=36), nullable=False),
+        sa.Column('sent_by', sa.String(length=36), nullable=False),
+        sa.Column('sent_at', sa.DateTime(), nullable=False),
+        sa.Column('acknowledged_by', sa.String(length=36), nullable=True),
+        sa.Column('acknowledged_at', sa.DateTime(), nullable=True),
+        sa.Column('condition_sent', sa.String(length=50), nullable=True),
+        sa.Column('condition_received', sa.String(length=50), nullable=True),
+        sa.Column('condition_notes', sa.Text(), nullable=True),
+        sa.Column('photo_sent_url', sa.String(length=500), nullable=True),
+        sa.Column('photo_received_url', sa.String(length=500), nullable=True),
+        sa.Column('is_disputed', sa.Boolean(), nullable=False),
+        sa.Column('dispute_notes', sa.Text(), nullable=True),
+        sa.Column('dispute_resolved', sa.Boolean(), nullable=False),
+        sa.Column('dispute_resolved_at', sa.DateTime(), nullable=True),
+        sa.ForeignKeyConstraint(['exchange_id'], ['custody_exchange_instances.id'], ),
+        sa.ForeignKeyConstraint(['cubbie_item_id'], ['cubbie_items.id'], ),
+        sa.ForeignKeyConstraint(['sent_by'], ['users.id'], ),
+        sa.ForeignKeyConstraint(['acknowledged_by'], ['users.id'], ),
+        sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_cubbie_exchange_items_exchange_id'), 'cubbie_exchange_items', ['exchange_id'], unique=False)
+    op.create_index(op.f('ix_cubbie_exchange_items_cubbie_item_id'), 'cubbie_exchange_items', ['cubbie_item_id'], unique=False)
 
     # === ADD COLUMNS TO CHILDREN TABLE ===
 
@@ -124,5 +204,12 @@ def downgrade() -> None:
     op.drop_column('children', 'created_by')
     op.drop_column('children', 'status')
 
-    # Note: cubbie_items, cubbie_exchange_items, child_photos tables
-    # were created by a previous migration and should not be dropped here
+    # Drop KidsCubbie tables
+    op.drop_index(op.f('ix_cubbie_exchange_items_cubbie_item_id'), table_name='cubbie_exchange_items')
+    op.drop_index(op.f('ix_cubbie_exchange_items_exchange_id'), table_name='cubbie_exchange_items')
+    op.drop_table('cubbie_exchange_items')
+    op.drop_index(op.f('ix_child_photos_child_id'), table_name='child_photos')
+    op.drop_table('child_photos')
+    op.drop_index(op.f('ix_cubbie_items_case_id'), table_name='cubbie_items')
+    op.drop_index(op.f('ix_cubbie_items_child_id'), table_name='cubbie_items')
+    op.drop_table('cubbie_items')
