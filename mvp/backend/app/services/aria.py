@@ -524,36 +524,30 @@ Analyze messages for COURT-INAPPROPRIATE content:
 - All caps/shouting (appears aggressive)
 - Anything a judge would view as poor co-parenting
 
-Rate toxicity from 0.0 (court-appropriate) to 1.0 (completely inappropriate for legal records).
+Guidance for Suggestions:
+Use the **BIFF Method** (Brief, Informative, Friendly, Firm).
+- DO NOT just synonym-swap insults (e.g., "you are stupid" -> "you are confusing"). This is robotic and unhelpful.
+- DO REWRITE the ENTIRE message to focus on the business of co-parenting.
+- If the message is purely abuse ("fuck you"), suggest a template response like "I am feeling frustrated and will return to this later." rather than translating the insult.
 
-Be STRICT because:
-- Judges notice communication patterns
-- Hostile messages can affect custody decisions
-- Threats can have legal consequences
-- Professional communication shows good faith
+SAFETY PROTOCOL:
+If the message contains *physical threats* (killing, hurting, beating), mark as SEVERE [1.0] and include "THREATENING" in categories.
 
-Provide:
-1. Toxicity score (be strict - court standard, not casual messaging)
-2. Categories of issues detected
-3. Specific problematic phrases
-4. Why this is inappropriate for court documentation
-5. 1-2 professional, court-appropriate alternatives
-
-Focus: Help parents communicate like they're talking in front of a judge."""
+Respond in JSON format:
+{
+    "toxicity_score": 0.0-1.0,
+    "categories": ["list of issues"],
+    "triggers": ["specific problematic phrases"],
+    "explanation": "why this is problematic for court",
+    "suggestions": ["Brief, Informative, Friendly, Firm alternative"]
+}"""
 
             # Analysis prompt
             prompt = f"""Analyze this co-parenting message:{context_info}
 
 MESSAGE: "{message}"
 
-Respond in JSON format:
-{{
-    "toxicity_score": 0.0-1.0,
-    "categories": ["list of issues"],
-    "triggers": ["specific problematic phrases"],
-    "explanation": "why this is problematic",
-    "suggestions": ["alternative 1", "alternative 2"]
-}}"""
+Respond in JSON format."""
 
             # Call Claude API
             response = client.messages.create(
