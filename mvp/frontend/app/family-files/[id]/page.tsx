@@ -28,22 +28,6 @@ import {
   MessageSquare,
   DollarSign,
   CalendarPlus,
-  ArrowLeft,
-  FolderHeart,
-  Users,
-  Baby,
-  FileText,
-  Zap,
-  Scale,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Mail,
-  Plus,
-  Settings,
-  MessageSquare,
-  DollarSign,
-  CalendarPlus,
   Send,
 } from 'lucide-react';
 import {
@@ -68,9 +52,7 @@ function FamilyFileDetailContent() {
   const [quickAccords, setQuickAccords] = useState<QuickAccord[]>([]);
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [quickAccords, setQuickAccords] = useState<QuickAccord[]>([]);
-  const [agreements, setAgreements] = useState<Agreement[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+
   const [error, setError] = useState<string | null>(null);
 
   // Invitation State
