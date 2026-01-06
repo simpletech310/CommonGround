@@ -29,6 +29,8 @@ class Settings(BaseSettings):
 
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
+    # Allow Vercel preview URLs by default
+    CORS_ORIGIN_REGEX: str = r"https://.*\.vercel\.app"
 
     @property
     def allowed_origins_list(self) -> List[str]:
