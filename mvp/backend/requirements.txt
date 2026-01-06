@@ -37,6 +37,7 @@ celery>=5.3.4  # Background tasks
 
 # Data Processing
 pypdf>=4.0.0  # PDF generation
+pymupdf>=1.23.0 # PDF extraction (fitz)
 reportlab>=4.0.9  # PDF creation
 python-docx>=1.1.0  # Document generation
 
