@@ -29,7 +29,6 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(), nullable=False),
         sa.Column('child_id', sa.String(length=36), nullable=False),
         sa.Column('case_id', sa.String(length=36), nullable=True),
-        sa.Column('family_file_id', sa.String(length=36), nullable=True),
         sa.Column('name', sa.String(length=200), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('category', sa.String(length=50), nullable=False),
