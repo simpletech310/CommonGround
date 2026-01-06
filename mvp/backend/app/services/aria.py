@@ -56,8 +56,8 @@ class SentimentAnalysis:
     explanation: str
     suggestion: Optional[str]
     is_flagged: bool
-    block_send: bool = False
     timestamp: datetime
+    block_send: bool = False
 
 
 class ARIAService:
