@@ -209,7 +209,19 @@ class ChildService:
         await self._verify_child_access(child, user.id)
 
         # Check if already approved by this user
+        # Check if already approved by this user
         if child.approved_by_a == user.id or child.approved_by_b == user.id:
+            # SELF-HEALING: If both parents approved but status is still pending, fix it now.
+            if (
+                child.approved_by_a and 
+                child.approved_by_b and 
+                child.status == ChildProfileStatus.PENDING_APPROVAL.value
+            ):
+                child.status = ChildProfileStatus.ACTIVE.value
+                await self.db.commit()
+                await self.db.refresh(child)
+                return child
+
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="You have already approved this profile",

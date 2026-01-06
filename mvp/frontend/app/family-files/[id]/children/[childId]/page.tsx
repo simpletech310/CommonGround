@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { childrenAPI, ChildProfile, getImageUrl } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { Navigation } from '@/components/navigation';
 import { ProtectedRoute } from '@/components/protected-route';
 import { PageContainer } from '@/components/layout';
@@ -87,11 +88,10 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${
-        isActive
-          ? 'bg-cg-sage text-white shadow-md'
-          : 'bg-transparent text-muted-foreground hover:bg-cg-sage/10 hover:text-cg-sage'
-      }`}
+      className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${isActive
+        ? 'bg-cg-sage text-white shadow-md'
+        : 'bg-transparent text-muted-foreground hover:bg-cg-sage/10 hover:text-cg-sage'
+        }`}
     >
       <Icon className="h-4 w-4" />
       <span className="hidden sm:inline">{tab.label}</span>
@@ -320,6 +320,7 @@ function ChildProfileContent() {
   const router = useRouter();
   const familyFileId = params.id as string;
   const childId = params.childId as string;
+  const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -630,20 +631,27 @@ function ChildProfileContent() {
                 This profile is waiting for approval from the other parent. Once both parents approve, the profile
                 becomes active.
               </p>
-              <button
-                onClick={handleApprove}
-                disabled={saving}
-                className="mt-4 px-4 py-2 bg-cg-sage text-white rounded-lg hover:bg-cg-sage/90 disabled:opacity-50"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin inline" />
-                    Approving...
-                  </>
-                ) : (
-                  'Approve This Profile'
-                )}
-              </button>
+
+              {user && (child.approved_by_a === user.id || child.approved_by_b === user.id) ? (
+                <div className="mt-4 px-4 py-2 bg-yellow-100/50 text-yellow-700 rounded-lg text-sm font-medium border border-yellow-200/50 inline-block">
+                  ✅ You have approved this profile. Waiting for co-parent.
+                </div>
+              ) : (
+                <button
+                  onClick={handleApprove}
+                  disabled={saving}
+                  className="mt-4 px-4 py-2 bg-cg-sage text-white rounded-lg hover:bg-cg-sage/90 disabled:opacity-50"
+                >
+                  {saving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin inline" />
+                      Approving...
+                    </>
+                  ) : (
+                    'Approve This Profile'
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -817,10 +825,10 @@ function ChildProfileContent() {
                 value={
                   child.date_of_birth
                     ? new Date(child.date_of_birth).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                      })
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric',
+                    })
                     : null
                 }
               />
