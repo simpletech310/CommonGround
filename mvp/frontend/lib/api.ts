@@ -6,7 +6,17 @@
  * - Cases, Messages, Agreements, etc.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// Robustly handle API URL configuration
+let apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// Ensure URL doesn't end with slash before appending
+if (apiUrl.endsWith('/')) {
+  apiUrl = apiUrl.slice(0, -1);
+}
+// Append /api/v1 if not present
+if (!apiUrl.endsWith('/api/v1')) {
+  apiUrl += '/api/v1';
+}
+const API_URL = apiUrl;
 const BASE_URL = API_URL.replace('/api/v1', '');
 
 /**
