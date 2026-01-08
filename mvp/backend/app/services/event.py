@@ -572,6 +572,85 @@ class EventService:
         return list(result.scalars().all())
 
     @staticmethod
+    async def _check_overlapping_events(
+        db: AsyncSession,
+        case_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        exclude_user_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Check for overlapping events from the other parent.
+
+        ARIA Integration: Returns neutral warnings without revealing
+        specific details about the other parent's schedule.
+
+        Args:
+            db: Database session
+            case_id: Case UUID or Family File ID
+            start_time: Proposed event start
+            end_time: Proposed event end
+            exclude_user_id: User creating the event (exclude their events)
+
+        Returns:
+            List of ARIA conflict warnings
+        """
+        conflicts = []
+
+        # Normalize datetime
+        start_time = normalize_datetime(start_time)
+        end_time = normalize_datetime(end_time)
+
+        # Build query for overlapping events from other parent
+        # Check both case_id and family_file_id for Family File support
+        query = select(ScheduleEvent).where(
+            or_(
+                ScheduleEvent.case_id == case_id,
+                ScheduleEvent.family_file_id == case_id
+            ),
+            ScheduleEvent.status != "cancelled",
+            ScheduleEvent.visibility == "co_parent",  # Only visible events
+            ScheduleEvent.start_time < end_time,
+            ScheduleEvent.end_time > start_time
+        )
+
+        if exclude_user_id:
+            query = query.where(ScheduleEvent.created_by != exclude_user_id)
+
+        result = await db.execute(query)
+        overlapping_events = result.scalars().all()
+
+        if overlapping_events:
+            # Count how many events overlap
+            event_count = len(overlapping_events)
+
+            # Check if any involve children
+            children_involved = any(
+                event.child_ids and len(event.child_ids) > 0
+                for event in overlapping_events
+            )
+
+            # ARIA-style neutral warning - don't reveal specific details
+            if children_involved:
+                conflicts.append({
+                    "type": "event_conflict",
+                    "severity": "high",
+                    "message": f"There {'is an event' if event_count == 1 else f'are {event_count} events'} scheduled during this time that may involve your children.",
+                    "suggestion": "Consider checking with your co-parent before scheduling to avoid conflicts.",
+                    "can_proceed": True
+                })
+            else:
+                conflicts.append({
+                    "type": "event_conflict",
+                    "severity": "medium",
+                    "message": f"Your co-parent has {'an event' if event_count == 1 else f'{event_count} events'} scheduled during this time.",
+                    "suggestion": "You may want to coordinate timing to avoid scheduling conflicts.",
+                    "can_proceed": True
+                })
+
+        return conflicts
+
+    @staticmethod
     async def check_event_conflicts(
         db: AsyncSession,
         case_id: str,
@@ -582,14 +661,18 @@ class EventService:
         """
         Check for scheduling conflicts before creating an event.
 
-        Uses TimeBlockService for conflict detection.
+        Checks both:
+        1. Time blocks (when other parent is unavailable)
+        2. Existing events (overlapping scheduled events)
+
+        ARIA Integration: Returns neutral warnings without revealing details.
 
         Args:
             db: Database session
-            case_id: Case UUID
+            case_id: Case UUID or Family File ID
             start_time: Proposed event start
             end_time: Proposed event end
-            exclude_user_id: Don't check this user's blocks
+            exclude_user_id: Don't check this user's blocks/events
 
         Returns:
             Dict with:
@@ -597,12 +680,22 @@ class EventService:
             - conflicts: List[dict] (ARIA warnings)
             - can_proceed: bool
         """
-        has_conflicts, conflicts = await TimeBlockService.check_conflicts(
+        all_conflicts = []
+
+        # Check time block conflicts
+        has_time_conflicts, time_conflicts = await TimeBlockService.check_conflicts(
             db, case_id, start_time, end_time, exclude_user_id
         )
+        all_conflicts.extend(time_conflicts)
+
+        # Check overlapping event conflicts
+        event_conflicts = await EventService._check_overlapping_events(
+            db, case_id, start_time, end_time, exclude_user_id
+        )
+        all_conflicts.extend(event_conflicts)
 
         return {
-            "has_conflicts": has_conflicts,
-            "conflicts": conflicts,
+            "has_conflicts": len(all_conflicts) > 0,
+            "conflicts": all_conflicts,
             "can_proceed": True  # MVP: conflicts are warnings, not blockers
         }
