@@ -202,7 +202,7 @@ function ActivitiesContent() {
 
     try {
       setIsMarkingRead(true);
-      await activitiesAPI.markAllRead(familyFileId);
+      await activitiesAPI.markAllAsRead(familyFileId);
 
       // Update local state
       setActivities((prev) =>
