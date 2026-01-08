@@ -15,6 +15,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.services.child import ChildService
+from app.services.activity import log_child_activity
 from app.schemas.child import (
     ChildCreateBasic,
     ChildUpdateBasic,
@@ -193,6 +194,22 @@ async def approve_child(
     service = ChildService(db)
     child = await service.approve_child(child_id, current_user)
 
+    # Log activity for child approval (only for family file children)
+    if child.family_file_id:
+        try:
+            actor_name = f"{current_user.first_name} {current_user.last_name or ''}".strip()
+            await log_child_activity(
+                db=db,
+                family_file_id=child.family_file_id,
+                actor_id=str(current_user.id),
+                actor_name=actor_name or "Co-parent",
+                child_id=str(child.id),
+                child_name=child.first_name,
+                action="approved",
+            )
+        except Exception as e:
+            print(f"Activity logging failed: {e}")
+
     message = (
         "Profile is now active"
         if child.status == "active"
@@ -308,6 +325,24 @@ async def update_medical_info(
     """Update medical information."""
     service = ChildService(db)
     child = await service.update_medical_info(child_id, update_data, current_user)
+
+    # Log activity for medical info update
+    if child.family_file_id:
+        try:
+            actor_name = f"{current_user.first_name} {current_user.last_name or ''}".strip()
+            await log_child_activity(
+                db=db,
+                family_file_id=child.family_file_id,
+                actor_id=str(current_user.id),
+                actor_name=actor_name or "Co-parent",
+                child_id=str(child.id),
+                child_name=child.first_name,
+                action="updated",
+                field_changed="medical info",
+            )
+        except Exception as e:
+            print(f"Activity logging failed: {e}")
+
     return _child_to_full_response(child)
 
 
@@ -326,6 +361,24 @@ async def update_education_info(
     """Update education information."""
     service = ChildService(db)
     child = await service.update_education_info(child_id, update_data, current_user)
+
+    # Log activity for education info update
+    if child.family_file_id:
+        try:
+            actor_name = f"{current_user.first_name} {current_user.last_name or ''}".strip()
+            await log_child_activity(
+                db=db,
+                family_file_id=child.family_file_id,
+                actor_id=str(current_user.id),
+                actor_name=actor_name or "Co-parent",
+                child_id=str(child.id),
+                child_name=child.first_name,
+                action="updated",
+                field_changed="school info",
+            )
+        except Exception as e:
+            print(f"Activity logging failed: {e}")
+
     return _child_to_full_response(child)
 
 

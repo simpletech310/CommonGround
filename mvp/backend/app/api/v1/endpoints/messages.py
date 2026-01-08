@@ -27,6 +27,7 @@ from app.schemas.message import (
     ThreadResponse
 )
 from app.services.aria import aria_service
+from app.services.activity import log_message_activity
 from app.core.websocket import manager
 from datetime import datetime
 import uuid
@@ -519,6 +520,21 @@ async def send_message(
     db.add(new_message)
     await db.commit()
     await db.refresh(new_message)
+
+    # Log activity for the activity feed (only for family file messages)
+    if message_data.family_file_id:
+        try:
+            sender_name = f"{current_user.first_name} {current_user.last_name or ''}".strip()
+            await log_message_activity(
+                db=db,
+                family_file_id=message_data.family_file_id,
+                sender_id=str(current_user.id),
+                sender_name=sender_name or "Co-parent",
+                message_id=new_message.id,
+            )
+        except Exception as e:
+            # Don't fail message send if activity logging fails
+            print(f"Activity logging failed: {e}")
 
     # Broadcast via WebSocket to recipient
     if context_id:

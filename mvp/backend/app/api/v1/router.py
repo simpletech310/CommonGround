@@ -27,6 +27,7 @@ from app.api.v1.endpoints import (
     exports,
     intake,
     dashboard,
+    activities,
 )
 
 api_router = APIRouter()
@@ -72,3 +73,6 @@ api_router.include_router(intake.router, prefix="/intake", tags=["ARIA Paralegal
 
 # Dashboard - Activity aggregation
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+
+# Activity Feed - Recent activity tracking
+api_router.include_router(activities.router, tags=["Activities"])

@@ -15,7 +15,15 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 from app.core.config import settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
+# Get database URL and convert to sync driver for alembic
+db_url = settings.DATABASE_URL
+# Convert asyncpg to psycopg2 for sync migrations
+if "+asyncpg" in db_url:
+    db_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+elif "postgres://" in db_url:
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+config.set_main_option("sqlalchemy.url", db_url)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

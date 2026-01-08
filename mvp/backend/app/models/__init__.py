@@ -55,6 +55,14 @@ from app.models.clearfund import (
 )
 from app.models.legal import LegalAccess, CourtExport
 from app.models.audit import AuditLog, EventLog
+from app.models.activity import (
+    Activity,
+    ActivityType,
+    ActivityCategory,
+    ActivitySeverity,
+    ACTIVITY_CATEGORY_MAP,
+    ACTIVITY_ICON_MAP,
+)
 from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
 from app.models.court import (
     CourtProfessional,
@@ -168,6 +176,13 @@ __all__ = [
     "CourtExport",
     "AuditLog",
     "EventLog",
+    # Activity Feed
+    "Activity",
+    "ActivityType",
+    "ActivityCategory",
+    "ActivitySeverity",
+    "ACTIVITY_CATEGORY_MAP",
+    "ACTIVITY_ICON_MAP",
     "CustodyExchange",
     "CustodyExchangeInstance",
     # ClearFund

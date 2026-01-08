@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
+import { ActivityFeed } from '@/components/dashboard/activity-feed';
 import { useRouter } from 'next/navigation';
 import { formatInUserTimezone, isToday as isTodayTz } from '@/lib/timezone';
 import {
@@ -738,9 +739,18 @@ function DashboardContent() {
                 )}
               </div>
             )}
-            <button className="relative p-2 rounded-xl hover:bg-cg-sage-subtle transition-smooth">
+            <button
+              onClick={() => router.push('/activities')}
+              className="relative p-2 rounded-xl hover:bg-cg-sage-subtle transition-smooth"
+            >
               <Bell className="w-6 h-6 text-muted-foreground" />
-              <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-cg-amber rounded-full" />
+              {(dashboardSummary?.unread_activity_count ?? 0) > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-cg-error rounded-full flex items-center justify-center px-1">
+                  <span className="text-[10px] font-bold text-white">
+                    {(dashboardSummary?.unread_activity_count ?? 0) > 9 ? '9+' : dashboardSummary?.unread_activity_count}
+                  </span>
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -900,6 +910,21 @@ function DashboardContent() {
                     </div>
                   </div>
                 )}
+              </div>
+            </section>
+
+            {/* Recent Activity */}
+            <section>
+              <h3 className="text-sm font-medium text-cg-sage uppercase tracking-wide mb-3">
+                Recent Activity
+              </h3>
+              <div className="cg-card">
+                <ActivityFeed
+                  activities={dashboardSummary?.recent_activities || []}
+                  unreadCount={dashboardSummary?.unread_activity_count || 0}
+                  onSeeAll={() => router.push('/activities')}
+                  isLoading={!dashboardSummary}
+                />
               </div>
             </section>
 

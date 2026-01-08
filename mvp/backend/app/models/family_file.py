@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from app.models.payment import Payment
     from app.models.my_time_collection import MyTimeCollection
     from app.models.clearfund import Obligation
+    from app.models.activity import Activity
 
 
 class FamilyFileStatus(str, Enum):
@@ -177,6 +178,11 @@ class FamilyFile(Base, UUIDMixin, TimestampMixin):
     # Court Custody Case (optional, 0 or 1)
     court_custody_case: Mapped[Optional["CourtCustodyCase"]] = relationship(
         "CourtCustodyCase", back_populates="family_file", uselist=False
+    )
+
+    # Activities (for the activity feed)
+    activities: Mapped[list["Activity"]] = relationship(
+        "Activity", back_populates="family_file", cascade="all, delete-orphan"
     )
 
     # Legacy Cases (for migration from old Case model)

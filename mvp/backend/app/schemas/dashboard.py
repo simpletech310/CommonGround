@@ -62,6 +62,21 @@ class UpcomingEvent(BaseModel):
     other_parent_name: Optional[str] = None  # Name of the other parent for "with X" display
 
 
+class RecentActivity(BaseModel):
+    """Activity item for the recent activity feed."""
+    id: str
+    activity_type: str
+    category: str
+    actor_name: str
+    title: str
+    icon: str
+    severity: str = "info"
+    created_at: datetime
+    is_read: bool = False
+    subject_type: Optional[str] = None
+    subject_id: Optional[str] = None
+
+
 class DashboardSummary(BaseModel):
     """Complete dashboard activity summary."""
     # Expense counts and items
@@ -84,3 +99,7 @@ class DashboardSummary(BaseModel):
     # Upcoming events (next 7 days, all categories)
     upcoming_events: List[UpcomingEvent] = []
     next_event: Optional[UpcomingEvent] = None  # The very next event
+
+    # Recent activities (new activity feed)
+    recent_activities: List[RecentActivity] = []
+    unread_activity_count: int = 0

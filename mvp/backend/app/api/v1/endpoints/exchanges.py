@@ -28,6 +28,7 @@ from app.schemas.custody_exchange import (
 )
 from app.services.custody_exchange import CustodyExchangeService
 from app.services.geolocation import GeolocationService
+from app.services.activity import log_exchange_activity
 
 router = APIRouter()
 
@@ -331,6 +332,22 @@ async def check_in(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Instance not found or no access"
         )
+
+    # Log activity when exchange is completed (both parents checked in)
+    if instance.status == "completed" and instance.exchange.family_file_id:
+        try:
+            actor_name = f"{current_user.first_name} {current_user.last_name or ''}".strip()
+            await log_exchange_activity(
+                db=db,
+                family_file_id=instance.exchange.family_file_id,
+                actor_id=str(current_user.id),
+                actor_name=actor_name or "Co-parent",
+                exchange_id=str(instance.id),
+                action="completed",
+                exchange_time=instance.completed_at,
+            )
+        except Exception as e:
+            print(f"Activity logging failed: {e}")
 
     # Get other parent info for perspective-aware display
     other_parent_name, other_parent_id = await CustodyExchangeService.get_other_parent_info(

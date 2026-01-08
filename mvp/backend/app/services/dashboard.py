@@ -25,7 +25,9 @@ from app.schemas.dashboard import (
     PendingAgreement,
     CourtNotification,
     UpcomingEvent,
+    RecentActivity,
 )
+from app.services.activity import ActivityService
 
 
 class DashboardService:
@@ -70,6 +72,28 @@ class DashboardService:
             db, family_file_id, user, family_file
         )
 
+        # Get recent activities
+        recent_activities_data = await ActivityService.get_recent_activities(
+            db, family_file_id, user, limit=10
+        )
+        recent_activities = [
+            RecentActivity(
+                id=item.id,
+                activity_type=item.activity_type,
+                category=item.category,
+                actor_name=item.actor_name,
+                title=item.title,
+                icon=item.icon,
+                severity=item.severity,
+                created_at=item.created_at,
+                is_read=item.is_read,
+                subject_type=item.subject_type,
+                subject_id=item.subject_id,
+            )
+            for item in recent_activities_data.items
+        ]
+        unread_activity_count = recent_activities_data.unread_count
+
         return DashboardSummary(
             pending_expenses_count=expenses_count,
             pending_expenses=expenses,
@@ -82,6 +106,8 @@ class DashboardService:
             court_notifications=court_notifications,
             upcoming_events=events,
             next_event=next_event,
+            recent_activities=recent_activities,
+            unread_activity_count=unread_activity_count,
         )
 
     @staticmethod

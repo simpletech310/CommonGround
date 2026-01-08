@@ -4652,6 +4652,28 @@ export interface UpcomingEvent {
   other_parent_name?: string;  // Name of the other parent for "with X" display
 }
 
+export interface RecentActivity {
+  id: string;
+  activity_type: string;
+  category: string;  // "communication", "custody", "schedule", "financial", "system"
+  actor_name: string;
+  title: string;
+  icon: string;
+  severity: string;  // "info", "warning", "urgent"
+  created_at: string;
+  is_read: boolean;
+  subject_type?: string;
+  subject_id?: string;
+}
+
+export interface ActivityList {
+  items: RecentActivity[];
+  total: number;
+  unread_count: number;
+  limit: number;
+  offset: number;
+}
+
 export interface DashboardSummary {
   pending_expenses_count: number;
   pending_expenses: PendingExpense[];
@@ -4664,6 +4686,9 @@ export interface DashboardSummary {
   court_notifications: CourtNotification[];
   upcoming_events: UpcomingEvent[];
   next_event?: UpcomingEvent;
+  // Recent activity feed
+  recent_activities: RecentActivity[];
+  unread_activity_count: number;
 }
 
 export const dashboardAPI = {
@@ -4672,6 +4697,63 @@ export const dashboardAPI = {
    */
   async getSummary(familyFileId: string): Promise<DashboardSummary> {
     return fetchAPI<DashboardSummary>(`/dashboard/summary/${familyFileId}`);
+  },
+};
+
+// =========================================================================
+// Activities API - Activity Feed
+// =========================================================================
+
+export const activitiesAPI = {
+  /**
+   * Get activities for a family file
+   */
+  async getActivities(
+    familyFileId: string,
+    options?: { limit?: number; offset?: number; category?: string }
+  ): Promise<ActivityList> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+    if (options?.category) params.append('category', options.category);
+    const queryString = params.toString();
+    const url = `/family-files/${familyFileId}/activities${queryString ? `?${queryString}` : ''}`;
+    return fetchAPI<ActivityList>(url);
+  },
+
+  /**
+   * Get recent activities for dashboard
+   */
+  async getRecentActivities(
+    familyFileId: string,
+    limit: number = 10
+  ): Promise<{ items: RecentActivity[]; total_count: number; unread_count: number }> {
+    return fetchAPI(`/family-files/${familyFileId}/activities/recent?limit=${limit}`);
+  },
+
+  /**
+   * Get unread activity count
+   */
+  async getUnreadCount(familyFileId: string): Promise<{ unread_count: number }> {
+    return fetchAPI(`/family-files/${familyFileId}/activities/unread-count`);
+  },
+
+  /**
+   * Mark a single activity as read
+   */
+  async markAsRead(familyFileId: string, activityId: string): Promise<void> {
+    await fetchAPI(`/family-files/${familyFileId}/activities/${activityId}/read`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Mark all activities as read
+   */
+  async markAllAsRead(familyFileId: string): Promise<{ marked_count: number }> {
+    return fetchAPI(`/family-files/${familyFileId}/activities/read-all`, {
+      method: 'POST',
+    });
   },
 };
 
