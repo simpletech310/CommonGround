@@ -149,24 +149,27 @@ class ChildService:
                 detail="Cannot add children to inactive case",
             )
 
+        # Convert user.id to string for consistent storage
+        user_id_str = str(user.id)
+
         # Create child with pending status
         child = Child(
-            case_id=child_data.case_id,
+            case_id=str(child_data.case_id) if child_data.case_id else None,
             first_name=child_data.first_name,
             last_name=child_data.last_name,
             date_of_birth=child_data.date_of_birth,
             gender=child_data.gender,
             status=ChildProfileStatus.PENDING_APPROVAL.value,
-            created_by=user.id,
-            approved_by_a=user.id,  # Creator auto-approves
+            created_by=user_id_str,
+            approved_by_a=user_id_str,  # Creator auto-approves
             approved_at_a=datetime.utcnow(),
         )
 
-        # Initialize field contributors
+        # Initialize field contributors with string IDs
         child.field_contributors = json.dumps({
-            "first_name": user.id,
-            "last_name": user.id,
-            "date_of_birth": user.id,
+            "first_name": user_id_str,
+            "last_name": user_id_str,
+            "date_of_birth": user_id_str,
         })
 
         self.db.add(child)
@@ -287,10 +290,21 @@ class ChildService:
             )
 
         # Verify access (checks both case_id and family_file_id)
-        await self._verify_child_access(child, user.id)
+        await self._verify_child_access(child, str(user.id))
+
+        # SELF-HEALING: If both parents approved but status is still pending, fix it
+        if (
+            child.approved_by_a and
+            child.approved_by_b and
+            child.status == ChildProfileStatus.PENDING_APPROVAL.value
+        ):
+            child.status = ChildProfileStatus.ACTIVE.value
+            await self.db.commit()
+            await self.db.refresh(child)
 
         # Apply court restrictions if user is restricted
-        if child.restricted_parent_id == user.id:
+        user_id_str = str(user.id)
+        if child.restricted_parent_id and str(child.restricted_parent_id) == user_id_str:
             child = self._apply_restrictions(child)
 
         return child

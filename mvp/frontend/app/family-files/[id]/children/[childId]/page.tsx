@@ -633,26 +633,45 @@ function ChildProfileContent() {
                 becomes active.
               </p>
 
-              {user && (child.approved_by_a === user.id || child.approved_by_b === user.id) ? (
-                <div className="mt-4 px-4 py-2 bg-yellow-100/50 text-yellow-700 rounded-lg text-sm font-medium border border-yellow-200/50 inline-block">
-                  ✅ You have approved this profile. Waiting for co-parent.
-                </div>
-              ) : (
-                <button
-                  onClick={handleApprove}
-                  disabled={saving}
-                  className="mt-4 px-4 py-2 bg-cg-sage text-white rounded-lg hover:bg-cg-sage/90 disabled:opacity-50"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin inline" />
-                      Approving...
-                    </>
-                  ) : (
-                    'Approve This Profile'
-                  )}
-                </button>
-              )}
+              {(() => {
+                // Normalize IDs for comparison (handles UUID case differences)
+                const userId = user?.id?.toLowerCase?.() || user?.id;
+                const approvedA = child.approved_by_a?.toLowerCase?.() || child.approved_by_a;
+                const approvedB = child.approved_by_b?.toLowerCase?.() || child.approved_by_b;
+                const hasApproved = userId && (approvedA === userId || approvedB === userId);
+                const bothApproved = approvedA && approvedB;
+
+                if (bothApproved) {
+                  return (
+                    <div className="mt-4 px-4 py-2 bg-green-100/50 text-green-700 rounded-lg text-sm font-medium border border-green-200/50 inline-block">
+                      ✅ Both parents have approved. Profile should be active soon.
+                    </div>
+                  );
+                } else if (hasApproved) {
+                  return (
+                    <div className="mt-4 px-4 py-2 bg-yellow-100/50 text-yellow-700 rounded-lg text-sm font-medium border border-yellow-200/50 inline-block">
+                      ✅ You have approved this profile. Waiting for co-parent.
+                    </div>
+                  );
+                } else {
+                  return (
+                    <button
+                      onClick={handleApprove}
+                      disabled={saving}
+                      className="mt-4 px-4 py-2 bg-cg-sage text-white rounded-lg hover:bg-cg-sage/90 disabled:opacity-50"
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin inline" />
+                          Approving...
+                        </>
+                      ) : (
+                        'Approve This Profile'
+                      )}
+                    </button>
+                  );
+                }
+              })()}
             </div>
           </div>
         </div>
