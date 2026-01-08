@@ -443,11 +443,108 @@ function QuickActionButton({
   );
 }
 
-// Upcoming Event Card - shows next scheduled event
-function UpcomingEventCard({ event }: { event?: UpcomingEvent }) {
-  const { timezone } = useAuth();
+// Get icon and colors based on event category
+function getCategoryStyles(category: string) {
+  switch (category) {
+    case 'exchange':
+      return { bg: 'bg-cg-slate-subtle', color: 'text-cg-slate', Icon: MapPin };
+    case 'medical':
+      return { bg: 'bg-cg-error-subtle', color: 'text-cg-error', Icon: Heart };
+    case 'school':
+      return { bg: 'bg-cg-amber-subtle', color: 'text-cg-amber', Icon: FileText };
+    case 'sports':
+      return { bg: 'bg-cg-sage-subtle', color: 'text-cg-sage', Icon: Users };
+    default:
+      return { bg: 'bg-cg-sage-subtle', color: 'text-cg-sage', Icon: Calendar };
+  }
+}
 
-  if (!event) {
+// Single Upcoming Event Item
+function UpcomingEventItem({ event }: { event: UpcomingEvent }) {
+  const { timezone } = useAuth();
+  const router = useRouter();
+
+  // Format the event time (timezone-aware)
+  const eventTime = event.start_time;
+  const now = new Date();
+  const tomorrow = new Date(now.getTime() + 86400000).toISOString();
+  const isToday = isTodayTz(eventTime, timezone);
+  const isTomorrow = formatInUserTimezone(eventTime, timezone, 'yyyy-MM-dd') ===
+    formatInUserTimezone(tomorrow, timezone, 'yyyy-MM-dd');
+  const dayLabel = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : formatInUserTimezone(eventTime, timezone, 'EEE');
+  const timeLabel = event.all_day ? 'All day' : formatInUserTimezone(eventTime, timezone, 'h:mm a');
+
+  // Calculate time remaining
+  const eventDate = new Date(event.start_time);
+  const diffMs = eventDate.getTime() - now.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  let timeRemaining = '';
+  if (diffMins < 0) {
+    timeRemaining = 'Now';
+  } else if (diffMins < 60) {
+    timeRemaining = `${diffMins}m`;
+  } else if (diffHours < 24) {
+    timeRemaining = `${diffHours}h ${diffMins % 60}m`;
+  } else {
+    timeRemaining = `${diffDays}d`;
+  }
+
+  const { bg, color, Icon } = getCategoryStyles(event.event_category);
+
+  // Get display title
+  const getDisplayTitle = () => {
+    if (!event.is_exchange) return event.title;
+    if (event.viewer_role === 'pickup') return 'Pickup';
+    if (event.viewer_role === 'dropoff') return 'Dropoff';
+    return event.title || 'Exchange';
+  };
+
+  // Determine what to show in the subtitle
+  const getSubtitle = () => {
+    if (event.is_exchange && event.other_parent_name) {
+      return `with ${event.other_parent_name}`;
+    }
+    if (event.child_names && event.child_names.length > 0) {
+      return event.child_names.join(', ');
+    }
+    return event.location || null;
+  };
+
+  const subtitle = getSubtitle();
+
+  return (
+    <button
+      onClick={() => router.push('/schedule')}
+      className="w-full p-3 flex items-center gap-3 text-left hover:bg-muted/50 transition-colors rounded-lg"
+    >
+      <div className={`w-10 h-10 ${bg} rounded-lg flex items-center justify-center flex-shrink-0`}>
+        <Icon className={`w-5 h-5 ${color}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-foreground truncate">{getDisplayTitle()}</p>
+        <p className="text-sm text-muted-foreground truncate">
+          {timeLabel}
+          {subtitle && ` • ${subtitle}`}
+        </p>
+      </div>
+      <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+        <span className="text-xs font-medium text-cg-sage bg-cg-sage-subtle px-2 py-0.5 rounded-full">
+          {timeRemaining}
+        </span>
+        <span className="text-xs text-muted-foreground">{dayLabel}</span>
+      </div>
+    </button>
+  );
+}
+
+// Upcoming Events List - shows all events in next 7 days with vertical scroll
+function UpcomingEventsList({ events }: { events?: UpcomingEvent[] }) {
+  const router = useRouter();
+
+  if (!events || events.length === 0) {
     return (
       <div className="cg-card p-4">
         <div className="flex items-center gap-3">
@@ -463,112 +560,23 @@ function UpcomingEventCard({ event }: { event?: UpcomingEvent }) {
     );
   }
 
-  // Format the event time (timezone-aware)
-  const eventTime = event.start_time;
-  const now = new Date();
-  const tomorrow = new Date(now.getTime() + 86400000).toISOString();
-  const isToday = isTodayTz(eventTime, timezone);
-  const isTomorrow = formatInUserTimezone(eventTime, timezone, 'yyyy-MM-dd') ===
-    formatInUserTimezone(tomorrow, timezone, 'yyyy-MM-dd');
-  const dayLabel = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : formatInUserTimezone(eventTime, timezone, 'EEEE');
-  const timeLabel = event.all_day ? 'All day' : formatInUserTimezone(eventTime, timezone, 'h:mm a');
-
-  // Calculate time remaining
-  const eventDate = new Date(event.start_time);
-  const diffMs = eventDate.getTime() - now.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  let timeRemaining = '';
-  if (diffMins < 0) {
-    timeRemaining = 'Started';
-  } else if (diffMins < 60) {
-    timeRemaining = `in ${diffMins} min`;
-  } else if (diffHours < 24) {
-    const remainingMins = diffMins % 60;
-    timeRemaining = remainingMins > 0
-      ? `in ${diffHours}h ${remainingMins}m`
-      : `in ${diffHours} hours`;
-  } else {
-    const remainingHours = diffHours % 24;
-    timeRemaining = remainingHours > 0
-      ? `in ${diffDays}d ${remainingHours}h`
-      : `in ${diffDays} days`;
-  }
-
-  // Get icon and colors based on category
-  const getCategoryStyles = (category: string) => {
-    switch (category) {
-      case 'exchange':
-        return { bg: 'bg-cg-slate-subtle', color: 'text-cg-slate', Icon: MapPin };
-      case 'medical':
-        return { bg: 'bg-cg-error-subtle', color: 'text-cg-error', Icon: Heart };
-      case 'school':
-        return { bg: 'bg-cg-amber-subtle', color: 'text-cg-amber', Icon: FileText };
-      case 'sports':
-        return { bg: 'bg-cg-sage-subtle', color: 'text-cg-sage', Icon: Users };
-      default:
-        return { bg: 'bg-cg-sage-subtle', color: 'text-cg-sage', Icon: Calendar };
-    }
-  };
-
-  const { bg, color, Icon } = getCategoryStyles(event.event_category);
-
-  // Get exchange-specific display info
-  const getExchangeTitle = () => {
-    if (!event.is_exchange) return `${event.event_category} Event`;
-    if (event.viewer_role === 'pickup') return 'Next Pickup';
-    if (event.viewer_role === 'dropoff') return 'Next Dropoff';
-    if (event.viewer_role === 'both') return 'Next Exchange';
-    return 'Next Exchange';
-  };
-
-  // Determine what to show in the "with" line
-  const getWithText = () => {
-    // For exchanges, show the other parent's name
-    if (event.is_exchange && event.other_parent_name) {
-      return `with ${event.other_parent_name}`;
-    }
-    // For non-exchange events, show child names
-    if (event.child_names.length > 0) {
-      return `with ${event.child_names.join(', ')}`;
-    }
-    return null;
-  };
-
-  const withText = getWithText();
-
   return (
-    <div className="cg-card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-foreground capitalize">
-          {getExchangeTitle()}
-        </h3>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-cg-sage bg-cg-sage-subtle px-2 py-0.5 rounded-full">
-            {timeRemaining}
-          </span>
-          <span className="text-sm text-muted-foreground">{dayLabel}</span>
-        </div>
+    <div className="cg-card overflow-hidden">
+      <div className="max-h-[280px] overflow-y-auto divide-y divide-border/50">
+        {events.map((event) => (
+          <UpcomingEventItem key={event.id} event={event} />
+        ))}
       </div>
-      <div className="flex items-start gap-3">
-        <div className={`w-10 h-10 ${bg} rounded-lg flex items-center justify-center flex-shrink-0`}>
-          <Icon className={`w-5 h-5 ${color}`} />
+      {events.length > 3 && (
+        <div className="p-2 border-t border-border/50 bg-muted/30">
+          <button
+            onClick={() => router.push('/schedule')}
+            className="w-full text-center text-sm text-cg-sage hover:text-cg-sage-light font-medium py-1 transition-colors"
+          >
+            View full schedule →
+          </button>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-medium text-foreground">{event.title}</p>
-          <p className="text-sm text-muted-foreground">
-            {timeLabel}
-            {event.location && ` at ${event.location}`}
-          </p>
-          {withText && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {withText}
-            </p>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -913,12 +921,12 @@ function DashboardContent() {
               </div>
             </section>
 
-            {/* Upcoming Event */}
+            {/* Upcoming Events */}
             <section>
               <h3 className="text-sm font-medium text-cg-sage uppercase tracking-wide mb-3">
                 Coming Up
               </h3>
-              <UpcomingEventCard event={dashboardSummary?.next_event} />
+              <UpcomingEventsList events={dashboardSummary?.upcoming_events} />
             </section>
 
             {/* Quick Actions */}
