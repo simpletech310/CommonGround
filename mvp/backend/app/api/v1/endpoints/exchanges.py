@@ -5,21 +5,12 @@ Dedicated endpoints for managing custody exchanges separate from regular events.
 """
 
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
-def _strip_tz(dt: Optional[datetime]) -> Optional[datetime]:
-    """Strip timezone info from datetime for database compatibility."""
-    if dt is None:
-        return None
-    if dt.tzinfo is not None:
-        # Convert to UTC then remove timezone info
-        return dt.astimezone(timezone.utc).replace(tzinfo=None)
-    return dt
-
 from app.core.database import get_db
+from app.utils.timezone import strip_tz
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.custody_exchange import (
@@ -217,8 +208,8 @@ async def get_upcoming_exchanges(
     """Get upcoming exchange instances for a case."""
 
     # Strip timezone info from dates for database compatibility
-    start_date_naive = _strip_tz(start_date)
-    end_date_naive = _strip_tz(end_date)
+    start_date_naive = strip_tz(start_date)
+    end_date_naive = strip_tz(end_date)
 
     instances = await CustodyExchangeService.get_upcoming_instances(
         db=db,

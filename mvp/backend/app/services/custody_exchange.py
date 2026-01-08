@@ -16,6 +16,7 @@ from app.models.custody_exchange import CustodyExchange, CustodyExchangeInstance
 from app.models.case import Case, CaseParticipant
 from app.models.family_file import FamilyFile
 from app.services.geolocation import GeolocationService
+from app.utils.timezone import strip_tz
 
 
 async def _check_case_or_family_file_access(
@@ -61,18 +62,6 @@ async def _check_case_or_family_file_access(
             return True, case_id, True
 
     return False, case_id, False
-
-
-def _strip_tz(dt: Optional[datetime]) -> Optional[datetime]:
-    """Convert timezone-aware datetime to UTC naive datetime."""
-    if dt is None:
-        return None
-    if dt.tzinfo is not None:
-        # Convert to UTC and remove tzinfo
-        from datetime import timezone
-        utc_dt = dt.astimezone(timezone.utc)
-        return utc_dt.replace(tzinfo=None)
-    return dt
 
 
 class CustodyExchangeService:
@@ -135,8 +124,8 @@ class CustodyExchangeService:
                 title += " (Recurring)"
 
         # Convert timezone-aware datetimes to naive UTC
-        scheduled_time_naive = _strip_tz(scheduled_time)
-        recurrence_end_naive = _strip_tz(recurrence_end_date)
+        scheduled_time_naive = strip_tz(scheduled_time)
+        recurrence_end_naive = strip_tz(recurrence_end_date)
 
         # Handle child_ids based on exchange_type
         # For "pickup": all children go to pickup_child_ids

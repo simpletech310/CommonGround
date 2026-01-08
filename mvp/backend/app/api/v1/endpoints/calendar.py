@@ -2,23 +2,13 @@
 Calendar view endpoint - combines events, busy periods, collections, and exchanges.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
-def _strip_tz(dt: Optional[datetime]) -> Optional[datetime]:
-    """Convert timezone-aware datetime to UTC naive datetime."""
-    if dt is None:
-        return None
-    if dt.tzinfo is not None:
-        # Convert to UTC and remove tzinfo
-        utc_dt = dt.astimezone(timezone.utc)
-        return utc_dt.replace(tzinfo=None)
-    return dt
-
 from app.core.database import get_db
+from app.utils.timezone import strip_tz
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.case import CaseParticipant
@@ -196,8 +186,8 @@ async def get_calendar_data(
     exchanges_list = []
     try:
         # Strip timezone from dates for database query
-        start_date_naive = _strip_tz(start_date)
-        end_date_naive = _strip_tz(end_date)
+        start_date_naive = strip_tz(start_date)
+        end_date_naive = strip_tz(end_date)
 
         exchange_instances = await CustodyExchangeService.get_upcoming_instances(
             db=db,
@@ -239,8 +229,8 @@ async def get_calendar_data(
             court_events = await court_event_service.get_events_for_case(effective_case_id, include_past=False)
 
             # Strip timezone from dates for comparison
-            start_date_naive = _strip_tz(start_date)
-            end_date_naive = _strip_tz(end_date)
+            start_date_naive = strip_tz(start_date)
+            end_date_naive = strip_tz(end_date)
 
             for ce in court_events:
                 # Filter by date range

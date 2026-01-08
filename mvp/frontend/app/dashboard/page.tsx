@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
 import { useRouter } from 'next/navigation';
+import { formatInUserTimezone, isToday as isTodayTz } from '@/lib/timezone';
 import {
   familyFilesAPI,
   agreementsAPI,
@@ -124,22 +125,27 @@ function ChildCustodyCard({
   coparentName?: string;
   onWithMe?: (childId: string) => void;
 }) {
+  const { timezone } = useAuth();
   const isWithYou = childStatus.with_current_user;
   const progress = childStatus.progress_percentage || 0;
   const statusColor = isWithYou ? 'bg-cg-sage' : 'bg-cg-slate';
   const statusTextColor = isWithYou ? 'text-cg-sage' : 'text-cg-slate';
   const hasNextExchange = !!childStatus.next_exchange_time;
 
-  // Format next exchange time
+  // Format next exchange time (timezone-aware)
   const formatNextExchange = () => {
     if (!childStatus.next_exchange_time) return null;
-    const date = new Date(childStatus.next_exchange_time);
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
-    const isTomorrow = new Date(now.getTime() + 86400000).toDateString() === date.toDateString();
+    const exchangeTime = childStatus.next_exchange_time;
+    const isToday = isTodayTz(exchangeTime, timezone);
 
-    const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    const dayStr = date.toLocaleDateString('en-US', { weekday: 'long' });
+    // Check if tomorrow by adding a day to current time and comparing
+    const now = new Date();
+    const tomorrow = new Date(now.getTime() + 86400000).toISOString();
+    const isTomorrow = formatInUserTimezone(exchangeTime, timezone, 'yyyy-MM-dd') ===
+      formatInUserTimezone(tomorrow, timezone, 'yyyy-MM-dd');
+
+    const timeStr = formatInUserTimezone(exchangeTime, timezone, 'h:mm a');
+    const dayStr = formatInUserTimezone(exchangeTime, timezone, 'EEEE');
 
     if (isToday) return `Today ${timeStr}`;
     if (isTomorrow) return `Tomorrow ${timeStr}`;
@@ -259,6 +265,8 @@ function CustodyStatusCard({
   coparentName?: string;
   onWithMe?: (childId: string) => void;
 }) {
+  const { timezone } = useAuth();
+
   // If no custody status data, show simplified card
   if (!custodyStatus || children.length === 0) {
     return (
@@ -282,15 +290,19 @@ function CustodyStatusCard({
     const progress = custodyStatus.progress_percentage || 0;
     const hasNextExchange = !!custodyStatus.next_exchange_time;
 
-    // Format the next exchange time
+    // Format the next exchange time (timezone-aware)
     const formatNextExchange = () => {
       if (!custodyStatus.next_exchange_time) return null;
-      const date = new Date(custodyStatus.next_exchange_time);
+      const exchangeTime = custodyStatus.next_exchange_time;
+      const isToday = isTodayTz(exchangeTime, timezone);
+
       const now = new Date();
-      const isToday = date.toDateString() === now.toDateString();
-      const isTomorrow = new Date(now.getTime() + 86400000).toDateString() === date.toDateString();
-      const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      const dayStr = date.toLocaleDateString('en-US', { weekday: 'long' });
+      const tomorrow = new Date(now.getTime() + 86400000).toISOString();
+      const isTomorrow = formatInUserTimezone(exchangeTime, timezone, 'yyyy-MM-dd') ===
+        formatInUserTimezone(tomorrow, timezone, 'yyyy-MM-dd');
+
+      const timeStr = formatInUserTimezone(exchangeTime, timezone, 'h:mm a');
+      const dayStr = formatInUserTimezone(exchangeTime, timezone, 'EEEE');
       if (isToday) return `Today ${timeStr}`;
       if (isTomorrow) return `Tomorrow ${timeStr}`;
       return `${dayStr} ${timeStr}`;
@@ -432,6 +444,8 @@ function QuickActionButton({
 
 // Upcoming Event Card - shows next scheduled event
 function UpcomingEventCard({ event }: { event?: UpcomingEvent }) {
+  const { timezone } = useAuth();
+
   if (!event) {
     return (
       <div className="cg-card p-4">
@@ -448,15 +462,18 @@ function UpcomingEventCard({ event }: { event?: UpcomingEvent }) {
     );
   }
 
-  // Format the event time
-  const eventDate = new Date(event.start_time);
-  const isToday = new Date().toDateString() === eventDate.toDateString();
-  const isTomorrow = new Date(Date.now() + 86400000).toDateString() === eventDate.toDateString();
-  const dayLabel = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : eventDate.toLocaleDateString('en-US', { weekday: 'long' });
-  const timeLabel = event.all_day ? 'All day' : eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  // Format the event time (timezone-aware)
+  const eventTime = event.start_time;
+  const now = new Date();
+  const tomorrow = new Date(now.getTime() + 86400000).toISOString();
+  const isToday = isTodayTz(eventTime, timezone);
+  const isTomorrow = formatInUserTimezone(eventTime, timezone, 'yyyy-MM-dd') ===
+    formatInUserTimezone(tomorrow, timezone, 'yyyy-MM-dd');
+  const dayLabel = isToday ? 'Today' : isTomorrow ? 'Tomorrow' : formatInUserTimezone(eventTime, timezone, 'EEEE');
+  const timeLabel = event.all_day ? 'All day' : formatInUserTimezone(eventTime, timezone, 'h:mm a');
 
   // Calculate time remaining
-  const now = new Date();
+  const eventDate = new Date(event.start_time);
   const diffMs = eventDate.getTime() - now.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMins / 60);

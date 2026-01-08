@@ -6,6 +6,8 @@ import { calendarAPI, CalendarDataV2, EventV2, BusyPeriod, ExchangeInstanceForCa
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import CourtEventDetails from './court-event-details';
+import { useAuth } from '@/lib/auth-context';
+import { formatInUserTimezone } from '@/lib/timezone';
 
 interface CalendarViewProps {
   caseId: string;
@@ -22,11 +24,17 @@ export default function CalendarView({
   onEventClick,
   onExchangeClick,
 }: CalendarViewProps) {
+  const { timezone } = useAuth();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarData, setCalendarData] = useState<CalendarDataV2 | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCourtEvent, setSelectedCourtEvent] = useState<CourtEventForCalendar | null>(null);
+
+  // Timezone-aware time formatter
+  const formatEventTime = (dateString: string): string => {
+    return formatInUserTimezone(dateString, timezone, 'h:mm a');
+  };
 
   useEffect(() => {
     loadCalendarData();
@@ -423,10 +431,7 @@ export default function CalendarView({
   );
 }
 
-function formatEventTime(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-}
+// formatEventTime is now defined inside CalendarView component with timezone support
 
 function formatTimeString(timeString: string): string {
   // Handle time strings like "09:00:00" or "14:30:00"

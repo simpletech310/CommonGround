@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth-context';
+import { usersAPI } from '@/lib/api';
+import { TIMEZONE_OPTIONS } from '@/lib/timezone';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,16 +24,6 @@ import { User, Mail, Phone, MapPin, Clock, CheckCircle } from 'lucide-react';
  * Philosophy: "Make updating information effortless."
  */
 
-// Timezone options (common US timezones)
-const TIMEZONE_OPTIONS = [
-  { value: 'America/New_York', label: 'Eastern Time (ET)' },
-  { value: 'America/Chicago', label: 'Central Time (CT)' },
-  { value: 'America/Denver', label: 'Mountain Time (MT)' },
-  { value: 'America/Los_Angeles', label: 'Pacific Time (PT)' },
-  { value: 'America/Anchorage', label: 'Alaska Time (AKT)' },
-  { value: 'Pacific/Honolulu', label: 'Hawaii Time (HT)' },
-];
-
 interface ProfileFormData {
   first_name: string;
   last_name: string;
@@ -46,8 +38,9 @@ interface ProfileFormData {
 }
 
 export default function AccountSettingsPage() {
-  const { user } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,17 +57,42 @@ export default function AccountSettingsPage() {
     zip_code: '',
   });
 
-  // Load user data on mount
+  // Load profile data on mount
   useEffect(() => {
-    if (user) {
-      setFormData((prev) => ({
-        ...prev,
-        first_name: user.first_name || '',
-        last_name: user.last_name || '',
-        // These would come from a profile API in production
-      }));
-    }
-  }, [user]);
+    const loadProfile = async () => {
+      try {
+        setIsLoading(true);
+        // If we already have profile in context, use it
+        if (profile) {
+          setFormData({
+            first_name: profile.first_name || '',
+            last_name: profile.last_name || '',
+            preferred_name: profile.preferred_name || '',
+            phone: profile.phone || '',
+            timezone: profile.timezone || 'America/Los_Angeles',
+            address_line1: profile.address_line1 || '',
+            address_line2: profile.address_line2 || '',
+            city: profile.city || '',
+            state: profile.state || '',
+            zip_code: profile.zip_code || '',
+          });
+        } else if (user) {
+          // Fallback to user data if no profile
+          setFormData((prev) => ({
+            ...prev,
+            first_name: user.first_name || '',
+            last_name: user.last_name || '',
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to load profile:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadProfile();
+  }, [user, profile]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -92,16 +110,25 @@ export default function AccountSettingsPage() {
     setShowSuccess(false);
 
     try {
-      // In production, this would call the profile update API
-      // For now, simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Call the profile update API
+      await usersAPI.updateProfile({
+        timezone: formData.timezone,
+        preferred_name: formData.preferred_name || undefined,
+        phone: formData.phone || undefined,
+        address_line1: formData.address_line1 || undefined,
+        address_line2: formData.address_line2 || undefined,
+        city: formData.city || undefined,
+        state: formData.state || undefined,
+        zip_code: formData.zip_code || undefined,
+      });
 
-      // TODO: Implement actual API call
-      // await usersAPI.updateProfile(formData);
+      // Refresh the profile in auth context so timezone updates everywhere
+      await refreshProfile();
 
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 3000);
     } catch (err) {
+      console.error('Failed to save profile:', err);
       setError('Failed to save changes. Please try again.');
     } finally {
       setIsSaving(false);
@@ -349,7 +376,21 @@ export default function AccountSettingsPage() {
             type="button"
             variant="outline"
             onClick={() => {
-              if (user) {
+              // Reset to profile data
+              if (profile) {
+                setFormData({
+                  first_name: profile.first_name || '',
+                  last_name: profile.last_name || '',
+                  preferred_name: profile.preferred_name || '',
+                  phone: profile.phone || '',
+                  timezone: profile.timezone || 'America/Los_Angeles',
+                  address_line1: profile.address_line1 || '',
+                  address_line2: profile.address_line2 || '',
+                  city: profile.city || '',
+                  state: profile.state || '',
+                  zip_code: profile.zip_code || '',
+                });
+              } else if (user) {
                 setFormData({
                   first_name: user.first_name || '',
                   last_name: user.last_name || '',
@@ -363,6 +404,8 @@ export default function AccountSettingsPage() {
                   zip_code: '',
                 });
               }
+              setError(null);
+              setShowSuccess(false);
             }}
           >
             Cancel

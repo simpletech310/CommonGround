@@ -224,6 +224,37 @@ export interface User {
   updated_at: string;
 }
 
+export interface UserProfile {
+  id: string;
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  preferred_name?: string;
+  email: string;
+  phone?: string;
+  avatar_url?: string;
+  timezone: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  subscription_tier: string;
+  subscription_status: string;
+  created_at: string;
+}
+
+export interface UserProfileUpdate {
+  timezone?: string;
+  preferred_name?: string;
+  phone?: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  state?: string;
+  zip_code?: string;
+}
+
 export const authAPI = {
   /**
    * Register a new user
@@ -317,6 +348,29 @@ export const authAPI = {
     if (typeof window === 'undefined') return null;
     const userStr = localStorage.getItem('user');
     return userStr ? JSON.parse(userStr) : null;
+  },
+};
+
+// ============================================================================
+// Users API (Profile Management)
+// ============================================================================
+
+export const usersAPI = {
+  /**
+   * Get current user's profile
+   */
+  async getProfile(): Promise<UserProfile> {
+    return fetchAPI<UserProfile>('/users/me/profile');
+  },
+
+  /**
+   * Update current user's profile
+   */
+  async updateProfile(data: UserProfileUpdate): Promise<UserProfile> {
+    return fetchAPI<UserProfile>('/users/me/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   },
 };
 
