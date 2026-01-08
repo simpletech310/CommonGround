@@ -273,23 +273,77 @@ function CustodyStatusCard({
     );
   }
 
-  // If no child-specific data, fall back to single card
+  // If no child-specific data, fall back to single card with progress
   if (!custodyStatus.children || custodyStatus.children.length === 0) {
     const allWithYou = custodyStatus.all_with_current_user;
     const statusText = allWithYou ? 'Kids are with You' : `Kids are with ${coparentName || 'co-parent'}`;
     const statusColor = allWithYou ? 'bg-cg-sage' : 'bg-cg-slate';
+    const statusTextColor = allWithYou ? 'text-cg-sage' : 'text-cg-slate';
+    const progress = custodyStatus.progress_percentage || 0;
+    const hasNextExchange = !!custodyStatus.next_exchange_time;
+
+    // Format the next exchange time
+    const formatNextExchange = () => {
+      if (!custodyStatus.next_exchange_time) return null;
+      const date = new Date(custodyStatus.next_exchange_time);
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+      const isTomorrow = new Date(now.getTime() + 86400000).toDateString() === date.toDateString();
+      const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      const dayStr = date.toLocaleDateString('en-US', { weekday: 'long' });
+      if (isToday) return `Today ${timeStr}`;
+      if (isTomorrow) return `Tomorrow ${timeStr}`;
+      return `${dayStr} ${timeStr}`;
+    };
+
+    const nextExchangeStr = formatNextExchange();
 
     return (
       <div className="cg-card overflow-hidden">
-        <div className={`h-2 ${statusColor}`} />
-        <div className="p-5">
-          <p className={`text-sm font-medium mb-1 ${allWithYou ? 'text-cg-sage' : 'text-cg-slate'}`}>
+        <div className={`h-1.5 ${statusColor}`} />
+        <div className="p-4">
+          {/* Status header */}
+          <p className={`text-sm font-medium mb-1 ${statusTextColor}`}>
             {statusText}
           </p>
-          {custodyStatus.next_exchange_formatted && (
-            <p className="text-xl font-semibold text-foreground">
-              until {custodyStatus.next_exchange_formatted}
+
+          {/* Next exchange info */}
+          {hasNextExchange ? (
+            <p className="text-lg font-semibold text-foreground mb-3">
+              until {nextExchangeStr || custodyStatus.next_exchange_formatted}
             </p>
+          ) : (
+            <p className="text-sm text-muted-foreground mb-3 italic">
+              No upcoming exchange
+            </p>
+          )}
+
+          {/* Progress Bar - only show if exchange scheduled */}
+          {hasNextExchange && (
+            <>
+              <div className="relative mb-2">
+                <div className="cg-progress h-2.5 rounded-full">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${allWithYou ? 'cg-progress-bar' : 'bg-cg-slate/60'}`}
+                    style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                  />
+                </div>
+                {/* Progress indicator */}
+                <div
+                  className={`absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full flex items-center justify-center transition-all duration-500 ${statusColor} shadow-sm`}
+                  style={{ left: `calc(${Math.min(92, Math.max(4, progress))}% - 12px)` }}
+                >
+                  <Users className="w-3 h-3 text-white" />
+                </div>
+              </div>
+
+              {/* Time remaining */}
+              <p className="text-xs text-muted-foreground">
+                {custodyStatus.hours_until_next_exchange
+                  ? formatHoursRemaining(custodyStatus.hours_until_next_exchange) + ' remaining'
+                  : ''}
+              </p>
+            </>
           )}
         </div>
       </div>
