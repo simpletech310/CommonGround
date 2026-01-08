@@ -1337,6 +1337,10 @@ class CustodyExchangeService:
         next_times = [c["next_exchange_time"] for c in child_statuses if c["next_exchange_time"]]
         next_exchange_time = min(next_times) if next_times else None
 
+        # FALLBACK: If no next_exchange_time from children but exchanges exist, use first exchange directly
+        if not next_exchange_time and all_upcoming_instances:
+            next_exchange_time = all_upcoming_instances[0].scheduled_time
+
         hours_until_next = None
         next_day = None
         next_formatted = None
@@ -1365,6 +1369,11 @@ class CustodyExchangeService:
                     custody_period_hours = elapsed_hours + first_child["hours_remaining"]
                 else:
                     custody_period_hours = 168.0  # Default 7 days
+        elif hours_until_next is not None:
+            # FALLBACK: No children but we have exchange time - calculate progress from that
+            if hours_until_next < custody_period_hours:
+                elapsed_hours = custody_period_hours - hours_until_next
+                overall_progress = min(100.0, (elapsed_hours / custody_period_hours) * 100)
 
         return {
             "family_file_id": family_file_id,
