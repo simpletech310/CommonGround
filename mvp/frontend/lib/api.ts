@@ -4658,6 +4658,7 @@ export interface RecentActivity {
   category: string;  // "communication", "custody", "schedule", "financial", "system"
   actor_name: string;
   title: string;
+  description?: string;
   icon: string;
   severity: string;  // "info", "warning", "urgent"
   created_at: string;
