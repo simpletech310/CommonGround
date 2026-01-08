@@ -88,9 +88,9 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${isActive
-        ? 'bg-cg-sage text-white shadow-md'
-        : 'bg-transparent text-muted-foreground hover:bg-cg-sage/10 hover:text-cg-sage'
+      className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${isActive
+        ? 'bg-cg-sage text-white shadow-sm'
+        : 'bg-card text-muted-foreground hover:bg-cg-sage/10 hover:text-cg-sage border border-transparent hover:border-cg-sage/20'
         }`}
     >
       <Icon className="h-4 w-4" />
@@ -103,17 +103,17 @@ function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { icon: React.ReactNode; className: string; label: string }> = {
     active: {
       icon: <CheckCircle className="h-3.5 w-3.5" />,
-      className: 'bg-green-100 text-green-700 border-green-200',
+      className: 'bg-cg-sage/10 text-cg-sage border-cg-sage/20',
       label: 'Active',
     },
     pending_approval: {
       icon: <Clock className="h-3.5 w-3.5" />,
-      className: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-      label: 'Pending Approval',
+      className: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+      label: 'Pending',
     },
     archived: {
       icon: <X className="h-3.5 w-3.5" />,
-      className: 'bg-gray-100 text-gray-700 border-gray-200',
+      className: 'bg-gray-100 text-gray-600 border-gray-200',
       label: 'Archived',
     },
   };
@@ -121,7 +121,7 @@ function StatusBadge({ status }: { status: string }) {
   const { icon, className, label } = config[status] || config.active;
 
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full border ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border ${className}`}>
       {icon}
       {label}
     </span>
@@ -173,11 +173,11 @@ function SectionCard({
   isSaving?: boolean;
 }) {
   return (
-    <div className="bg-card rounded-xl border border-border overflow-hidden">
+    <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-border bg-gradient-to-r from-cg-sage/5 to-transparent flex items-center justify-between">
+      <div className="px-5 sm:px-6 py-4 border-b border-border bg-gradient-to-r from-cg-sage/5 to-transparent flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-cg-sage/10 flex items-center justify-center">
+          <div className="w-9 h-9 rounded-xl bg-cg-sage/10 flex items-center justify-center">
             {icon}
           </div>
           <h3 className="font-semibold text-foreground">{title}</h3>
@@ -188,14 +188,14 @@ function SectionCard({
             <button
               onClick={onCancel}
               disabled={isSaving}
-              className="p-2 rounded-lg hover:bg-secondary text-muted-foreground transition-colors"
+              className="p-2 rounded-xl hover:bg-secondary text-muted-foreground transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
             <button
               onClick={onSave}
               disabled={isSaving}
-              className="p-2 rounded-lg bg-cg-sage text-white hover:bg-cg-sage/90 transition-colors disabled:opacity-50"
+              className="p-2 rounded-xl bg-cg-sage text-white hover:bg-cg-sage/90 transition-colors disabled:opacity-50 shadow-sm"
             >
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             </button>
@@ -203,7 +203,7 @@ function SectionCard({
         ) : canEdit ? (
           <button
             onClick={onEdit}
-            className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-cg-sage transition-colors"
+            className="p-2 rounded-xl hover:bg-cg-sage/10 text-muted-foreground hover:text-cg-sage transition-colors"
           >
             <Pencil className="h-4 w-4" />
           </button>
@@ -211,7 +211,7 @@ function SectionCard({
       </div>
 
       {/* Content */}
-      <div className="p-6">{children}</div>
+      <div className="p-5 sm:p-6">{children}</div>
     </div>
   );
 }
@@ -233,7 +233,7 @@ function FormInput({
 }) {
   return (
     <div className={className}>
-      <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+      <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
         {label}
       </label>
       <input
@@ -241,7 +241,7 @@ function FormInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-2 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cg-sage"
+        className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cg-sage/50 focus:border-cg-sage transition-all"
       />
     </div>
   );
@@ -264,7 +264,7 @@ function FormTextarea({
 }) {
   return (
     <div className={className}>
-      <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+      <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
         {label}
       </label>
       <textarea
@@ -272,7 +272,7 @@ function FormTextarea({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         rows={rows}
-        className="w-full px-3 py-2 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cg-sage resize-none"
+        className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cg-sage/50 focus:border-cg-sage transition-all resize-none"
       />
     </div>
   );
@@ -293,13 +293,13 @@ function FormSelect({
 }) {
   return (
     <div className={className}>
-      <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+      <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
         {label}
       </label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cg-sage"
+        className="w-full px-3.5 py-2.5 rounded-xl border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-cg-sage/50 focus:border-cg-sage transition-all"
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -605,15 +605,15 @@ function ChildProfileContent() {
 
       {/* Success Message */}
       {success && (
-        <div className="p-4 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
-          <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0" />
-          <p className="text-sm text-green-600 font-medium">{success}</p>
+        <div className="p-4 bg-cg-sage/10 border border-cg-sage/20 rounded-2xl flex items-center gap-3 shadow-sm">
+          <CheckCircle className="h-5 w-5 text-cg-sage flex-shrink-0" />
+          <p className="text-sm text-cg-sage font-medium">{success}</p>
         </div>
       )}
 
       {/* Error Message */}
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3">
+        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center gap-3 shadow-sm">
           <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0" />
           <p className="text-sm text-red-600 font-medium">{error}</p>
         </div>
@@ -621,16 +621,15 @@ function ChildProfileContent() {
 
       {/* Pending Approval Banner */}
       {child.status === 'pending_approval' && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5">
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-yellow-100 flex items-center justify-center flex-shrink-0">
-              <Clock className="h-6 w-6 text-yellow-600" />
+        <div className="bg-card border border-yellow-200 rounded-2xl p-4 sm:p-5 shadow-sm">
+          <div className="flex items-start gap-3 sm:gap-4">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-yellow-100 flex items-center justify-center flex-shrink-0">
+              <Clock className="h-5 w-5 sm:h-6 sm:w-6 text-yellow-600" />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <h3 className="font-semibold text-foreground">Pending Approval</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                This profile is waiting for approval from the other parent. Once both parents approve, the profile
-                becomes active.
+                Both parents need to approve before this profile becomes active.
               </p>
 
               {(() => {
@@ -643,14 +642,16 @@ function ChildProfileContent() {
 
                 if (bothApproved) {
                   return (
-                    <div className="mt-4 px-4 py-2 bg-green-100/50 text-green-700 rounded-lg text-sm font-medium border border-green-200/50 inline-block">
-                      ✅ Both parents have approved. Profile should be active soon.
+                    <div className="mt-3 px-3 py-2 bg-cg-sage/10 text-cg-sage rounded-xl text-sm font-medium inline-flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4" />
+                      Both parents approved — activating profile
                     </div>
                   );
                 } else if (hasApproved) {
                   return (
-                    <div className="mt-4 px-4 py-2 bg-yellow-100/50 text-yellow-700 rounded-lg text-sm font-medium border border-yellow-200/50 inline-block">
-                      ✅ You have approved this profile. Waiting for co-parent.
+                    <div className="mt-3 px-3 py-2 bg-yellow-50 text-yellow-700 rounded-xl text-sm font-medium inline-flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4" />
+                      You've approved — waiting for co-parent
                     </div>
                   );
                 } else {
@@ -658,15 +659,18 @@ function ChildProfileContent() {
                     <button
                       onClick={handleApprove}
                       disabled={saving}
-                      className="mt-4 px-4 py-2 bg-cg-sage text-white rounded-lg hover:bg-cg-sage/90 disabled:opacity-50"
+                      className="mt-3 px-4 py-2 bg-cg-sage text-white rounded-xl hover:bg-cg-sage/90 disabled:opacity-50 transition-all shadow-sm hover:shadow-md inline-flex items-center gap-2"
                     >
                       {saving ? (
                         <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin inline" />
+                          <Loader2 className="h-4 w-4 animate-spin" />
                           Approving...
                         </>
                       ) : (
-                        'Approve This Profile'
+                        <>
+                          <Check className="h-4 w-4" />
+                          Approve Profile
+                        </>
                       )}
                     </button>
                   );
@@ -678,21 +682,24 @@ function ChildProfileContent() {
       )}
 
       {/* Profile Header */}
-      <div className="bg-card rounded-xl border border-border overflow-hidden">
+      <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
         {/* Decorative Header */}
-        <div className="h-24 bg-gradient-to-r from-cg-sage via-cg-sage/80 to-cg-sage/60 relative" />
+        <div className="h-20 sm:h-24 bg-gradient-to-r from-cg-sage via-cg-sage/90 to-cg-sage/70 relative">
+          {/* Subtle pattern overlay */}
+          <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 25% 25%, white 1px, transparent 1px)', backgroundSize: '20px 20px' }} />
+        </div>
 
         {/* Profile Info */}
-        <div className="px-6 pb-6 -mt-12">
+        <div className="px-5 sm:px-6 pb-5 sm:pb-6 -mt-10 sm:-mt-12">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4">
             {/* Photo with Upload */}
             <div className="relative group">
-              <div className="w-24 h-24 rounded-2xl bg-white shadow-lg border-4 border-white overflow-hidden flex-shrink-0">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-white shadow-lg ring-4 ring-white overflow-hidden flex-shrink-0">
                 {child.photo_url ? (
                   <img src={getImageUrl(child.photo_url) || ''} alt={child.first_name} className="w-full h-full object-cover" />
                 ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-cg-sage/20 to-cg-sage/10 flex items-center justify-center">
-                    <span className="text-4xl">
+                  <div className="w-full h-full bg-gradient-to-br from-cg-sage/20 to-cg-sage/5 flex items-center justify-center">
+                    <span className="text-3xl sm:text-4xl">
                       {child.gender === 'male' ? '👦' : child.gender === 'female' ? '👧' : '👶'}
                     </span>
                   </div>
@@ -714,9 +721,9 @@ function ChildProfileContent() {
                     className="absolute inset-0 rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
                   >
                     {uploadingPhoto ? (
-                      <Loader2 className="h-6 w-6 text-white animate-spin" />
+                      <Loader2 className="h-5 w-5 sm:h-6 sm:w-6 text-white animate-spin" />
                     ) : (
-                      <Camera className="h-6 w-6 text-white" />
+                      <Camera className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
                     )}
                   </button>
                 </>
@@ -724,16 +731,16 @@ function ChildProfileContent() {
             </div>
 
             {/* Info */}
-            <div className="flex-1 pt-2">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h1 className="text-2xl font-bold text-foreground">
+            <div className="flex-1 pt-1 sm:pt-2">
+              <div className="flex items-start justify-between gap-3 sm:gap-4">
+                <div className="min-w-0">
+                  <h1 className="text-xl sm:text-2xl font-bold text-foreground truncate">
                     {child.preferred_name || child.first_name} {child.last_name}
                   </h1>
-                  <p className="text-muted-foreground mt-1">
+                  <p className="text-sm sm:text-base text-muted-foreground mt-0.5 sm:mt-1">
                     {formatAge(child.date_of_birth)}
-                    {child.school_name && ` • ${child.school_name}`}
-                    {child.grade_level && `, ${child.grade_level}`}
+                    {child.school_name && <span className="hidden sm:inline"> • {child.school_name}</span>}
+                    {child.grade_level && <span className="hidden sm:inline">, {child.grade_level}</span>}
                   </p>
                 </div>
                 <StatusBadge status={child.status} />
@@ -742,16 +749,14 @@ function ChildProfileContent() {
           </div>
 
           {/* Quick Actions */}
-          {child.status === 'active' && (
-            <div className="mt-6 pt-4 border-t border-border">
-              <Link href={`/family-files/${familyFileId}/children/${childId}/cubbie`}>
-                <button className="px-4 py-2.5 bg-secondary text-foreground rounded-lg hover:bg-secondary/80 transition-colors inline-flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  {child.first_name}'s Cubbie
-                </button>
-              </Link>
-            </div>
-          )}
+          <div className="mt-6 pt-4 border-t border-border">
+            <Link href={`/family-files/${familyFileId}/children/${childId}/cubbie`}>
+              <button className="px-4 py-2.5 bg-cg-sage text-white rounded-xl hover:bg-cg-sage/90 transition-all shadow-sm hover:shadow-md inline-flex items-center gap-2">
+                <Package className="h-4 w-4" />
+                {child.first_name}'s Cubbie
+              </button>
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -1357,12 +1362,13 @@ function ChildProfileContent() {
       )}
 
       {/* Both Parents Can Add Indicator */}
-      <div className="bg-cg-sage/5 border border-cg-sage/10 rounded-xl p-4">
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <Users className="h-5 w-5 text-cg-sage flex-shrink-0" />
+          <div className="w-9 h-9 rounded-xl bg-cg-sage/10 flex items-center justify-center flex-shrink-0">
+            <Users className="h-4 w-4 text-cg-sage" />
+          </div>
           <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Both parents can contribute</span> to this profile.
-            Changes are tracked for transparency.
+            <span className="font-medium text-foreground">Both parents can contribute</span> — all changes are tracked for transparency
           </p>
         </div>
       </div>
