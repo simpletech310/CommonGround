@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
@@ -581,6 +581,9 @@ function UpcomingEventsList({ events }: { events?: UpcomingEvent[] }) {
   );
 }
 
+// Auto-refresh interval in milliseconds (30 seconds)
+const AUTO_REFRESH_INTERVAL = 30000;
+
 function DashboardContent() {
   const { user } = useAuth();
   const router = useRouter();
@@ -588,12 +591,32 @@ function DashboardContent() {
   const [custodyStatus, setCustodyStatus] = useState<CustodyStatusResponse | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const activeFileIdRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    loadDashboardData();
+  // Lightweight refresh - only updates summary data (for auto-refresh)
+  const refreshSummary = useCallback(async () => {
+    if (!activeFileIdRef.current) return;
+
+    try {
+      const [custodyResult, summaryResult] = await Promise.allSettled([
+        familyFilesAPI.getCustodyStatus(activeFileIdRef.current),
+        dashboardAPI.getSummary(activeFileIdRef.current),
+      ]);
+
+      if (custodyResult.status === 'fulfilled') {
+        setCustodyStatus(custodyResult.value);
+      }
+
+      if (summaryResult.status === 'fulfilled') {
+        setDashboardSummary(summaryResult.value);
+      }
+    } catch (error) {
+      console.error('Failed to refresh dashboard:', error);
+    }
   }, []);
 
-  const loadDashboardData = async () => {
+  // Full data load (initial load)
+  const loadDashboardData = useCallback(async () => {
     try {
       setIsLoading(true);
       const familyFilesResponse = await familyFilesAPI.list();
@@ -633,6 +656,9 @@ function DashboardContent() {
       // Fetch custody status and dashboard summary for the first active family file
       const activeFile = familyFiles.find(ff => ff.status === 'active');
       if (activeFile) {
+        // Store active file ID for auto-refresh
+        activeFileIdRef.current = activeFile.id;
+
         // Fetch both in parallel
         const [custodyResult, summaryResult] = await Promise.allSettled([
           familyFilesAPI.getCustodyStatus(activeFile.id),
@@ -656,7 +682,37 @@ function DashboardContent() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // Initial load
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+
+  // Auto-refresh polling
+  useEffect(() => {
+    // Don't start polling until initial load is complete
+    if (isLoading) return;
+
+    const intervalId = setInterval(() => {
+      refreshSummary();
+    }, AUTO_REFRESH_INTERVAL);
+
+    // Cleanup on unmount
+    return () => clearInterval(intervalId);
+  }, [isLoading, refreshSummary]);
+
+  // Refresh when window regains focus (user comes back to tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !isLoading) {
+        refreshSummary();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isLoading, refreshSummary]);
 
   // Handle manual "With Me" check-in
   const handleWithMe = async (childId: string) => {
