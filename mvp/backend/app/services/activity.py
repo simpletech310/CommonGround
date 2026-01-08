@@ -597,3 +597,40 @@ async def log_agreement_activity(
         subject_name=agreement_title,
         title=title,
     )
+
+
+async def log_expense_activity(
+    db: AsyncSession,
+    family_file_id: str,
+    actor_id: str,
+    actor_name: str,
+    expense_id: str,
+    expense_description: str,
+    amount: float,
+    action: str,  # 'requested', 'approved', 'rejected'
+) -> Activity:
+    """Log activity when an expense is requested/approved/rejected."""
+    amount_str = f"${amount:.2f}"
+
+    if action == "requested":
+        activity_type = ActivityType.EXPENSE_REQUESTED.value
+        title = f"{actor_name} requested {amount_str} for {expense_description}"
+    elif action == "approved":
+        activity_type = ActivityType.EXPENSE_APPROVED.value
+        title = f"{actor_name} approved {amount_str} expense"
+    else:  # rejected
+        activity_type = ActivityType.EXPENSE_APPROVED.value  # Using approved type for rejection too
+        title = f"{actor_name} declined {amount_str} expense request"
+
+    return await ActivityService.create_activity(
+        db=db,
+        family_file_id=family_file_id,
+        activity_type=activity_type,
+        actor_id=actor_id,
+        actor_name=actor_name,
+        subject_type="expense",
+        subject_id=expense_id,
+        subject_name=expense_description,
+        title=title,
+        extra_data={"amount": amount, "action": action},
+    )

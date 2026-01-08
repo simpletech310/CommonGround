@@ -22,6 +22,7 @@ from app.schemas.schedule import (
     ConflictCheckResponse,
 )
 from app.services.event import EventService
+from app.services.activity import log_event_activity
 
 router = APIRouter()
 
@@ -69,6 +70,23 @@ async def create_event(
             event_category=event_data.event_category,
             category_data=event_data.category_data
         )
+
+        # Log activity for co-parent visible events
+        if event.family_file_id and event.visibility == "co_parent":
+            actor_name = f"{current_user.first_name} {current_user.last_name}".strip() or "A parent"
+            try:
+                await log_event_activity(
+                    db=db,
+                    family_file_id=event.family_file_id,
+                    actor_id=str(current_user.id),
+                    actor_name=actor_name,
+                    event_id=str(event.id),
+                    event_title=event.title,
+                    action="created"
+                )
+            except Exception as e:
+                # Don't fail event creation if activity logging fails
+                print(f"Failed to log event activity: {e}")
 
         # Filter for creator (they own it)
         filtered_data = await EventService.filter_for_coparent(

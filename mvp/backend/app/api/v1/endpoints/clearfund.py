@@ -33,6 +33,7 @@ from app.schemas.clearfund import (
     ObligationMetrics,
 )
 from app.services.clearfund import ClearFundService, LedgerService
+from app.services.activity import log_expense_activity
 
 router = APIRouter()
 
@@ -55,6 +56,25 @@ async def create_obligation(
     """
     service = ClearFundService(db)
     obligation = await service.create_obligation(data, current_user)
+
+    # Log activity for the expense request
+    if obligation.family_file_id:
+        actor_name = f"{current_user.first_name} {current_user.last_name}".strip() or "A parent"
+        try:
+            await log_expense_activity(
+                db=db,
+                family_file_id=obligation.family_file_id,
+                actor_id=str(current_user.id),
+                actor_name=actor_name,
+                expense_id=str(obligation.id),
+                expense_description=obligation.title,
+                amount=float(obligation.total_amount),
+                action="requested"
+            )
+        except Exception as e:
+            # Don't fail obligation creation if activity logging fails
+            print(f"Failed to log expense activity: {e}")
+
     return ObligationResponse.model_validate(obligation)
 
 

@@ -913,21 +913,6 @@ function DashboardContent() {
               </div>
             </section>
 
-            {/* Recent Activity */}
-            <section>
-              <h3 className="text-sm font-medium text-cg-sage uppercase tracking-wide mb-3">
-                Recent Activity
-              </h3>
-              <div className="cg-card">
-                <ActivityFeed
-                  activities={dashboardSummary?.recent_activities || []}
-                  unreadCount={dashboardSummary?.unread_activity_count || 0}
-                  onSeeAll={() => router.push('/activities')}
-                  isLoading={!dashboardSummary}
-                />
-              </div>
-            </section>
-
             {/* Upcoming Event */}
             <section>
               <h3 className="text-sm font-medium text-cg-sage uppercase tracking-wide mb-3">
@@ -1003,6 +988,21 @@ function DashboardContent() {
                 </div>
               </section>
             )}
+
+            {/* Recent Activity */}
+            <section>
+              <h3 className="text-sm font-medium text-cg-sage uppercase tracking-wide mb-3">
+                Recent Activity
+              </h3>
+              <div className="cg-card">
+                <ActivityFeed
+                  activities={dashboardSummary?.recent_activities || []}
+                  unreadCount={dashboardSummary?.unread_activity_count || 0}
+                  onSeeAll={() => router.push('/activities')}
+                  isLoading={!dashboardSummary}
+                />
+              </div>
+            </section>
           </div>
         )}
       </main>
