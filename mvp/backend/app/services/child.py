@@ -211,13 +211,13 @@ class ChildService:
         # Verify access (checks both case_id and family_file_id)
         await self._verify_child_access(child, str(user.id))
 
-        # Convert IDs to strings for consistent comparison
-        user_id_str = str(user.id)
-        approved_by_a_str = str(child.approved_by_a) if child.approved_by_a else None
-        approved_by_b_str = str(child.approved_by_b) if child.approved_by_b else None
+        # Normalize all IDs to lowercase for consistent comparison (UUIDs can have different cases)
+        user_id_norm = str(user.id).lower()
+        approved_by_a_norm = str(child.approved_by_a).lower() if child.approved_by_a else None
+        approved_by_b_norm = str(child.approved_by_b).lower() if child.approved_by_b else None
 
-        # Check if already approved by this user
-        if approved_by_a_str == user_id_str or approved_by_b_str == user_id_str:
+        # Check if already approved by this user (case-insensitive)
+        if approved_by_a_norm == user_id_norm or approved_by_b_norm == user_id_norm:
             # SELF-HEALING: If both parents approved but status is still pending, fix it now.
             if (
                 child.approved_by_a and
@@ -247,11 +247,27 @@ class ChildService:
                 detail="Cannot approve archived profile",
             )
 
-        # Add approval - user becomes approved_by_b (the second approver)
-        child.approved_by_b = user_id_str
-        child.approved_at_b = datetime.utcnow()
+        # Check if both slots are already filled (shouldn't happen, but safety check)
+        if child.approved_by_a and child.approved_by_b:
+            # Both already approved by different users - this is an edge case
+            # Self-heal by activating
+            child.status = ChildProfileStatus.ACTIVE.value
+            await self.db.commit()
+            await self.db.refresh(child)
+            return child
 
-        # If both parents have approved, activate the profile
+        # Add approval to the appropriate slot
+        user_id_str = str(user.id)
+        if not child.approved_by_a:
+            # First approval slot is empty (shouldn't happen normally, but handle it)
+            child.approved_by_a = user_id_str
+            child.approved_at_a = datetime.utcnow()
+        elif not child.approved_by_b:
+            # Second approval slot is empty - this is the normal case for second approver
+            child.approved_by_b = user_id_str
+            child.approved_at_b = datetime.utcnow()
+
+        # If both parents have now approved, activate the profile
         if child.approved_by_a and child.approved_by_b:
             child.status = ChildProfileStatus.ACTIVE.value
 
