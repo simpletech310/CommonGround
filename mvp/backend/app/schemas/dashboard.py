@@ -57,6 +57,9 @@ class UpcomingEvent(BaseModel):
     all_day: bool = False
     is_exchange: bool = False
     child_names: List[str] = []
+    # Exchange-specific viewer-perspective fields
+    viewer_role: Optional[str] = None  # "pickup" | "dropoff" | "both" - viewer's role
+    other_parent_name: Optional[str] = None  # Name of the other parent for "with X" display
 
 
 class DashboardSummary(BaseModel):

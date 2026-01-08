@@ -585,14 +585,64 @@ class CustodyExchangeService:
     @staticmethod
     def filter_for_viewer(
         exchange: CustodyExchange,
-        viewer_id: str
+        viewer_id: str,
+        other_parent_name: Optional[str] = None,
+        other_parent_id: Optional[str] = None
     ) -> dict:
-        """Filter exchange data based on viewer permissions."""
+        """Filter exchange data based on viewer permissions.
+
+        Also calculates viewer-perspective fields:
+        - viewer_role: 'pickup', 'dropoff', or 'both' from the viewer's perspective
+        - viewer_pickup_child_ids: children the viewer is picking up
+        - viewer_dropoff_child_ids: children the viewer is dropping off
+        """
 
         is_owner = exchange.created_by == viewer_id
+        is_creator = exchange.created_by == viewer_id
 
         # Effective case_id for API response
         effective_case_id = exchange.case_id if exchange.case_id else exchange.family_file_id
+
+        # Get original child IDs from creator's perspective
+        original_pickup_ids = exchange.pickup_child_ids or []
+        original_dropoff_ids = exchange.dropoff_child_ids or []
+
+        # Calculate viewer-perspective child IDs
+        # If viewer is NOT the creator, we need to reverse the perspective:
+        # - What creator calls "pickup" is "dropoff" for the other parent
+        # - What creator calls "dropoff" is "pickup" for the other parent
+        if is_creator:
+            viewer_pickup_child_ids = original_pickup_ids
+            viewer_dropoff_child_ids = original_dropoff_ids
+        else:
+            # Reverse: creator's pickup = viewer's dropoff, creator's dropoff = viewer's pickup
+            viewer_pickup_child_ids = original_dropoff_ids
+            viewer_dropoff_child_ids = original_pickup_ids
+
+        # Calculate viewer's role based on what children they have to pickup/dropoff
+        has_pickups = len(viewer_pickup_child_ids) > 0
+        has_dropoffs = len(viewer_dropoff_child_ids) > 0
+
+        if has_pickups and has_dropoffs:
+            viewer_role = "both"
+        elif has_pickups:
+            viewer_role = "pickup"
+        elif has_dropoffs:
+            viewer_role = "dropoff"
+        else:
+            # Fallback to exchange_type if no child-specific data
+            # But adjust based on whether viewer is the creator
+            exchange_type = exchange.exchange_type
+            if is_creator:
+                viewer_role = exchange_type
+            else:
+                # Reverse the role for non-creator
+                if exchange_type == "pickup":
+                    viewer_role = "dropoff"
+                elif exchange_type == "dropoff":
+                    viewer_role = "pickup"
+                else:
+                    viewer_role = "both"
 
         data = {
             "id": exchange.id,
@@ -619,6 +669,12 @@ class CustodyExchangeService:
             "is_owner": is_owner,
             "created_at": exchange.created_at,
             "updated_at": exchange.updated_at,
+            # Viewer-perspective fields
+            "viewer_role": viewer_role,
+            "viewer_pickup_child_ids": viewer_pickup_child_ids,
+            "viewer_dropoff_child_ids": viewer_dropoff_child_ids,
+            "other_parent_name": other_parent_name,
+            "other_parent_id": other_parent_id,
         }
 
         # Only show location_notes and special_instructions if visible
@@ -659,6 +715,67 @@ class CustodyExchangeService:
         data["qr_confirmation_required"] = exchange.qr_confirmation_required
 
         return data
+
+    @staticmethod
+    async def get_other_parent_info(
+        db: AsyncSession,
+        exchange: CustodyExchange,
+        viewer_id: str
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Get the other parent's name and ID for an exchange.
+
+        Returns a tuple of (other_parent_name, other_parent_id).
+        """
+        from app.models.user import User
+
+        other_parent_id = None
+        other_parent_name = None
+
+        # Determine other parent from the exchange's from_parent_id/to_parent_id
+        if exchange.from_parent_id and exchange.to_parent_id:
+            if str(viewer_id) == str(exchange.from_parent_id):
+                other_parent_id = exchange.to_parent_id
+            elif str(viewer_id) == str(exchange.to_parent_id):
+                other_parent_id = exchange.from_parent_id
+
+        # If not found via from/to, try via FamilyFile
+        if not other_parent_id and exchange.family_file_id:
+            family_file_result = await db.execute(
+                select(FamilyFile).where(FamilyFile.id == exchange.family_file_id)
+            )
+            family_file = family_file_result.scalar_one_or_none()
+            if family_file:
+                if str(viewer_id) == str(family_file.parent_a_id):
+                    other_parent_id = family_file.parent_b_id
+                elif str(viewer_id) == str(family_file.parent_b_id):
+                    other_parent_id = family_file.parent_a_id
+
+        # If still not found, try via CaseParticipant
+        if not other_parent_id and exchange.case_id:
+            participants_result = await db.execute(
+                select(CaseParticipant).where(
+                    and_(
+                        CaseParticipant.case_id == exchange.case_id,
+                        CaseParticipant.is_active == True,
+                        CaseParticipant.user_id != viewer_id
+                    )
+                )
+            )
+            other_participant = participants_result.scalar_one_or_none()
+            if other_participant:
+                other_parent_id = other_participant.user_id
+
+        # Look up the other parent's name
+        if other_parent_id:
+            user_result = await db.execute(
+                select(User).where(User.id == other_parent_id)
+            )
+            user = user_result.scalar_one_or_none()
+            if user:
+                other_parent_name = f"{user.first_name} {user.last_name or ''}".strip()
+
+        return other_parent_name, other_parent_id
 
     # ============================================================
     # Silent Handoff Methods

@@ -443,11 +443,35 @@ function UpcomingEventCard({ event }: { event?: UpcomingEvent }) {
 
   const { bg, color, Icon } = getCategoryStyles(event.event_category);
 
+  // Get exchange-specific display info
+  const getExchangeTitle = () => {
+    if (!event.is_exchange) return `${event.event_category} Event`;
+    if (event.viewer_role === 'pickup') return 'Next Pickup';
+    if (event.viewer_role === 'dropoff') return 'Next Dropoff';
+    if (event.viewer_role === 'both') return 'Next Exchange';
+    return 'Next Exchange';
+  };
+
+  // Determine what to show in the "with" line
+  const getWithText = () => {
+    // For exchanges, show the other parent's name
+    if (event.is_exchange && event.other_parent_name) {
+      return `with ${event.other_parent_name}`;
+    }
+    // For non-exchange events, show child names
+    if (event.child_names.length > 0) {
+      return `with ${event.child_names.join(', ')}`;
+    }
+    return null;
+  };
+
+  const withText = getWithText();
+
   return (
     <div className="cg-card p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold text-foreground capitalize">
-          {event.is_exchange ? 'Next Exchange' : `${event.event_category} Event`}
+          {getExchangeTitle()}
         </h3>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-cg-sage bg-cg-sage-subtle px-2 py-0.5 rounded-full">
@@ -466,9 +490,9 @@ function UpcomingEventCard({ event }: { event?: UpcomingEvent }) {
             {timeLabel}
             {event.location && ` at ${event.location}`}
           </p>
-          {event.child_names.length > 0 && (
+          {withText && (
             <p className="text-xs text-muted-foreground mt-1">
-              with {event.child_names.join(', ')}
+              {withText}
             </p>
           )}
         </div>

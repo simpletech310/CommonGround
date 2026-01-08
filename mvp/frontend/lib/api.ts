@@ -1723,6 +1723,13 @@ export interface CustodyExchange {
   status: ExchangeStatus;
   is_owner: boolean;
   next_occurrence?: string;
+  family_file_id?: string;
+  // Viewer-perspective fields (adjusted based on who is viewing)
+  viewer_role?: 'pickup' | 'dropoff' | 'both';
+  viewer_pickup_child_ids: string[];
+  viewer_dropoff_child_ids: string[];
+  other_parent_name?: string;
+  other_parent_id?: string;
   // Silent Handoff settings
   location_lat?: number;
   location_lng?: number;
@@ -4586,6 +4593,9 @@ export interface UpcomingEvent {
   all_day: boolean;
   is_exchange: boolean;
   child_names: string[];
+  // Exchange-specific viewer-perspective fields
+  viewer_role?: 'pickup' | 'dropoff' | 'both';  // Viewer's role in the exchange
+  other_parent_name?: string;  // Name of the other parent for "with X" display
 }
 
 export interface DashboardSummary {

@@ -67,7 +67,7 @@ class DashboardService:
             db, family_file, user, is_parent_a
         )
         events, next_event = await DashboardService._get_upcoming_events(
-            db, family_file_id
+            db, family_file_id, user, family_file
         )
 
         return DashboardSummary(
@@ -360,7 +360,9 @@ class DashboardService:
     @staticmethod
     async def _get_upcoming_events(
         db: AsyncSession,
-        family_file_id: str
+        family_file_id: str,
+        user: User,
+        family_file: FamilyFile
     ) -> Tuple[List[UpcomingEvent], Optional[UpcomingEvent]]:
         """Get upcoming events for next 7 days across all categories, including custody exchanges."""
         now = datetime.utcnow()
@@ -371,6 +373,23 @@ class DashboardService:
             select(Child).where(Child.family_file_id == family_file_id)
         )
         children_map = {str(c.id): c.first_name for c in children_result.scalars().all()}
+
+        # Determine other parent name for exchanges
+        other_parent_id = None
+        other_parent_name = None
+        if str(user.id) == str(family_file.parent_a_id):
+            other_parent_id = family_file.parent_b_id
+        elif str(user.id) == str(family_file.parent_b_id):
+            other_parent_id = family_file.parent_a_id
+
+        if other_parent_id:
+            from app.models.user import User as UserModel
+            other_user_result = await db.execute(
+                select(UserModel).where(UserModel.id == other_parent_id)
+            )
+            other_user = other_user_result.scalar_one_or_none()
+            if other_user:
+                other_parent_name = f"{other_user.first_name} {other_user.last_name or ''}".strip()
 
         items = []
 
@@ -429,9 +448,54 @@ class DashboardService:
             # Calculate end time (default 30 min after start)
             end_time = inst.scheduled_time + timedelta(minutes=30) if inst.scheduled_time else None
 
+            # Calculate viewer's role in this exchange
+            # If viewer is NOT the creator, reverse the perspective
+            is_creator = str(exchange.created_by) == str(user.id)
+            original_pickup_ids = exchange.pickup_child_ids or []
+            original_dropoff_ids = exchange.dropoff_child_ids or []
+
+            if is_creator:
+                viewer_pickup_ids = original_pickup_ids
+                viewer_dropoff_ids = original_dropoff_ids
+            else:
+                # Reverse: creator's pickup = viewer's dropoff
+                viewer_pickup_ids = original_dropoff_ids
+                viewer_dropoff_ids = original_pickup_ids
+
+            # Determine viewer's role
+            has_pickups = len(viewer_pickup_ids) > 0
+            has_dropoffs = len(viewer_dropoff_ids) > 0
+
+            if has_pickups and has_dropoffs:
+                viewer_role = "both"
+            elif has_pickups:
+                viewer_role = "pickup"
+            elif has_dropoffs:
+                viewer_role = "dropoff"
+            else:
+                # Fallback to exchange_type
+                exchange_type = exchange.exchange_type
+                if is_creator:
+                    viewer_role = exchange_type
+                else:
+                    if exchange_type == "pickup":
+                        viewer_role = "dropoff"
+                    elif exchange_type == "dropoff":
+                        viewer_role = "pickup"
+                    else:
+                        viewer_role = "both"
+
+            # Generate title based on viewer's role
+            if viewer_role == "pickup":
+                display_title = "Pickup"
+            elif viewer_role == "dropoff":
+                display_title = "Dropoff"
+            else:
+                display_title = exchange.title or "Exchange"
+
             items.append(UpcomingEvent(
                 id=str(inst.id),
-                title=exchange.title or "Custody Exchange",
+                title=display_title,
                 event_category="exchange",
                 start_time=inst.scheduled_time,
                 end_time=end_time,
@@ -439,6 +503,8 @@ class DashboardService:
                 all_day=False,
                 is_exchange=True,
                 child_names=child_names,
+                viewer_role=viewer_role,
+                other_parent_name=other_parent_name,
             ))
 
         # Sort all items by start_time and take the first 10

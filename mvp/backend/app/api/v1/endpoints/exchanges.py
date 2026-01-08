@@ -94,9 +94,18 @@ async def create_exchange(
             qr_confirmation_required=exchange_data.qr_confirmation_required,
         )
 
-        filtered_data = CustodyExchangeService.filter_for_viewer(
+        # Get other parent info for perspective-aware display
+        other_parent_name, other_parent_id = await CustodyExchangeService.get_other_parent_info(
+            db=db,
             exchange=exchange,
             viewer_id=current_user.id
+        )
+
+        filtered_data = CustodyExchangeService.filter_for_viewer(
+            exchange=exchange,
+            viewer_id=current_user.id,
+            other_parent_name=other_parent_name,
+            other_parent_id=other_parent_id
         )
 
         return CustodyExchangeResponse(**filtered_data)
@@ -133,9 +142,18 @@ async def get_exchange(
             detail="Exchange not found or no access"
         )
 
-    filtered_data = CustodyExchangeService.filter_for_viewer(
+    # Get other parent info for perspective-aware display
+    other_parent_name, other_parent_id = await CustodyExchangeService.get_other_parent_info(
+        db=db,
         exchange=exchange,
         viewer_id=current_user.id
+    )
+
+    filtered_data = CustodyExchangeService.filter_for_viewer(
+        exchange=exchange,
+        viewer_id=current_user.id,
+        other_parent_name=other_parent_name,
+        other_parent_id=other_parent_id
     )
 
     return CustodyExchangeResponse(**filtered_data)
@@ -163,13 +181,23 @@ async def list_exchanges(
         include_instances=True
     )
 
-    return [
-        CustodyExchangeResponse(**CustodyExchangeService.filter_for_viewer(
+    result = []
+    for e in exchanges:
+        # Get other parent info for perspective-aware display
+        other_parent_name, other_parent_id = await CustodyExchangeService.get_other_parent_info(
+            db=db,
             exchange=e,
             viewer_id=current_user.id
-        ))
-        for e in exchanges
-    ]
+        )
+
+        result.append(CustodyExchangeResponse(**CustodyExchangeService.filter_for_viewer(
+            exchange=e,
+            viewer_id=current_user.id,
+            other_parent_name=other_parent_name,
+            other_parent_id=other_parent_id
+        )))
+
+    return result
 
 
 @router.get(
@@ -203,9 +231,18 @@ async def get_upcoming_exchanges(
 
     result = []
     for instance in instances:
-        exchange_data = CustodyExchangeService.filter_for_viewer(
+        # Get other parent info for perspective-aware display
+        other_parent_name, other_parent_id = await CustodyExchangeService.get_other_parent_info(
+            db=db,
             exchange=instance.exchange,
             viewer_id=current_user.id
+        )
+
+        exchange_data = CustodyExchangeService.filter_for_viewer(
+            exchange=instance.exchange,
+            viewer_id=current_user.id,
+            other_parent_name=other_parent_name,
+            other_parent_id=other_parent_id
         )
 
         result.append(CustodyExchangeInstanceResponse(
@@ -258,9 +295,18 @@ async def update_exchange(
             detail="Exchange not found or no access"
         )
 
-    filtered_data = CustodyExchangeService.filter_for_viewer(
+    # Get other parent info for perspective-aware display
+    other_parent_name, other_parent_id = await CustodyExchangeService.get_other_parent_info(
+        db=db,
         exchange=exchange,
         viewer_id=current_user.id
+    )
+
+    filtered_data = CustodyExchangeService.filter_for_viewer(
+        exchange=exchange,
+        viewer_id=current_user.id,
+        other_parent_name=other_parent_name,
+        other_parent_id=other_parent_id
     )
 
     return CustodyExchangeResponse(**filtered_data)
@@ -295,9 +341,18 @@ async def check_in(
             detail="Instance not found or no access"
         )
 
-    exchange_data = CustodyExchangeService.filter_for_viewer(
+    # Get other parent info for perspective-aware display
+    other_parent_name, other_parent_id = await CustodyExchangeService.get_other_parent_info(
+        db=db,
         exchange=instance.exchange,
         viewer_id=current_user.id
+    )
+
+    exchange_data = CustodyExchangeService.filter_for_viewer(
+        exchange=instance.exchange,
+        viewer_id=current_user.id,
+        other_parent_name=other_parent_name,
+        other_parent_id=other_parent_id
     )
 
     return CustodyExchangeInstanceResponse(
@@ -346,9 +401,18 @@ async def cancel_instance(
             detail="Instance not found or no access"
         )
 
-    exchange_data = CustodyExchangeService.filter_for_viewer(
+    # Get other parent info for perspective-aware display
+    other_parent_name, other_parent_id = await CustodyExchangeService.get_other_parent_info(
+        db=db,
         exchange=instance.exchange,
         viewer_id=current_user.id
+    )
+
+    exchange_data = CustodyExchangeService.filter_for_viewer(
+        exchange=instance.exchange,
+        viewer_id=current_user.id,
+        other_parent_name=other_parent_name,
+        other_parent_id=other_parent_id
     )
 
     return CustodyExchangeInstanceResponse(
@@ -448,9 +512,18 @@ async def check_in_with_gps(
             detail="Exchange instance not found or no access"
         )
 
-    exchange_data = CustodyExchangeService.filter_for_viewer(
+    # Get other parent info for perspective-aware display
+    other_parent_name, other_parent_id = await CustodyExchangeService.get_other_parent_info(
+        db=db,
         exchange=instance.exchange,
         viewer_id=current_user.id
+    )
+
+    exchange_data = CustodyExchangeService.filter_for_viewer(
+        exchange=instance.exchange,
+        viewer_id=current_user.id,
+        other_parent_name=other_parent_name,
+        other_parent_id=other_parent_id
     )
 
     return CustodyExchangeInstanceResponse(
@@ -631,9 +704,18 @@ async def confirm_qr(
             detail="Exchange instance not found"
         )
 
-    exchange_data = CustodyExchangeService.filter_for_viewer(
+    # Get other parent info for perspective-aware display
+    other_parent_name, other_parent_id = await CustodyExchangeService.get_other_parent_info(
+        db=db,
         exchange=instance.exchange,
         viewer_id=current_user.id
+    )
+
+    exchange_data = CustodyExchangeService.filter_for_viewer(
+        exchange=instance.exchange,
+        viewer_id=current_user.id,
+        other_parent_name=other_parent_name,
+        other_parent_id=other_parent_id
     )
 
     return CustodyExchangeInstanceResponse(

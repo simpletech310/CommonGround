@@ -39,10 +39,22 @@ export default function SilentHandoffCheckIn({
   const hasSilentHandoff = exchange?.silent_handoff_enabled;
   const hasGeofence = exchange?.location_lat != null && exchange?.location_lng != null;
 
-  // Get children involved in this exchange
-  const pickupChildren = children.filter(c => exchange?.pickup_child_ids?.includes(c.id));
-  const dropoffChildren = children.filter(c => exchange?.dropoff_child_ids?.includes(c.id));
+  // Get the viewer's role in this exchange (pickup or dropoff from their perspective)
+  const viewerRole = exchange?.viewer_role;
+
+  // Get children involved in this exchange - use viewer-perspective IDs
+  // These are adjusted based on who is viewing, so the current user's actions are shown correctly
+  const pickupChildren = children.filter(c => exchange?.viewer_pickup_child_ids?.includes(c.id));
+  const dropoffChildren = children.filter(c => exchange?.viewer_dropoff_child_ids?.includes(c.id));
   const hasChildren = pickupChildren.length > 0 || dropoffChildren.length > 0;
+
+  // Get display title based on viewer's role
+  const getExchangeTitle = () => {
+    if (viewerRole === 'pickup') return 'Pickup';
+    if (viewerRole === 'dropoff') return 'Dropoff';
+    if (viewerRole === 'both') return 'Exchange';
+    return exchange?.title || 'Exchange';
+  };
 
   useEffect(() => {
     loadWindowStatus();
@@ -190,7 +202,12 @@ export default function SilentHandoffCheckIn({
 
           {/* Exchange Info */}
           <div className="bg-cg-cream rounded-xl p-4 mb-6 space-y-3 border border-cg-sand-dark shadow-sm">
-            <p className="font-semibold text-foreground text-lg">{exchange?.title || 'Exchange'}</p>
+            <p className="font-semibold text-foreground text-lg">{getExchangeTitle()}</p>
+            {exchange?.other_parent_name && (
+              <p className="text-sm text-muted-foreground">
+                with {exchange.other_parent_name}
+              </p>
+            )}
             {exchange?.location && (
               <p className="text-sm text-foreground flex items-center gap-2">
                 <MapPin className="h-4 w-4 flex-shrink-0 text-cg-sage" />

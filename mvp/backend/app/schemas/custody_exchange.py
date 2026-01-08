@@ -144,6 +144,14 @@ class CustodyExchangeResponse(BaseModel):
     # Computed fields
     is_owner: bool = False
     next_occurrence: Optional[datetime] = None
+    family_file_id: Optional[str] = None
+
+    # Viewer-perspective fields (adjusted based on who is viewing)
+    viewer_role: Optional[str] = None  # "pickup" | "dropoff" | "both" | null
+    viewer_pickup_child_ids: List[str] = Field(default_factory=list)
+    viewer_dropoff_child_ids: List[str] = Field(default_factory=list)
+    other_parent_name: Optional[str] = None
+    other_parent_id: Optional[str] = None
 
     created_at: datetime
     updated_at: datetime
