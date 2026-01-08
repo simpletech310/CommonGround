@@ -1176,6 +1176,7 @@ class CustodyExchangeService:
 
             # Find the next exchange that includes this child (filter in Python)
             next_exchange_instance = None
+            child_explicitly_assigned = False
             for inst in all_upcoming_instances:
                 exchange = inst.exchange
                 child_ids = exchange.child_ids or []
@@ -1187,7 +1188,14 @@ class CustodyExchangeService:
                     child_id_str in pickup_ids or
                     child_id_str in dropoff_ids):
                     next_exchange_instance = inst
+                    child_explicitly_assigned = True
                     break
+
+            # FALLBACK: If no exchange found for this specific child but exchanges exist,
+            # use the first upcoming exchange and apply its exchange_type to all children
+            if not next_exchange_instance and all_upcoming_instances:
+                next_exchange_instance = all_upcoming_instances[0]
+                child_explicitly_assigned = False
 
             # Determine who has the child based on upcoming exchange
             # If child is in dropoff_child_ids for user's exchange → child is WITH user
@@ -1199,7 +1207,8 @@ class CustodyExchangeService:
 
             if next_exchange_instance:
                 exchange = next_exchange_instance.exchange
-                exchange_creator = exchange.created_by
+                exchange_creator = str(exchange.created_by)
+                user_id_str = str(user_id)
 
                 # Check if this child is in pickup or dropoff lists
                 pickup_ids = exchange.pickup_child_ids or []
@@ -1209,34 +1218,80 @@ class CustodyExchangeService:
                 is_in_dropoff = child_id_str in dropoff_ids
 
                 # Determine custody based on the exchange creator's perspective
-                if exchange_creator == user_id:
-                    # User created this exchange
-                    if is_in_dropoff:
-                        # User is dropping off → child is WITH user now
-                        with_current_user = True
-                        current_parent_id = user_id
-                        current_parent_name = "You"
-                        next_action = "dropoff"
-                    elif is_in_pickup:
-                        # User is picking up → child is WITH other parent now
-                        with_current_user = False
-                        current_parent_id = coparent_id
-                        current_parent_name = coparent_name
-                        next_action = "pickup"
+                if child_explicitly_assigned:
+                    # Child is explicitly assigned - use pickup/dropoff lists
+                    if exchange_creator == user_id_str:
+                        # User created this exchange
+                        if is_in_dropoff:
+                            # User is dropping off → child is WITH user now
+                            with_current_user = True
+                            current_parent_id = user_id
+                            current_parent_name = "You"
+                            next_action = "dropoff"
+                        elif is_in_pickup:
+                            # User is picking up → child is WITH other parent now
+                            with_current_user = False
+                            current_parent_id = coparent_id
+                            current_parent_name = coparent_name
+                            next_action = "pickup"
+                    else:
+                        # Coparent created this exchange - reverse logic
+                        if is_in_dropoff:
+                            # Coparent is dropping off → child is WITH coparent now
+                            with_current_user = False
+                            current_parent_id = coparent_id
+                            current_parent_name = coparent_name
+                            next_action = "pickup"  # From user's perspective, they're picking up
+                        elif is_in_pickup:
+                            # Coparent is picking up → child is WITH user now
+                            with_current_user = True
+                            current_parent_id = user_id
+                            current_parent_name = "You"
+                            next_action = "dropoff"  # From user's perspective, they're dropping off
                 else:
-                    # Coparent created this exchange - reverse logic
-                    if is_in_dropoff:
-                        # Coparent is dropping off → child is WITH coparent now
-                        with_current_user = False
-                        current_parent_id = coparent_id
-                        current_parent_name = coparent_name
-                        next_action = "pickup"  # From user's perspective, they're picking up
-                    elif is_in_pickup:
-                        # Coparent is picking up → child is WITH user now
-                        with_current_user = True
-                        current_parent_id = user_id
-                        current_parent_name = "You"
-                        next_action = "dropoff"  # From user's perspective, they're dropping off
+                    # FALLBACK: Child not explicitly assigned - use exchange_type
+                    exchange_type = exchange.exchange_type or "pickup"
+
+                    if exchange_creator == user_id_str:
+                        # User created this exchange - exchange_type is from their perspective
+                        if exchange_type == "pickup":
+                            # User is picking up → child is WITH other parent now
+                            with_current_user = False
+                            current_parent_id = coparent_id
+                            current_parent_name = coparent_name
+                            next_action = "pickup"
+                        elif exchange_type == "dropoff":
+                            # User is dropping off → child is WITH user now
+                            with_current_user = True
+                            current_parent_id = user_id
+                            current_parent_name = "You"
+                            next_action = "dropoff"
+                        else:
+                            # "both" - assume child is with other parent (more common scenario)
+                            with_current_user = False
+                            current_parent_id = coparent_id
+                            current_parent_name = coparent_name
+                            next_action = "pickup"
+                    else:
+                        # Coparent created this exchange - reverse the logic
+                        if exchange_type == "pickup":
+                            # Coparent is picking up → child is WITH user now
+                            with_current_user = True
+                            current_parent_id = user_id
+                            current_parent_name = "You"
+                            next_action = "dropoff"
+                        elif exchange_type == "dropoff":
+                            # Coparent is dropping off → child is WITH coparent now
+                            with_current_user = False
+                            current_parent_id = coparent_id
+                            current_parent_name = coparent_name
+                            next_action = "pickup"
+                        else:
+                            # "both" - assume child is with user
+                            with_current_user = True
+                            current_parent_id = user_id
+                            current_parent_name = "You"
+                            next_action = "dropoff"
 
             # Calculate time remaining
             hours_remaining = None
