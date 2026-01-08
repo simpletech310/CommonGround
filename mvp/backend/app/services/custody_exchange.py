@@ -1333,6 +1333,41 @@ class CustodyExchangeService:
         all_with_user = all(c["with_current_user"] for c in child_statuses) if child_statuses else False
         any_with_user = any(c["with_current_user"] for c in child_statuses) if child_statuses else False
 
+        # FALLBACK: If no children but exchanges exist, determine custody from exchange
+        if not child_statuses and all_upcoming_instances:
+            first_inst = all_upcoming_instances[0]
+            exchange = first_inst.exchange
+            exchange_creator = str(exchange.created_by)
+            user_id_str = str(user_id)
+            exchange_type = exchange.exchange_type or "pickup"
+
+            if exchange_creator == user_id_str:
+                # User created this exchange
+                if exchange_type == "pickup":
+                    # User is picking up → kids are with coparent
+                    all_with_user = False
+                    any_with_user = False
+                elif exchange_type == "dropoff":
+                    # User is dropping off → kids are with user
+                    all_with_user = True
+                    any_with_user = True
+                else:
+                    all_with_user = False
+                    any_with_user = False
+            else:
+                # Coparent created this exchange - reverse logic
+                if exchange_type == "pickup":
+                    # Coparent is picking up → kids are with user
+                    all_with_user = True
+                    any_with_user = True
+                elif exchange_type == "dropoff":
+                    # Coparent is dropping off → kids are with coparent
+                    all_with_user = False
+                    any_with_user = False
+                else:
+                    all_with_user = True
+                    any_with_user = True
+
         # Find soonest next exchange across all children
         next_times = [c["next_exchange_time"] for c in child_statuses if c["next_exchange_time"]]
         next_exchange_time = min(next_times) if next_times else None
