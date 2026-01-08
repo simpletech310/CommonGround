@@ -184,11 +184,11 @@ function ActivitiesContent() {
 
       // Fetch activities
       const [activitiesData, unreadData] = await Promise.all([
-        activitiesAPI.getRecent(activeFile.id, 50),
+        activitiesAPI.getRecentActivities(activeFile.id, 50),
         activitiesAPI.getUnreadCount(activeFile.id),
       ]);
 
-      setActivities(activitiesData.activities);
+      setActivities(activitiesData.items);
       setUnreadCount(unreadData.unread_count);
     } catch (error) {
       console.error('Failed to load activities:', error);
