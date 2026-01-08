@@ -11,6 +11,7 @@ import {
   familyFilesAPI,
   agreementsAPI,
   dashboardAPI,
+  activitiesAPI,
   FamilyFileDetail,
   FamilyFileChild,
   Agreement,
@@ -713,6 +714,31 @@ function DashboardContent() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [isLoading, refreshSummary]);
+
+  // Auto-mark activities as read when dashboard loads with unread activities
+  useEffect(() => {
+    const markActivitiesAsRead = async () => {
+      if (!activeFileIdRef.current) return;
+      if (!dashboardSummary) return;
+      if (dashboardSummary.unread_activity_count === 0) return;
+
+      try {
+        await activitiesAPI.markAllAsRead(activeFileIdRef.current);
+        // Update local state to reflect that activities are now read
+        setDashboardSummary(prev => prev ? {
+          ...prev,
+          unread_activity_count: 0,
+          recent_activities: prev.recent_activities.map(a => ({ ...a, is_read: true }))
+        } : null);
+      } catch (error) {
+        console.error('Failed to mark activities as read:', error);
+      }
+    };
+
+    // Small delay to ensure the user has "seen" the dashboard
+    const timeoutId = setTimeout(markActivitiesAsRead, 2000);
+    return () => clearTimeout(timeoutId);
+  }, [dashboardSummary?.unread_activity_count]);
 
   // Handle manual "With Me" check-in
   const handleWithMe = async (childId: string) => {
