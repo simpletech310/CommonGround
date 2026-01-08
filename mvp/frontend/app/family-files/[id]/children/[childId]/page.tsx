@@ -554,7 +554,8 @@ function ChildProfileContent() {
     setEmergencyForm({ emergency_contacts: contacts });
   };
 
-  const canEdit = child?.status === 'active';
+  // Allow editing for both active and pending_approval profiles
+  const canEdit = child?.status === 'active' || child?.status === 'pending_approval';
 
   if (loading) {
     return (

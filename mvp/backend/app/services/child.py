@@ -206,15 +206,19 @@ class ChildService:
             )
 
         # Verify access (checks both case_id and family_file_id)
-        await self._verify_child_access(child, user.id)
+        await self._verify_child_access(child, str(user.id))
+
+        # Convert IDs to strings for consistent comparison
+        user_id_str = str(user.id)
+        approved_by_a_str = str(child.approved_by_a) if child.approved_by_a else None
+        approved_by_b_str = str(child.approved_by_b) if child.approved_by_b else None
 
         # Check if already approved by this user
-        # Check if already approved by this user
-        if child.approved_by_a == user.id or child.approved_by_b == user.id:
+        if approved_by_a_str == user_id_str or approved_by_b_str == user_id_str:
             # SELF-HEALING: If both parents approved but status is still pending, fix it now.
             if (
-                child.approved_by_a and 
-                child.approved_by_b and 
+                child.approved_by_a and
+                child.approved_by_b and
                 child.status == ChildProfileStatus.PENDING_APPROVAL.value
             ):
                 child.status = ChildProfileStatus.ACTIVE.value
@@ -240,8 +244,8 @@ class ChildService:
                 detail="Cannot approve archived profile",
             )
 
-        # Add approval - user becomes approved_by_b
-        child.approved_by_b = user.id
+        # Add approval - user becomes approved_by_b (the second approver)
+        child.approved_by_b = user_id_str
         child.approved_at_b = datetime.utcnow()
 
         # If both parents have approved, activate the profile
@@ -616,13 +620,7 @@ class ChildService:
                 detail="Cannot edit archived profile",
             )
 
-        # Pending profiles can only be edited by creator
-        if child.status == ChildProfileStatus.PENDING_APPROVAL.value:
-            if child.created_by != user.id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Only the creator can edit pending profiles",
-                )
+        # Both parents can edit pending profiles (they may need to add info before approving)
 
         # Check court restrictions on fields
         if child.restricted_parent_id == user.id:

@@ -67,11 +67,15 @@ async def check_case_or_family_file_access(
             select(Event).where(Event.case_id == access.effective_case_id)
         )
     """
+    # Convert IDs to strings for consistent comparison
+    case_id_str = str(case_id)
+    user_id_str = str(user_id)
+
     # FIRST: Try Case Participant lookup (legacy path)
     participant_query = select(CaseParticipant).where(
         and_(
-            CaseParticipant.case_id == case_id,
-            CaseParticipant.user_id == user_id,
+            CaseParticipant.case_id == case_id_str,
+            CaseParticipant.user_id == user_id_str,
             CaseParticipant.is_active == True
         )
     )
@@ -89,7 +93,7 @@ async def check_case_or_family_file_access(
 
         return AccessResult(
             has_access=True,
-            effective_case_id=case_id,
+            effective_case_id=case_id_str,
             is_family_file=False,
             family_file=None,
             case=case_obj
@@ -97,10 +101,10 @@ async def check_case_or_family_file_access(
 
     # SECOND: Try Family File lookup (new path)
     family_file_query = select(FamilyFile).where(
-        FamilyFile.id == case_id,
+        FamilyFile.id == case_id_str,
         or_(
-            FamilyFile.parent_a_id == user_id,
-            FamilyFile.parent_b_id == user_id
+            FamilyFile.parent_a_id == user_id_str,
+            FamilyFile.parent_b_id == user_id_str
         )
     )
     family_file_result = await db.execute(family_file_query)
@@ -109,7 +113,7 @@ async def check_case_or_family_file_access(
     if family_file:
         # Access via Family File
         # Use legacy_case_id for backward compatibility with existing data
-        effective_case_id = family_file.legacy_case_id if family_file.legacy_case_id else case_id
+        effective_case_id = str(family_file.legacy_case_id) if family_file.legacy_case_id else case_id_str
 
         return AccessResult(
             has_access=True,
@@ -122,7 +126,7 @@ async def check_case_or_family_file_access(
     # No access
     return AccessResult(
         has_access=False,
-        effective_case_id=case_id,
+        effective_case_id=case_id_str,
         is_family_file=False,
         family_file=None,
         case=None
@@ -140,38 +144,42 @@ async def get_case_participants_for_access(
     Returns:
         (has_access, participant_user_ids, parent_a_id, parent_b_id)
     """
+    # Convert IDs to strings for consistent comparison
+    case_id_str = str(case_id)
+    user_id_str = str(user_id)
+
     # First check Case
     case_result = await db.execute(
         select(Case)
         .options(selectinload(Case.participants))
-        .where(Case.id == case_id)
+        .where(Case.id == case_id_str)
     )
     case = case_result.scalar_one_or_none()
 
     if case:
-        # Verify user is a participant
-        participant_ids = [p.user_id for p in case.participants if p.is_active]
-        if user_id in participant_ids:
+        # Verify user is a participant (convert all to strings for comparison)
+        participant_ids = [str(p.user_id) for p in case.participants if p.is_active]
+        if user_id_str in participant_ids:
             # For Case, we don't have parent_a/b directly, but we can get from participants
             return True, participant_ids, None, None
 
     # Check Family File
     family_file_result = await db.execute(
         select(FamilyFile).where(
-            FamilyFile.id == case_id,
+            FamilyFile.id == case_id_str,
             or_(
-                FamilyFile.parent_a_id == user_id,
-                FamilyFile.parent_b_id == user_id
+                FamilyFile.parent_a_id == user_id_str,
+                FamilyFile.parent_b_id == user_id_str
             )
         )
     )
     family_file = family_file_result.scalar_one_or_none()
 
     if family_file:
-        participant_ids = [family_file.parent_a_id]
+        participant_ids = [str(family_file.parent_a_id)]
         if family_file.parent_b_id:
-            participant_ids.append(family_file.parent_b_id)
-        return True, participant_ids, family_file.parent_a_id, family_file.parent_b_id
+            participant_ids.append(str(family_file.parent_b_id))
+        return True, participant_ids, str(family_file.parent_a_id), str(family_file.parent_b_id) if family_file.parent_b_id else None
 
     return False, [], None, None
 
@@ -192,6 +200,9 @@ async def get_other_parent_id(
     Returns:
         The other parent's user ID, or None if not found
     """
+    # Convert user_id to string for consistent comparison
+    user_id_str = str(user_id)
+
     has_access, participant_ids, parent_a_id, parent_b_id = await get_case_participants_for_access(
         db, case_id, user_id
     )
@@ -201,14 +212,14 @@ async def get_other_parent_id(
 
     # If we have explicit parent_a/b (from Family File)
     if parent_a_id and parent_b_id:
-        if user_id == parent_a_id:
+        if user_id_str == parent_a_id:
             return parent_b_id
-        elif user_id == parent_b_id:
+        elif user_id_str == parent_b_id:
             return parent_a_id
 
     # Otherwise use participant list
     for pid in participant_ids:
-        if pid != user_id:
+        if pid != user_id_str:
             return pid
 
     return None
