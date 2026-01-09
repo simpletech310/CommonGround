@@ -182,9 +182,9 @@ function ActivitiesContent() {
 
       setFamilyFileId(activeFile.id);
 
-      // Fetch activities
+      // Fetch activities (backend limit is max 20 for recent, use regular activities for more)
       const [activitiesData, unreadData] = await Promise.all([
-        activitiesAPI.getRecentActivities(activeFile.id, 50),
+        activitiesAPI.getActivities(activeFile.id, { limit: 50 }),
         activitiesAPI.getUnreadCount(activeFile.id),
       ]);
 
