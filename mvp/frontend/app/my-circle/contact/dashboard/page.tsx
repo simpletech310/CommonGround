@@ -75,23 +75,23 @@ export default function CircleContactDashboardPage() {
       setUserData(user);
 
       // Load permissions for this contact
-      await loadChildrenWithPermissions(user.contactId);
+      await loadChildrenWithPermissions(user.familyFileId, user.contactId);
     } catch (err) {
       console.error('Error loading user data:', err);
       router.push('/my-circle/contact');
     }
   }
 
-  async function loadChildrenWithPermissions(contactId: string) {
+  async function loadChildrenWithPermissions(familyFileId: string, contactId: string) {
     try {
       setIsLoading(true);
-      const permissions = await myCircleAPI.getContactPermissions(contactId);
+      const permissionList = await myCircleAPI.listPermissions(familyFileId, { contactId });
 
       // Convert permissions to children with permissions
-      const childrenData: ChildWithPermissions[] = permissions.map((perm) => ({
+      const childrenData: ChildWithPermissions[] = permissionList.items.map((perm) => ({
         child_id: perm.child_id,
-        child_name: perm.child_name || 'Child',
-        avatar_id: perm.avatar_id,
+        child_name: `Child ${perm.child_id.slice(0, 4)}`,
+        avatar_id: undefined,
         permissions: perm,
       }));
 
@@ -118,7 +118,7 @@ export default function CircleContactDashboardPage() {
   }
 
   function isWithinAllowedHours(permission: CirclePermission): boolean {
-    if (!permission.allowed_hours_start || !permission.allowed_hours_end) {
+    if (!permission.allowed_start_time || !permission.allowed_end_time) {
       return true; // No restrictions
     }
 
@@ -127,8 +127,8 @@ export default function CircleContactDashboardPage() {
     const currentMinute = now.getMinutes();
     const currentTime = currentHour * 60 + currentMinute;
 
-    const [startHour, startMin] = permission.allowed_hours_start.split(':').map(Number);
-    const [endHour, endMin] = permission.allowed_hours_end.split(':').map(Number);
+    const [startHour, startMin] = permission.allowed_start_time.split(':').map(Number);
+    const [endHour, endMin] = permission.allowed_end_time.split(':').map(Number);
     const startTime = startHour * 60 + startMin;
     const endTime = endHour * 60 + endMin;
 
@@ -140,16 +140,12 @@ export default function CircleContactDashboardPage() {
       return true; // No restrictions
     }
 
-    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const today = days[new Date().getDay()];
-    return permission.allowed_days.includes(today);
+    // allowed_days is number[] where 0=Sunday, 1=Monday, etc.
+    const todayNum = new Date().getDay();
+    return permission.allowed_days.includes(todayNum);
   }
 
   function canCommunicate(permission: CirclePermission): { allowed: boolean; reason?: string } {
-    if (!permission.is_active) {
-      return { allowed: false, reason: 'Connection is not active' };
-    }
-
     if (!isAllowedDay(permission)) {
       return { allowed: false, reason: 'Not available on this day' };
     }
@@ -195,21 +191,22 @@ export default function CircleContactDashboardPage() {
     return `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
   }
 
-  function formatDays(days?: string[]): string {
+  function formatDays(days?: number[]): string {
     if (!days || days.length === 0) return 'Any day';
     if (days.length === 7) return 'Every day';
 
-    const dayAbbrev: Record<string, string> = {
-      monday: 'Mon',
-      tuesday: 'Tue',
-      wednesday: 'Wed',
-      thursday: 'Thu',
-      friday: 'Fri',
-      saturday: 'Sat',
-      sunday: 'Sun',
+    // Map day numbers to abbreviations (0=Sunday, 1=Monday, etc.)
+    const dayAbbrev: Record<number, string> = {
+      0: 'Sun',
+      1: 'Mon',
+      2: 'Tue',
+      3: 'Wed',
+      4: 'Thu',
+      5: 'Fri',
+      6: 'Sat',
     };
 
-    return days.map(d => dayAbbrev[d] || d).join(', ');
+    return days.map(d => dayAbbrev[d] || String(d)).join(', ');
   }
 
   if (isLoading) {
@@ -324,13 +321,13 @@ export default function CircleContactDashboardPage() {
                       </div>
 
                       {/* Schedule */}
-                      {(child.permissions.allowed_hours_start || child.permissions.allowed_days?.length) && (
+                      {(child.permissions.allowed_start_time || child.permissions.allowed_days?.length) && (
                         <div className="mt-3 space-y-1">
-                          {child.permissions.allowed_hours_start && (
+                          {child.permissions.allowed_start_time && (
                             <div className="flex items-center gap-1.5 text-xs text-gray-500">
                               <Clock className="h-3.5 w-3.5" />
                               <span>
-                                {formatTime(child.permissions.allowed_hours_start)} - {formatTime(child.permissions.allowed_hours_end)}
+                                {formatTime(child.permissions.allowed_start_time)} - {formatTime(child.permissions.allowed_end_time)}
                               </span>
                             </div>
                           )}

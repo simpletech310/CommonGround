@@ -25,7 +25,7 @@ import {
   ExternalLink,
   ArrowLeft,
 } from 'lucide-react';
-import { myCircleAPI, KidComsRoom, CirclePermission } from '@/lib/api';
+import { myCircleAPI, familyFilesAPI, KidComsRoom, CirclePermission, FamilyFileChild } from '@/lib/api';
 
 interface PageParams {
   params: Promise<{ id: string }>;
@@ -94,6 +94,8 @@ export default function MyCircleManagementPage({ params }: PageParams) {
   const [isSavingPermission, setIsSavingPermission] = useState(false);
 
   // Child setup state
+  const [children, setChildren] = useState<FamilyFileChild[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState('');
   const [childSetupName, setChildSetupName] = useState('');
   const [childSetupPin, setChildSetupPin] = useState('');
   const [childSetupAvatar, setChildSetupAvatar] = useState('lion');
@@ -106,8 +108,16 @@ export default function MyCircleManagementPage({ params }: PageParams) {
   async function loadRooms() {
     try {
       setIsLoading(true);
-      const roomList = await myCircleAPI.getRooms(familyFileId);
+      const [roomList, childrenList] = await Promise.all([
+        myCircleAPI.getRooms(familyFileId),
+        familyFilesAPI.getChildren(familyFileId),
+      ]);
       setRooms(roomList.items);
+      setChildren(childrenList.items);
+      // Pre-select first child if available
+      if (childrenList.items.length > 0 && !selectedChildId) {
+        setSelectedChildId(childrenList.items[0].id);
+      }
     } catch (err) {
       console.error('Error loading rooms:', err);
       setError('Failed to load rooms');
@@ -155,14 +165,28 @@ export default function MyCircleManagementPage({ params }: PageParams) {
       setIsSavingPermission(true);
       setError(null);
 
+      // Map day names to numbers (0=Sunday, 1=Monday, etc.)
+      const dayNameToNumber: Record<string, number> = {
+        sunday: 0,
+        monday: 1,
+        tuesday: 2,
+        wednesday: 3,
+        thursday: 4,
+        friday: 5,
+        saturday: 6,
+      };
+
       await myCircleAPI.updatePermission(editingPermission.id, {
         can_video_call: permissionForm.can_video_call,
         can_voice_call: permissionForm.can_voice_call,
         can_chat: permissionForm.can_chat,
         can_theater: permissionForm.can_theater,
-        allowed_hours_start: permissionForm.allowed_hours_start || null,
-        allowed_hours_end: permissionForm.allowed_hours_end || null,
-        allowed_days: permissionForm.allowed_days.length > 0 ? permissionForm.allowed_days : null,
+        allowed_start_time: permissionForm.allowed_hours_start || undefined,
+        allowed_end_time: permissionForm.allowed_hours_end || undefined,
+        allowed_days:
+          permissionForm.allowed_days.length > 0
+            ? permissionForm.allowed_days.map((day) => dayNameToNumber[day])
+            : undefined,
       });
 
       setShowPermissionModal(false);
@@ -177,6 +201,11 @@ export default function MyCircleManagementPage({ params }: PageParams) {
   }
 
   async function handleSetupChildUser() {
+    if (!selectedChildId) {
+      setError('Please select a child');
+      return;
+    }
+
     if (!childSetupName || !childSetupPin) {
       setError('Please enter a username and PIN');
       return;
@@ -191,7 +220,8 @@ export default function MyCircleManagementPage({ params }: PageParams) {
       setIsSettingUpChild(true);
       setError(null);
 
-      await myCircleAPI.setupChildUser(familyFileId, {
+      await myCircleAPI.setupChildUser({
+        child_id: selectedChildId,
         username: childSetupName,
         pin: childSetupPin,
         avatar_id: childSetupAvatar,
@@ -213,14 +243,28 @@ export default function MyCircleManagementPage({ params }: PageParams) {
 
   function openPermissionModal(permission: CirclePermission) {
     setEditingPermission(permission);
+
+    // Map numbers back to day names (0=Sunday, 1=Monday, etc.)
+    const numberToDayName: Record<number, string> = {
+      0: 'sunday',
+      1: 'monday',
+      2: 'tuesday',
+      3: 'wednesday',
+      4: 'thursday',
+      5: 'friday',
+      6: 'saturday',
+    };
+
     setPermissionForm({
       can_video_call: permission.can_video_call,
       can_voice_call: permission.can_voice_call,
       can_chat: permission.can_chat,
       can_theater: permission.can_theater,
-      allowed_hours_start: permission.allowed_hours_start || '',
-      allowed_hours_end: permission.allowed_hours_end || '',
-      allowed_days: permission.allowed_days || [],
+      allowed_hours_start: permission.allowed_start_time || '',
+      allowed_hours_end: permission.allowed_end_time || '',
+      allowed_days: permission.allowed_days
+        ? permission.allowed_days.map((num) => numberToDayName[num])
+        : [],
     });
     setShowPermissionModal(true);
   }
@@ -349,33 +393,22 @@ export default function MyCircleManagementPage({ params }: PageParams) {
                 {room.is_assigned ? (
                   <>
                     <div className="text-3xl mb-2">
-                      {room.contact_type === 'parent_a' ? '👩' :
-                       room.contact_type === 'parent_b' ? '👨' :
-                       room.relationship_type ? (
-                         { grandparent: '👴', aunt: '👩', uncle: '👨', cousin: '🧒', family_friend: '🤗', godparent: '💝', step_parent: '💕', sibling: '👦', therapist: '🧠', tutor: '📚', coach: '⚽' }[room.relationship_type] || '💜'
+                      {room.room_type === 'parent_a' ? '👩' :
+                       room.room_type === 'parent_b' ? '👨' :
+                       room.assigned_contact_relationship ? (
+                         { grandparent: '👴', aunt: '👩', uncle: '👨', cousin: '🧒', family_friend: '🤗', godparent: '💝', step_parent: '💕', sibling: '👦', therapist: '🧠', tutor: '📚', coach: '⚽' }[room.assigned_contact_relationship] || '💜'
                        ) : '💜'}
                     </div>
-                    <h3 className="font-semibold truncate">{room.room_name || room.contact_name}</h3>
+                    <h3 className="font-semibold truncate">{room.room_name || room.assigned_contact_name}</h3>
                     <p className="text-xs opacity-75 capitalize">
-                      {room.contact_type?.replace('_', ' ') || room.relationship_type?.replace('_', ' ')}
+                      {room.room_type?.replace('_', ' ') || room.assigned_contact_relationship?.replace('_', ' ')}
                     </p>
 
-                    {/* Permission Icons */}
-                    <div className="flex gap-1 mt-2">
-                      {room.permissions?.can_video_call && <Video className="h-3 w-3 opacity-50" />}
-                      {room.permissions?.can_voice_call && <Phone className="h-3 w-3 opacity-50" />}
-                      {room.permissions?.can_chat && <MessageCircle className="h-3 w-3 opacity-50" />}
-                      {room.permissions?.can_theater && <Film className="h-3 w-3 opacity-50" />}
-                    </div>
-
-                    {/* Edit Button */}
-                    {room.contact_type !== 'parent_a' && room.contact_type !== 'parent_b' && room.permissions && (
-                      <button
-                        onClick={() => openPermissionModal(room.permissions!)}
-                        className="absolute bottom-2 right-2 p-1 hover:bg-black/10 rounded"
-                      >
-                        <Settings className="h-4 w-4" />
-                      </button>
+                    {/* Room type indicator */}
+                    {room.room_type === 'circle' && (
+                      <div className="flex gap-1 mt-2">
+                        <Settings className="h-3 w-3 opacity-50" />
+                      </div>
                     )}
                   </>
                 ) : (
@@ -709,7 +742,25 @@ export default function MyCircleManagementPage({ params }: PageParams) {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Child's Username
+                  Select Child
+                </label>
+                <select
+                  value={selectedChildId}
+                  onChange={(e) => setSelectedChildId(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                >
+                  <option value="">Select a child...</option>
+                  {children.map((child) => (
+                    <option key={child.id} value={child.id}>
+                      {child.first_name} {child.last_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Child&apos;s Username
                 </label>
                 <input
                   type="text"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, ArrowLeft, Delete, LogIn } from 'lucide-react';
 import { myCircleAPI, ChildAvatar } from '@/lib/api';
@@ -20,7 +20,7 @@ const DEFAULT_AVATARS: ChildAvatar[] = [
   { id: 'dragon', emoji: '🐉', name: 'Dragon' },
 ];
 
-export default function ChildLoginPage() {
+function ChildLoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const familyFileId = searchParams.get('family');
@@ -280,5 +280,19 @@ export default function ChildLoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ChildLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gradient-to-b from-purple-50 to-pink-50 flex items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-purple-600" />
+        </div>
+      }
+    >
+      <ChildLoginContent />
+    </Suspense>
   );
 }
