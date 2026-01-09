@@ -153,9 +153,23 @@ export function TheaterMode({
           break;
 
         case 'sync_request':
-          // Other person requesting current state - send it
-          if (content) {
-            broadcastState('seek');
+          // Other person requesting current state - send full content info
+          if (content && callRef.current) {
+            console.log('Theater: Responding to sync_request with current content');
+            const syncMessage = createTheaterMessage(
+              'start', // Use 'start' so receiver loads the content
+              content.type,
+              content.url,
+              userId,
+              {
+                contentTitle: content.title,
+                currentTime: theaterState.currentTime,
+                currentPage: theaterState.currentPage,
+                isPlaying: theaterState.isPlaying,
+                senderName: userName,
+              }
+            );
+            callRef.current.sendAppMessage(syncMessage, '*');
           }
           break;
       }

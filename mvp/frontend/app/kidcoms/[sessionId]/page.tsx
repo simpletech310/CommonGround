@@ -103,6 +103,34 @@ function SessionContent() {
     };
   }, [token, roomUrl]);
 
+  // Listen for theater mode messages at session level (to auto-enter theater mode)
+  useEffect(() => {
+    const call = callRef.current;
+    if (!call || !isCallJoined) return;
+
+    const handleTheaterMessage = (event: { data: { type?: string; data?: { action?: string; senderId?: string } } }) => {
+      const message = event.data;
+      if (message.type !== 'theater_control') return;
+
+      // If someone else starts theater mode and we're not in it, auto-enter
+      if (message.data?.action === 'start' && message.data?.senderId !== user?.id && !isTheaterMode) {
+        console.log('Theater: Auto-entering theater mode (other participant started)');
+        setIsTheaterMode(true);
+      }
+
+      // If someone else stops theater mode
+      if (message.data?.action === 'stop' && message.data?.senderId !== user?.id && isTheaterMode) {
+        console.log('Theater: Other participant exited theater mode');
+        // Optionally exit theater mode too, or just let them stay
+      }
+    };
+
+    call.on('app-message', handleTheaterMessage);
+    return () => {
+      call.off('app-message', handleTheaterMessage);
+    };
+  }, [isCallJoined, isTheaterMode, user?.id]);
+
   function updateParticipants(dailyParticipants: Record<string, DailyParticipant>) {
     const newParticipants = new Map<string, VideoParticipant>();
 
@@ -446,18 +474,18 @@ function SessionContent() {
               <Users className="h-5 w-5" />
             </button>
 
-            {/* Theater Mode */}
+            {/* Theater Mode - visible on all devices */}
             <button
               onClick={() => setIsTheaterMode(true)}
               disabled={!isCallJoined}
-              className={`hidden md:flex p-3 rounded-full transition-colors ${
+              className={`p-4 md:p-3 rounded-full transition-colors ${
                 !isCallJoined
                   ? 'bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed'
                   : 'bg-gray-700 hover:bg-purple-600 text-gray-300 hover:text-white'
               }`}
               title="Theater Mode"
             >
-              <Film className="h-5 w-5" />
+              <Film className="h-6 w-6 md:h-5 md:w-5" />
             </button>
 
             <button disabled className="hidden md:flex p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Arcade (Coming Soon)">
