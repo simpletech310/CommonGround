@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
+from app.models.kidcoms import ChildUser
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -206,3 +207,65 @@ async def get_current_active_user(
             detail="Inactive user"
         )
     return current_user
+
+
+async def get_current_child_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+) -> ChildUser:
+    """
+    Get the current authenticated child user from the JWT token.
+
+    Child tokens have type="child_user" and include child_id and family_file_id.
+
+    Args:
+        credentials: HTTP authorization credentials
+        db: Database session
+
+    Returns:
+        Current child user
+
+    Raises:
+        HTTPException: If authentication fails
+    """
+    token = credentials.credentials
+
+    # Decode token
+    payload = decode_token(token)
+
+    # Verify it's a child user token
+    token_type = payload.get("type")
+    if token_type != "child_user":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type - expected child_user token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Get child user ID from token
+    child_user_id: str = payload.get("sub")
+    if child_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Get child user from database
+    result = await db.execute(select(ChildUser).where(ChildUser.id == child_user_id))
+    child_user = result.scalar_one_or_none()
+
+    if child_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Child user not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not child_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive child user",
+        )
+
+    return child_user

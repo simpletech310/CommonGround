@@ -16,7 +16,7 @@ import secrets
 logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_child_user
 from app.services.daily_video import daily_service
 from app.models.user import User
 from app.models.family_file import FamilyFile
@@ -30,6 +30,7 @@ from app.models.kidcoms import (
     SessionStatus,
     SessionType,
     ParticipantType,
+    ChildUser,
 )
 from app.schemas.kidcoms import (
     KidComsSettingsCreate,
@@ -54,6 +55,7 @@ from app.schemas.kidcoms import (
     ARIAChatAnalyzeRequest,
     ARIAChatAnalyzeResponse,
     SESSION_TYPES,
+    ChildSessionCreate,
 )
 
 router = APIRouter()
@@ -552,6 +554,201 @@ async def end_session(
     await db.refresh(session)
 
     return _session_to_response(session)
+
+
+# ============================================================
+# Child-Initiated Session Endpoints
+# ============================================================
+
+@router.post(
+    "/sessions/child/create",
+    status_code=status.HTTP_201_CREATED,
+    response_model=KidComsJoinResponse,
+    summary="Child creates session",
+    description="Allow a child to initiate a video/voice call to a parent or circle contact."
+)
+async def create_child_session(
+    session_data: ChildSessionCreate,
+    current_child: ChildUser = Depends(get_current_child_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a new KidComs session initiated by a child.
+
+    - Child clicks on a contact (parent or circle member)
+    - Creates a session and returns join info
+    - Notifies the target contact of incoming call
+    """
+    # Get child info
+    child_result = await db.execute(
+        select(Child).where(Child.id == current_child.child_id)
+    )
+    child = child_result.scalar_one_or_none()
+    if not child:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Child not found"
+        )
+
+    family_file_id = current_child.family_file_id
+
+    # Get family file to verify parent contacts
+    family_result = await db.execute(
+        select(FamilyFile).where(FamilyFile.id == family_file_id)
+    )
+    family_file = family_result.scalar_one_or_none()
+    if not family_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Family file not found"
+        )
+
+    # Check settings
+    settings = await get_or_create_settings(db, family_file_id)
+
+    # Check if child can initiate calls
+    if not settings.allow_child_to_initiate:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Children are not allowed to initiate calls in this family"
+        )
+
+    # Check availability
+    if settings.enforce_availability and not settings.is_within_availability():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="KidComs is not available at this time"
+        )
+
+    # Validate target contact based on type
+    target_user_name = None
+    target_user_id = None
+
+    if session_data.contact_type == "parent_a":
+        if family_file.parent_a_id != session_data.contact_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid parent_a contact ID"
+            )
+        target_user_id = family_file.parent_a_id
+        # Get parent name
+        parent_result = await db.execute(
+            select(User).where(User.id == family_file.parent_a_id)
+        )
+        parent = parent_result.scalar_one_or_none()
+        target_user_name = f"{parent.first_name} {parent.last_name}" if parent else "Parent A"
+
+    elif session_data.contact_type == "parent_b":
+        if family_file.parent_b_id != session_data.contact_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid parent_b contact ID"
+            )
+        target_user_id = family_file.parent_b_id
+        # Get parent name
+        parent_result = await db.execute(
+            select(User).where(User.id == family_file.parent_b_id)
+        )
+        parent = parent_result.scalar_one_or_none()
+        target_user_name = f"{parent.first_name} {parent.last_name}" if parent else "Parent B"
+
+    elif session_data.contact_type == "circle":
+        # Verify circle contact exists and is active
+        contact_result = await db.execute(
+            select(CircleContact).where(
+                and_(
+                    CircleContact.id == session_data.contact_id,
+                    CircleContact.family_file_id == family_file_id,
+                    CircleContact.is_active == True
+                )
+            )
+        )
+        contact = contact_result.scalar_one_or_none()
+        if not contact:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Circle contact not found or not active"
+            )
+        target_user_name = contact.contact_name
+
+    # Generate Daily.co room
+    room_name = generate_room_name()
+
+    # Create room via Daily.co API
+    try:
+        room_data = await daily_service.create_room(
+            room_name=room_name,
+            privacy="private",
+            exp_minutes=settings.max_session_duration_minutes + 30,
+            max_participants=settings.max_participants_per_session,
+            enable_chat=settings.allowed_features.get("chat", True),
+            enable_recording=settings.record_sessions,
+        )
+        room_url = room_data.get("url", f"https://{daily_service.domain}/{room_name}")
+    except Exception as e:
+        logger.error(f"Failed to create Daily.co room: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to create video room. Please try again later."
+        )
+
+    # Create session
+    session = KidComsSession(
+        family_file_id=family_file_id,
+        child_id=current_child.child_id,
+        session_type=session_data.session_type,
+        title=f"Call from {child.display_name}",
+        daily_room_name=room_name,
+        daily_room_url=room_url,
+        initiated_by_id=current_child.id,
+        initiated_by_type=ParticipantType.CHILD.value,
+        status=SessionStatus.WAITING.value,
+    )
+
+    # Add child as first participant
+    session.add_participant(
+        participant_id=current_child.child_id,
+        participant_type=ParticipantType.CHILD.value,
+        name=child.display_name
+    )
+
+    # Add target as invited participant
+    if target_user_id:
+        session.add_participant(
+            participant_id=target_user_id,
+            participant_type=ParticipantType.PARENT.value,
+            name=target_user_name
+        )
+
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+
+    # Generate Daily.co meeting token for the child
+    try:
+        token = await daily_service.create_meeting_token(
+            room_name=session.daily_room_name,
+            user_name=child.display_name,
+            user_id=str(current_child.child_id),
+            is_owner=False,  # Child is not owner
+            exp_minutes=settings.max_session_duration_minutes,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create meeting token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to generate meeting token. Please try again."
+        )
+
+    # TODO: Send notification to target contact about incoming call
+
+    return KidComsJoinResponse(
+        session_id=session.id,
+        room_url=session.daily_room_url,
+        token=token,
+        participant_name=child.display_name,
+        participant_type=ParticipantType.CHILD.value,
+    )
 
 
 # ============================================================

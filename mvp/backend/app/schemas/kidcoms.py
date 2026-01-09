@@ -156,6 +156,31 @@ class KidComsSessionCreate(BaseModel):
     )
 
 
+class ChildSessionCreate(BaseModel):
+    """Schema for a child to initiate a KidComs session.
+
+    Used when a child clicks on a contact to start a call.
+    The child's family_file_id and child_id come from their auth token.
+    """
+    # Target contact to call
+    contact_type: str = Field(
+        ...,
+        pattern=r"^(parent_a|parent_b|circle)$",
+        description="Type of contact: parent_a, parent_b, or circle"
+    )
+    contact_id: str = Field(
+        ...,
+        description="ID of the contact to call (parent user ID or circle contact ID)"
+    )
+
+    # Session type
+    session_type: str = Field(
+        default="video_call",
+        pattern=r"^(video_call|voice_call)$",
+        description="Type of session - video_call or voice_call"
+    )
+
+
 class KidComsSessionUpdate(BaseModel):
     """Schema for updating a KidComs session."""
     title: Optional[str] = Field(default=None, max_length=200)

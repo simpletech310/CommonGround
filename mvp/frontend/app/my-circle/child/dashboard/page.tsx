@@ -12,7 +12,7 @@ import {
   Heart,
   Star,
 } from 'lucide-react';
-import { ChildContact } from '@/lib/api';
+import { ChildContact, kidcomsAPI, ChildSessionCreate } from '@/lib/api';
 
 const ROOM_COLORS = [
   'from-red-400 to-pink-500',
@@ -124,12 +124,34 @@ export default function ChildDashboardPage() {
 
   async function handleStartCall(contact: ChildContact, type: 'video' | 'voice') {
     setIsStartingCall(true);
-    // TODO: Implement actual call logic with kidcomsAPI
-    setTimeout(() => {
-      alert(`Starting ${type} call with ${contact.display_name}...`);
+    try {
+      // Create session via API
+      const sessionData: ChildSessionCreate = {
+        contact_type: contact.contact_type,
+        contact_id: contact.contact_id,
+        session_type: type === 'video' ? 'video_call' : 'voice_call',
+      };
+
+      const response = await kidcomsAPI.createChildSession(sessionData);
+
+      // Store session info for the call page
+      localStorage.setItem('child_call_session', JSON.stringify({
+        sessionId: response.session_id,
+        roomUrl: response.room_url,
+        token: response.token,
+        participantName: response.participant_name,
+        contactName: contact.display_name,
+        callType: type,
+      }));
+
+      // Redirect to the call page
+      router.push(`/my-circle/child/call?session=${response.session_id}`);
+    } catch (error) {
+      console.error('Failed to start call:', error);
+      alert(error instanceof Error ? error.message : 'Failed to start call. Please try again.');
       setIsStartingCall(false);
       setSelectedContact(null);
-    }, 1000);
+    }
   }
 
   function getEmoji(contact: ChildContact) {

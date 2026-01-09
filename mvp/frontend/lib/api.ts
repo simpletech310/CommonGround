@@ -170,6 +170,62 @@ function getAuthToken(): string | null {
 }
 
 /**
+ * Get child auth token from localStorage (for child-initiated API calls)
+ */
+function getChildAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('child_token');
+}
+
+/**
+ * Fetch API with child authentication token
+ */
+async function fetchAPIWithChildAuth<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const url = `${API_URL}${endpoint}`;
+
+  const defaultHeaders: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+
+  // Add child auth token
+  const token = getChildAuthToken();
+  if (token) {
+    defaultHeaders['Authorization'] = `Bearer ${token}`;
+  } else {
+    throw new Error('Child not authenticated');
+  }
+
+  const config: RequestInit = {
+    ...options,
+    headers: {
+      ...defaultHeaders,
+      ...options.headers,
+    },
+  };
+
+  try {
+    const response = await fetch(url, config);
+    const contentType = response.headers.get('content-type');
+    const isJSON = contentType?.includes('application/json');
+
+    if (!response.ok) {
+      const errorData = isJSON ? await response.json() : { detail: response.statusText };
+      throw new Error(errorData.detail || errorData.message || `API error: ${response.status}`);
+    }
+
+    if (isJSON) {
+      return await response.json();
+    }
+    return {} as T;
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
  * Set auth tokens in localStorage
  */
 function setAuthTokens(accessToken: string, refreshToken?: string) {
@@ -5057,6 +5113,12 @@ export interface JoinSessionResponse {
   participant_type: string;
 }
 
+export interface ChildSessionCreate {
+  contact_type: 'parent_a' | 'parent_b' | 'circle';
+  contact_id: string;
+  session_type?: 'video_call' | 'voice_call';
+}
+
 export const kidcomsAPI = {
   // Settings
   /**
@@ -5144,6 +5206,18 @@ export const kidcomsAPI = {
     return fetchAPI<KidComsSession>(`/kidcoms/sessions/${sessionId}/cancel`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
+    });
+  },
+
+  // Child-initiated sessions
+  /**
+   * Create a session initiated by a child
+   * Uses child_token from localStorage for authentication
+   */
+  async createChildSession(data: ChildSessionCreate): Promise<JoinSessionResponse> {
+    return fetchAPIWithChildAuth<JoinSessionResponse>('/kidcoms/sessions/child/create', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 
