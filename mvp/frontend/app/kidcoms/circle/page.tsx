@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import {
   circleAPI,
-  casesAPI,
+  familyFilesAPI,
   CircleContact,
   CircleContactCreate,
   RelationshipChoice,
@@ -67,14 +67,14 @@ function CircleManagementContent() {
       setIsLoading(true);
       setError(null);
 
-      const [contactsData, caseData, choices] = await Promise.all([
+      const [contactsData, familyData, choices] = await Promise.all([
         circleAPI.list(familyFileId!, { includeInactive: true }),
-        casesAPI.get(familyFileId!),
+        familyFilesAPI.get(familyFileId!),
         circleAPI.getRelationshipChoices(),
       ]);
 
       setContacts(contactsData.items);
-      setChildren(caseData.children || []);
+      setChildren(familyData.children || []);
       setRelationshipChoices(choices);
     } catch (err) {
       console.error('Error loading circle data:', err);

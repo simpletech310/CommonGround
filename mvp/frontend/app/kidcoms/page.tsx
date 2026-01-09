@@ -20,7 +20,7 @@ import {
 import {
   circleAPI,
   kidcomsAPI,
-  casesAPI,
+  familyFilesAPI,
   CircleContact,
   KidComsSession,
   KidComsSettings,
@@ -69,11 +69,11 @@ function KidComsContent() {
       setError(null);
 
       // Load family file to get children
-      const caseData = await casesAPI.get(familyFileId!);
-      setChildren(caseData.children || []);
+      const familyData = await familyFilesAPI.get(familyFileId!);
+      setChildren(familyData.children || []);
 
-      if (caseData.children && caseData.children.length > 0) {
-        setSelectedChild(caseData.children[0]);
+      if (familyData.children && familyData.children.length > 0) {
+        setSelectedChild(familyData.children[0]);
       }
 
       // Load settings
@@ -165,10 +165,10 @@ function KidComsContent() {
           <h2 className="text-xl font-semibold text-gray-600 mb-2">Select a Family File</h2>
           <p className="text-gray-500 mb-4">Choose a family file to access KidComs features</p>
           <button
-            onClick={() => router.push('/cases')}
+            onClick={() => router.push('/family-files')}
             className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
           >
-            Go to Cases
+            Go to Family Files
           </button>
         </div>
       </div>
