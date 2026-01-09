@@ -4972,7 +4972,7 @@ export interface KidComsSettingsUpdate {
   record_sessions?: boolean;
 }
 
-export type SessionType = 'video_call' | 'theater' | 'arcade' | 'whiteboard' | 'mixed';
+export type SessionType = 'video_call' | 'voice_call' | 'theater' | 'arcade' | 'whiteboard' | 'mixed';
 export type SessionStatus = 'waiting' | 'active' | 'completed' | 'cancelled';
 
 export interface SessionParticipant {
