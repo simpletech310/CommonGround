@@ -29,6 +29,7 @@ import {
   DollarSign,
   CalendarPlus,
   Send,
+  Video,
 } from 'lucide-react';
 import {
   Dialog,
@@ -282,6 +283,22 @@ function FamilyFileDetailContent() {
                       <div className="font-medium">Messages</div>
                       <div className="text-xs text-muted-foreground">
                         Chat with your co-parent
+                      </div>
+                    </div>
+                  </div>
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="h-auto py-4 justify-start"
+                  onClick={() => router.push(`/family-files/${id}/kidcoms`)}
+                >
+                  <div className="flex items-start gap-3">
+                    <Video className="h-5 w-5 text-purple-500 mt-0.5" />
+                    <div className="text-left">
+                      <div className="font-medium">KidComs</div>
+                      <div className="text-xs text-muted-foreground">
+                        Video calls for kids
                       </div>
                     </div>
                   </div>
