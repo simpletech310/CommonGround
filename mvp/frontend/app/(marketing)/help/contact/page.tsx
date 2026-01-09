@@ -1,13 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { Metadata } from 'next';
+import { useState, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   Mail,
   MessageSquare,
-  Phone,
   Building2,
   Users,
   Gavel,
@@ -72,7 +70,7 @@ const contactMethods = [
   },
 ];
 
-export default function ContactPage() {
+function ContactForm() {
   const searchParams = useSearchParams();
   const typeParam = searchParams.get('type') || 'general';
 
@@ -108,7 +106,7 @@ export default function ContactPage() {
             Message Sent!
           </h1>
           <p className="text-muted-foreground mb-8">
-            Thank you for reaching out. We'll get back to you within 24 hours.
+            Thank you for reaching out. We&apos;ll get back to you within 24 hours.
           </p>
           <Link
             href="/"
@@ -136,7 +134,7 @@ export default function ContactPage() {
               Get in Touch
             </h1>
             <p className="text-xl text-muted-foreground">
-              Have questions? We're here to help. Choose your inquiry type below.
+              Have questions? We&apos;re here to help. Choose your inquiry type below.
             </p>
           </div>
         </div>
@@ -321,5 +319,21 @@ export default function ContactPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+function ContactFormFallback() {
+  return (
+    <div className="bg-background min-h-[60vh] flex items-center justify-center">
+      <div className="text-muted-foreground">Loading...</div>
+    </div>
+  );
+}
+
+export default function ContactPage() {
+  return (
+    <Suspense fallback={<ContactFormFallback />}>
+      <ContactForm />
+    </Suspense>
   );
 }
