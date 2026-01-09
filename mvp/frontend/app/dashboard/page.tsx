@@ -128,6 +128,7 @@ function ChildCustodyCard({
   onWithMe?: (childId: string) => void;
 }) {
   const { timezone } = useAuth();
+  const [imageError, setImageError] = useState(false);
   const isWithYou = childStatus.with_current_user;
   const progress = childStatus.progress_percentage || 0;
   const statusColor = isWithYou ? 'bg-cg-sage' : 'bg-cg-slate';
@@ -170,12 +171,13 @@ function ChildCustodyCard({
       <div className="p-4">
         {/* Child header with "With Me" button */}
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-full bg-cg-amber-subtle flex items-center justify-center flex-shrink-0">
-            {childData?.photo_url ? (
+          <div className="w-10 h-10 rounded-full bg-cg-amber-subtle flex items-center justify-center flex-shrink-0 overflow-hidden">
+            {childData?.photo_url && !imageError ? (
               <img
                 src={childData.photo_url}
                 alt={childStatus.child_first_name}
-                className="w-10 h-10 rounded-full object-cover"
+                className="w-full h-full object-cover"
+                onError={() => setImageError(true)}
               />
             ) : (
               <span className="text-sm font-semibold text-cg-amber">
