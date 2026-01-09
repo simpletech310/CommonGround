@@ -11,6 +11,7 @@ import {
   VideoOff,
 } from 'lucide-react';
 import { TheaterVideoPlayer } from './theater-video-player';
+import { TheaterPdfViewer } from './theater-pdf-viewer';
 import { ContentLibrary } from './content-library';
 import {
   TheaterSyncMessage,
@@ -325,6 +326,27 @@ export function TheaterMode({
     }
   };
 
+  // Handle PDF page change - broadcast to sync
+  const handlePageChange = (page: number) => {
+    setTheaterState((prev) => ({ ...prev, currentPage: page }));
+    // Broadcast the page change
+    const call = callRef.current;
+    if (call && content) {
+      const message = createTheaterMessage(
+        'page',
+        content.type,
+        content.url,
+        userId,
+        {
+          contentTitle: content.title,
+          currentPage: page,
+          senderName: userName,
+        }
+      );
+      call.sendAppMessage(message, '*');
+    }
+  };
+
   const handleTimeUpdate = (time: number, duration: number) => {
     setTheaterState((prev) => ({ ...prev, currentTime: time, duration }));
   };
@@ -456,12 +478,14 @@ export function TheaterMode({
               </div>
             </div>
           ) : content.type === 'pdf' ? (
-            // PDF viewer (placeholder)
-            <div className="flex-1 min-h-0 flex items-center justify-center bg-gray-800 rounded-xl">
-              <div className="text-center">
-                <p className="text-white mb-4">{content.title}</p>
-                <p className="text-gray-400">PDF viewer coming soon</p>
-              </div>
+            // PDF storybook viewer - synced page navigation
+            <div className="flex-1 min-h-0">
+              <TheaterPdfViewer
+                src={content.url}
+                title={content.title}
+                currentPage={theaterState.currentPage}
+                onPageChange={handlePageChange}
+              />
             </div>
           ) : null}
         </div>
