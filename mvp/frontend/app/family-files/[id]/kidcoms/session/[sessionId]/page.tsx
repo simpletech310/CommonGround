@@ -78,9 +78,21 @@ export default function SessionPage() {
     return () => clearInterval(interval);
   }, [sessionId, session?.id]);
 
-  // Initialize Daily.co call when token and roomUrl are available
+  // Track when video container is mounted
+  const [isContainerReady, setIsContainerReady] = useState(false);
+
+  // Callback ref to know when container is mounted
+  const setVideoContainerRef = useCallback((node: HTMLDivElement | null) => {
+    videoContainerRef.current = node;
+    if (node) {
+      setIsContainerReady(true);
+    }
+  }, []);
+
+  // Initialize Daily.co call when token, roomUrl, AND container are ready
   useEffect(() => {
-    if (token && roomUrl && !callRef.current && !isJoiningCall) {
+    if (token && roomUrl && isContainerReady && !callRef.current && !isJoiningCall) {
+      console.log('All conditions met, initializing Daily.co call...');
       initializeCall();
     }
 
@@ -91,7 +103,7 @@ export default function SessionPage() {
         callRef.current = null;
       }
     };
-  }, [token, roomUrl]);
+  }, [token, roomUrl, isContainerReady]);
 
   async function initializeCall() {
     if (!token || !roomUrl || !videoContainerRef.current) return;
@@ -324,7 +336,7 @@ export default function SessionPage() {
         <div className="flex-1 p-4 min-h-[500px]">
           {token && roomUrl ? (
             <div
-              ref={videoContainerRef}
+              ref={setVideoContainerRef}
               className="h-full min-h-[450px] bg-gray-800 rounded-xl overflow-hidden"
             >
               {isJoiningCall && !isCallJoined && (
