@@ -240,7 +240,7 @@ class KidComsEndSessionRequest(BaseModel):
 
 class KidComsMessageCreate(BaseModel):
     """Schema for sending a message in a session."""
-    session_id: str
+    # session_id comes from URL path parameter
     content: str = Field(..., min_length=1, max_length=2000)
 
 
