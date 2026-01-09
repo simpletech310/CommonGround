@@ -785,7 +785,7 @@ function DashboardContent() {
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
-        <main className="max-w-3xl mx-auto px-4 py-8 pb-24 lg:pb-8">
+        <main className="max-w-3xl mx-auto px-4 py-8 pb-32 lg:pb-8">
           <div className="flex items-center justify-center h-[60vh]">
             <div className="text-center">
               <div className="w-12 h-12 bg-cg-sage/20 rounded-full flex items-center justify-center mx-auto animate-pulse">
@@ -803,7 +803,7 @@ function DashboardContent() {
     <div className="min-h-screen bg-background">
       <Navigation />
 
-      <main className="max-w-3xl mx-auto px-4 py-6 pb-24 lg:pb-8">
+      <main className="max-w-3xl mx-auto px-4 py-6 pb-32 lg:pb-8">
         {/* Header with Greeting */}
         <div className="flex items-start justify-between mb-8">
           <div>
