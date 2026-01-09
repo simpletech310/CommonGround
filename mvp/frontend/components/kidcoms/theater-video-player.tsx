@@ -9,6 +9,7 @@ import {
   Maximize,
   SkipBack,
   SkipForward,
+  Users,
 } from 'lucide-react';
 
 interface TheaterVideoPlayerProps {
@@ -42,26 +43,41 @@ export function TheaterVideoPlayer({
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const [isSynced, setIsSynced] = useState(true);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSyncTimeRef = useRef<number>(0);
 
-  // Sync to parent's playback state (for non-controllers)
+  // Always sync to shared playback state (from either caller)
   useEffect(() => {
-    if (!isController && videoRef.current) {
-      // Sync time if difference is more than 1.5 seconds
-      if (syncedTime !== undefined && Math.abs(videoRef.current.currentTime - syncedTime) > 1.5) {
-        videoRef.current.currentTime = syncedTime;
-      }
+    if (!videoRef.current) return;
 
-      // Sync play/pause state
-      if (syncedIsPlaying !== undefined) {
-        if (syncedIsPlaying && videoRef.current.paused) {
-          videoRef.current.play().catch(console.error);
-        } else if (!syncedIsPlaying && !videoRef.current.paused) {
-          videoRef.current.pause();
-        }
+    const video = videoRef.current;
+    const now = Date.now();
+
+    // Sync time if difference is more than 1 second (tighter sync)
+    if (syncedTime !== undefined && Math.abs(video.currentTime - syncedTime) > 1) {
+      // Only sync if we haven't just synced (debounce)
+      if (now - lastSyncTimeRef.current > 500) {
+        console.log('Theater: Syncing time', { local: video.currentTime, remote: syncedTime });
+        video.currentTime = syncedTime;
+        lastSyncTimeRef.current = now;
+        setIsSynced(true);
       }
     }
-  }, [syncedTime, syncedIsPlaying, isController]);
+
+    // Sync play/pause state
+    if (syncedIsPlaying !== undefined) {
+      if (syncedIsPlaying && video.paused) {
+        console.log('Theater: Remote play received, starting playback');
+        video.play().catch(console.error);
+        setIsSynced(true);
+      } else if (!syncedIsPlaying && !video.paused) {
+        console.log('Theater: Remote pause received, pausing playback');
+        video.pause();
+        setIsSynced(true);
+      }
+    }
+  }, [syncedTime, syncedIsPlaying]);
 
   // Handle video events
   useEffect(() => {
@@ -124,10 +140,8 @@ export function TheaterVideoPlayer({
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  // Controller actions
+  // Control actions - both callers can control
   const handlePlayPause = () => {
-    if (!isController) return;
-
     const video = videoRef.current;
     if (!video) return;
 
@@ -141,7 +155,7 @@ export function TheaterVideoPlayer({
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isController || !progressRef.current || !videoRef.current) return;
+    if (!progressRef.current || !videoRef.current) return;
 
     const rect = progressRef.current.getBoundingClientRect();
     const percent = (e.clientX - rect.left) / rect.width;
@@ -152,7 +166,7 @@ export function TheaterVideoPlayer({
   };
 
   const handleSkip = (seconds: number) => {
-    if (!isController || !videoRef.current) return;
+    if (!videoRef.current) return;
 
     const newTime = Math.max(0, Math.min(duration, videoRef.current.currentTime + seconds));
     videoRef.current.currentTime = newTime;
@@ -205,19 +219,17 @@ export function TheaterVideoPlayer({
       <div className={`absolute bottom-0 left-0 right-0 transition-opacity duration-300 ${
         showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
       }`}>
-        {/* Progress Bar */}
+        {/* Progress Bar - both callers can seek */}
         <div
           ref={progressRef}
-          className={`mx-4 h-1 bg-white/30 rounded-full ${isController ? 'cursor-pointer' : ''}`}
+          className="mx-4 h-1 bg-white/30 rounded-full cursor-pointer"
           onClick={handleSeek}
         >
           <div
             className="h-full bg-purple-500 rounded-full relative"
             style={{ width: `${progress}%` }}
           >
-            {isController && (
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow" />
-            )}
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow" />
           </div>
         </div>
 
@@ -225,46 +237,44 @@ export function TheaterVideoPlayer({
         <div className="p-4 bg-gradient-to-t from-black/80 to-transparent">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              {/* Play/Pause - Only for controller */}
-              {isController ? (
-                <>
-                  <button
-                    onClick={() => handleSkip(-10)}
-                    className="p-2 text-white hover:text-purple-300 transition-colors"
-                    title="Rewind 10s"
-                  >
-                    <SkipBack className="h-5 w-5" />
-                  </button>
+              {/* Play/Pause - Available to both callers */}
+              <button
+                onClick={() => handleSkip(-10)}
+                className="p-2 text-white hover:text-purple-300 transition-colors"
+                title="Rewind 10s"
+              >
+                <SkipBack className="h-5 w-5" />
+              </button>
 
-                  <button
-                    onClick={handlePlayPause}
-                    className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full text-white transition-colors"
-                  >
-                    {isPlaying ? (
-                      <Pause className="h-6 w-6" />
-                    ) : (
-                      <Play className="h-6 w-6 ml-0.5" />
-                    )}
-                  </button>
+              <button
+                onClick={handlePlayPause}
+                className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full text-white transition-colors"
+              >
+                {isPlaying ? (
+                  <Pause className="h-6 w-6" />
+                ) : (
+                  <Play className="h-6 w-6 ml-0.5" />
+                )}
+              </button>
 
-                  <button
-                    onClick={() => handleSkip(10)}
-                    className="p-2 text-white hover:text-purple-300 transition-colors"
-                    title="Forward 10s"
-                  >
-                    <SkipForward className="h-5 w-5" />
-                  </button>
-                </>
-              ) : (
-                <div className="text-white/70 text-sm px-3 py-1 bg-white/10 rounded-full">
-                  {isPlaying ? 'Playing' : 'Paused'} (Parent controls)
-                </div>
-              )}
+              <button
+                onClick={() => handleSkip(10)}
+                className="p-2 text-white hover:text-purple-300 transition-colors"
+                title="Forward 10s"
+              >
+                <SkipForward className="h-5 w-5" />
+              </button>
 
               {/* Time Display */}
               <span className="text-white text-sm tabular-nums">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
+
+              {/* Synced Indicator */}
+              <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-green-500/20 text-green-400 rounded-full text-xs font-medium">
+                <Users className="h-3.5 w-3.5" />
+                <span>Synced</span>
+              </div>
             </div>
 
             <div className="flex items-center space-x-2">
@@ -292,8 +302,8 @@ export function TheaterVideoPlayer({
         </div>
       </div>
 
-      {/* Big Play Button Overlay (when paused) */}
-      {!isPlaying && isController && (
+      {/* Big Play Button Overlay (when paused) - both callers can click */}
+      {!isPlaying && (
         <button
           onClick={handlePlayPause}
           className="absolute inset-0 flex items-center justify-center bg-black/30"
