@@ -50,8 +50,15 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Turbopack config (Next.js 16+ default)
+  turbopack: {
+    resolveAlias: {
+      // Handle PDF.js canvas dependency
+      canvas: { browser: '' },
+    },
+  },
+  // Keep webpack config for fallback
   webpack: (config) => {
-    // Handle PDF.js worker
     config.resolve.alias.canvas = false;
     return config;
   },
