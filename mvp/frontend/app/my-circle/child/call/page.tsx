@@ -2,16 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import {
-  Phone,
-  PhoneOff,
-  Video,
-  VideoOff,
-  Mic,
-  MicOff,
-  Loader2,
-  ArrowLeft,
-} from 'lucide-react';
+import { Loader2, ArrowLeft } from 'lucide-react';
 import VideoCall from '@/components/kidcoms/video-call';
 
 interface CallSession {
@@ -31,8 +22,6 @@ function ChildCallContent() {
   const [callSession, setCallSession] = useState<CallSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [callEnded, setCallEnded] = useState(false);
 
   useEffect(() => {
@@ -56,7 +45,6 @@ function ChildCallContent() {
       }
 
       setCallSession(session);
-      setIsVideoEnabled(session.callType === 'video');
       setIsLoading(false);
     } catch {
       setError('Failed to load call session');
@@ -143,61 +131,14 @@ function ChildCallContent() {
         <div className="w-10" /> {/* Spacer for centering */}
       </header>
 
-      {/* Video Area */}
-      <div className="flex-1 relative">
+      {/* Video Area - VideoCall component has its own controls */}
+      <div className="flex-1">
         <VideoCall
           roomUrl={callSession.roomUrl}
           token={callSession.token}
           userName={callSession.participantName}
           onLeave={handleEndCall}
         />
-      </div>
-
-      {/* Controls */}
-      <div className="bg-black/30 backdrop-blur-sm p-6">
-        <div className="max-w-md mx-auto flex items-center justify-center gap-4">
-          {/* Mute Button */}
-          <button
-            onClick={() => setIsAudioEnabled(!isAudioEnabled)}
-            className={`p-4 rounded-full transition-colors ${
-              isAudioEnabled
-                ? 'bg-white/20 hover:bg-white/30 text-white'
-                : 'bg-red-500 hover:bg-red-600 text-white'
-            }`}
-          >
-            {isAudioEnabled ? (
-              <Mic className="h-6 w-6" />
-            ) : (
-              <MicOff className="h-6 w-6" />
-            )}
-          </button>
-
-          {/* End Call Button */}
-          <button
-            onClick={handleEndCall}
-            className="p-5 bg-red-500 hover:bg-red-600 rounded-full text-white transition-colors"
-          >
-            <PhoneOff className="h-8 w-8" />
-          </button>
-
-          {/* Video Toggle Button */}
-          {callSession.callType === 'video' && (
-            <button
-              onClick={() => setIsVideoEnabled(!isVideoEnabled)}
-              className={`p-4 rounded-full transition-colors ${
-                isVideoEnabled
-                  ? 'bg-white/20 hover:bg-white/30 text-white'
-                  : 'bg-red-500 hover:bg-red-600 text-white'
-              }`}
-            >
-              {isVideoEnabled ? (
-                <Video className="h-6 w-6" />
-              ) : (
-                <VideoOff className="h-6 w-6" />
-              )}
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import DailyIframe, { DailyCall, DailyParticipant } from '@daily-co/daily-js';
 import {
   Mic,
@@ -47,13 +47,24 @@ export default function VideoCall({
   const [isAudioOn, setIsAudioOn] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Track if we've already created a call object (prevents duplicate in React Strict Mode)
+  const callCreatedRef = useRef(false);
+  const callRef = useRef<DailyCall | null>(null);
+
   // Initialize Daily.co call
   useEffect(() => {
+    // Prevent duplicate call creation in React Strict Mode
+    if (callCreatedRef.current) {
+      return;
+    }
+    callCreatedRef.current = true;
+
     const call = DailyIframe.createCallObject({
       audioSource: true,
       videoSource: true,
     });
 
+    callRef.current = call;
     setCallObject(call);
 
     // Event handlers
@@ -111,16 +122,20 @@ export default function VideoCall({
 
     // Cleanup on unmount
     return () => {
-      call.off('joined-meeting', onJoinedMeeting);
-      call.off('participant-joined', onParticipantJoinedEvent as Parameters<typeof call.on>[1]);
-      call.off('participant-left', onParticipantLeftEvent as Parameters<typeof call.on>[1]);
-      call.off('participant-updated', onParticipantUpdatedEvent as Parameters<typeof call.on>[1]);
-      call.off('error', onErrorEvent as Parameters<typeof call.on>[1]);
-      call.off('left-meeting', onLeftMeeting);
-      call.leave();
-      call.destroy();
+      if (callRef.current) {
+        callRef.current.off('joined-meeting', onJoinedMeeting);
+        callRef.current.off('participant-joined', onParticipantJoinedEvent as Parameters<typeof call.on>[1]);
+        callRef.current.off('participant-left', onParticipantLeftEvent as Parameters<typeof call.on>[1]);
+        callRef.current.off('participant-updated', onParticipantUpdatedEvent as Parameters<typeof call.on>[1]);
+        callRef.current.off('error', onErrorEvent as Parameters<typeof call.on>[1]);
+        callRef.current.off('left-meeting', onLeftMeeting);
+        callRef.current.leave();
+        callRef.current.destroy();
+        callRef.current = null;
+        callCreatedRef.current = false;
+      }
     };
-  }, [roomUrl, token, userName, onParticipantJoined, onParticipantLeft, onError, onLeave]);
+  }, []); // Remove dependencies to prevent recreation
 
   function updateParticipants(dailyParticipants: Record<string, DailyParticipant>) {
     const newParticipants = new Map<string, ParticipantTile>();
