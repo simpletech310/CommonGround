@@ -76,7 +76,7 @@ class Settings(BaseSettings):
 
     # Daily.co (for KidComs video calls)
     DAILY_API_KEY: Optional[str] = None
-    DAILY_DOMAIN: str = "commonground.daily.co"
+    DAILY_DOMAIN: str = "cg-mvp.daily.co"
 
     # File Upload
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB

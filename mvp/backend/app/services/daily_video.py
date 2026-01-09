@@ -71,20 +71,12 @@ class DailyVideoService:
 
         exp_time = datetime.utcnow() + timedelta(minutes=exp_minutes)
 
+        # Minimal config - Daily.co has sensible defaults
         room_config = {
             "name": room_name,
             "privacy": privacy,
             "properties": {
                 "exp": int(exp_time.timestamp()),
-                "max_participants": max_participants,
-                "enable_chat": enable_chat,
-                "enable_recording_ui": enable_recording,
-                "start_video_off": start_video_off,
-                "start_audio_off": start_audio_off,
-                "enable_prejoin_ui": True,
-                "enable_network_ui": True,
-                "enable_screenshare": True,
-                "enable_knocking": True,  # Guests must be admitted
             }
         }
 
