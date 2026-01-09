@@ -97,7 +97,7 @@ class DailyVideoService:
                     timeout=30.0
                 )
 
-                if response.status_code == 200:
+                if response.status_code in [200, 201]:
                     data = response.json()
                     logger.info(f"Created Daily.co room: {room_name}")
                     return {
@@ -107,8 +107,8 @@ class DailyVideoService:
                         "created_at": data.get("created_at"),
                     }
                 else:
-                    logger.error(f"Failed to create room: {response.text}")
-                    raise Exception(f"Failed to create Daily.co room: {response.text}")
+                    logger.error(f"Failed to create room (status {response.status_code}): {response.text}")
+                    raise Exception(f"Failed to create Daily.co room (status {response.status_code}): {response.text}")
 
         except httpx.TimeoutException:
             logger.error("Daily.co API timeout")
@@ -238,13 +238,13 @@ class DailyVideoService:
                     timeout=30.0
                 )
 
-                if response.status_code == 200:
+                if response.status_code in [200, 201]:
                     data = response.json()
                     logger.info(f"Created meeting token for {user_name} in {room_name}")
                     return data.get("token")
                 else:
-                    logger.error(f"Failed to create token: {response.text}")
-                    raise Exception(f"Failed to create meeting token: {response.text}")
+                    logger.error(f"Failed to create token (status {response.status_code}): {response.text}")
+                    raise Exception(f"Failed to create meeting token (status {response.status_code}): {response.text}")
 
         except httpx.TimeoutException:
             logger.error("Daily.co API timeout")
