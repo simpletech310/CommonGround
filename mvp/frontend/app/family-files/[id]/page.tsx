@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { IncomingCallBanner } from "@/components/kidcoms/incoming-call-banner";
 
 function FamilyFileDetailContent() {
   const { user } = useAuth();
@@ -190,6 +191,9 @@ function FamilyFileDetailContent() {
 
   return (
     <div className="space-y-6">
+      {/* Incoming Call Banner - polls for active sessions */}
+      <IncomingCallBanner familyFileId={id} />
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-4">

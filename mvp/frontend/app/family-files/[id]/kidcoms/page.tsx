@@ -26,6 +26,7 @@ import {
   KidComsSession,
   KidComsSettings,
 } from '@/lib/api';
+import { IncomingCallBanner } from '@/components/kidcoms/incoming-call-banner';
 
 interface Child {
   id: string;
@@ -159,6 +160,9 @@ export default function KidComsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
+      {/* Incoming Call Banner */}
+      <IncomingCallBanner familyFileId={familyFileId} />
+
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-purple-100">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">

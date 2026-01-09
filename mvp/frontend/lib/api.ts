@@ -5111,6 +5111,14 @@ export const kidcomsAPI = {
   },
 
   /**
+   * Get active/incoming sessions for a family file
+   * Returns sessions that the current user can join (not initiated by them)
+   */
+  async getActiveSessions(familyFileId: string): Promise<KidComsSessionList> {
+    return fetchAPI<KidComsSessionList>(`/kidcoms/sessions/active/${familyFileId}`);
+  },
+
+  /**
    * Join an existing session
    */
   async joinSession(sessionId: string): Promise<JoinSessionResponse> {

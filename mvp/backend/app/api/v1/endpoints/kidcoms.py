@@ -363,6 +363,53 @@ async def list_sessions(
 
 
 @router.get(
+    "/sessions/active/{family_file_id}",
+    response_model=KidComsSessionListResponse,
+    summary="Get active sessions",
+    description="Get active or waiting sessions for a family file that the user can join."
+)
+async def get_active_sessions(
+    family_file_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get active sessions that the current user can join.
+
+    Returns sessions that are:
+    - In 'waiting' or 'active' status
+    - Belong to the user's family file
+    - User hasn't already joined (optional filter)
+    """
+    await get_family_file_with_access(db, family_file_id, current_user.id)
+
+    # Get active and waiting sessions
+    query = select(KidComsSession).where(
+        and_(
+            KidComsSession.family_file_id == family_file_id,
+            or_(
+                KidComsSession.status == SessionStatus.WAITING.value,
+                KidComsSession.status == SessionStatus.ACTIVE.value
+            )
+        )
+    ).order_by(KidComsSession.created_at.desc())
+
+    result = await db.execute(query)
+    sessions = result.scalars().all()
+
+    # Filter to sessions the user hasn't initiated (incoming calls)
+    incoming_sessions = []
+    for session in sessions:
+        if session.initiated_by_id != str(current_user.id):
+            incoming_sessions.append(session)
+
+    return KidComsSessionListResponse(
+        items=[_session_to_response(s) for s in incoming_sessions],
+        total=len(incoming_sessions)
+    )
+
+
+@router.get(
     "/sessions/{session_id}",
     response_model=KidComsSessionResponse,
     summary="Get session",
