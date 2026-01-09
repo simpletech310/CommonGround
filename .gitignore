@@ -67,6 +67,7 @@ yarn-error.log*
 
 # Generated files
 *.pdf
+!mvp/frontend/public/kidsComms/*.pdf
 *.zip
 *.tar.gz
 
