@@ -548,6 +548,18 @@ export const messagesAPI = {
       }
     );
   },
+
+  /**
+   * Mark all messages as read for the current user in a family file
+   */
+  async markAsRead(familyFileId: string): Promise<{ marked_read: number }> {
+    return fetchAPI<{ marked_read: number }>(
+      `/messages/family-file/${familyFileId}/mark-read`,
+      {
+        method: 'POST',
+      }
+    );
+  },
 };
 
 // ============================================================================

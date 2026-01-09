@@ -792,6 +792,61 @@ async def list_messages_by_agreement(
     ]
 
 
+@router.post("/family-file/{family_file_id}/mark-read")
+async def mark_messages_as_read(
+    family_file_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Mark all unread messages as read for the current user in a family file.
+
+    This should be called when the user views the messages page.
+
+    Args:
+        family_file_id: Family file ID
+
+    Returns:
+        Count of messages marked as read
+    """
+    # Verify user has access to family file
+    result = await db.execute(
+        select(FamilyFile).where(FamilyFile.id == family_file_id)
+    )
+    family_file = result.scalar_one_or_none()
+
+    if not family_file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Family file not found"
+        )
+
+    if current_user.id not in [family_file.parent_a_id, family_file.parent_b_id]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this family file"
+        )
+
+    # Mark all unread messages where user is recipient as read
+    from sqlalchemy import update
+
+    result = await db.execute(
+        update(Message)
+        .where(
+            and_(
+                Message.family_file_id == family_file_id,
+                Message.recipient_id == str(current_user.id),
+                Message.read_at.is_(None)
+            )
+        )
+        .values(read_at=datetime.utcnow())
+    )
+
+    await db.commit()
+
+    return {"marked_read": result.rowcount}
+
+
 @router.get("/analytics/{case_id}/user", response_model=AnalyticsResponse)
 async def get_user_analytics(
     case_id: str,

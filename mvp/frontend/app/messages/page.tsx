@@ -413,13 +413,35 @@ function MessagesContent() {
   };
 
   const handleSelectAgreement = async (agreement: Agreement, familyFile?: FamilyFile | FamilyFileDetail) => {
+    const fileToUse = familyFile || selectedFamilyFile;
     if (familyFile) {
       setSelectedFamilyFile(familyFile);
     }
     setSelectedAgreement(agreement);
     setShowCompose(false);
     setShowSidebar(false); // Hide sidebar on mobile when selecting
-    await loadMessages(agreement.id);
+
+    // Load messages
+    try {
+      setIsLoadingMessages(true);
+      setError(null);
+      const data = await messagesAPI.listByAgreement(agreement.id);
+      setMessages(data.reverse());
+
+      // Mark messages as read when viewing them
+      if (fileToUse?.id) {
+        try {
+          await messagesAPI.markAsRead(fileToUse.id);
+        } catch (markErr) {
+          console.log('Could not mark messages as read:', markErr);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to load messages:', err);
+      setError(err.message || 'Failed to load messages');
+    } finally {
+      setIsLoadingMessages(false);
+    }
   };
 
   const loadMessages = async (agreementId: string) => {
@@ -428,6 +450,15 @@ function MessagesContent() {
       setError(null);
       const data = await messagesAPI.listByAgreement(agreementId);
       setMessages(data.reverse());
+
+      // Mark messages as read when viewing them
+      if (selectedFamilyFile?.id) {
+        try {
+          await messagesAPI.markAsRead(selectedFamilyFile.id);
+        } catch (markErr) {
+          console.log('Could not mark messages as read:', markErr);
+        }
+      }
     } catch (err: any) {
       console.error('Failed to load messages:', err);
       setError(err.message || 'Failed to load messages');

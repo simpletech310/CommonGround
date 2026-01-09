@@ -134,8 +134,8 @@ export default function SilentHandoffCheckIn({
 
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <Card className="w-full max-w-md bg-background">
-          <CardContent className="p-6">
+        <Card className="w-full max-w-md max-h-[90vh] bg-background flex flex-col">
+          <CardContent className="p-6 overflow-y-auto">
             <div className="text-center">
               <div className="mx-auto w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-4">
                 <CheckCircle className="h-8 w-8 text-green-600" />
@@ -184,8 +184,8 @@ export default function SilentHandoffCheckIn({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-md bg-background">
-        <CardContent className="p-6">
+      <Card className="w-full max-w-md max-h-[90vh] bg-background flex flex-col">
+        <CardContent className="p-6 overflow-y-auto">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
