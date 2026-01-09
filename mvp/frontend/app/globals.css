@@ -638,6 +638,11 @@
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
+/* Safe area for iPhone notch/home indicator */
+.safe-area-bottom {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0));
+}
+
 /* ClearFund dark fintech style */
 .clearfund-dark {
   background: linear-gradient(to bottom, #111827, #030712);

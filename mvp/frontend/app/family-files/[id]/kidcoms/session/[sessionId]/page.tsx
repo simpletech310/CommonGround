@@ -292,12 +292,16 @@ export default function SessionPage() {
 
   const participantList = Array.from(participants.values());
 
+  // Separate local and remote participants for mobile layout
+  const localParticipant = participantList.find(p => p.isLocal);
+  const remoteParticipants = participantList.filter(p => !p.isLocal);
+
   return (
     <div className="flex h-screen bg-gray-900">
       {/* Main Video Area */}
       <div className="flex-1 flex flex-col">
-        {/* Minimal Header */}
-        <header className="bg-gray-800/50 px-4 py-2 flex items-center justify-between">
+        {/* Minimal Header - hidden on mobile during call */}
+        <header className="bg-gray-800/50 px-4 py-2 flex items-center justify-between md:flex hidden">
           <div className="flex items-center space-x-3">
             <button
               onClick={() => router.push(`/family-files/${familyFileId}/kidcoms`)}
@@ -319,79 +323,123 @@ export default function SessionPage() {
           </span>
         </header>
 
-        {/* Video Grid - Takes most of the screen */}
-        <div className="flex-1 p-2">
+        {/* Video Area - Full screen on mobile, grid on desktop */}
+        <div className="flex-1 relative">
           {!isCallJoined ? (
-            <div className="h-full bg-gray-800 rounded-xl flex items-center justify-center">
+            <div className="h-full bg-gray-800 flex items-center justify-center">
               <div className="text-center">
                 <Loader2 className="h-12 w-12 animate-spin text-purple-500 mx-auto mb-4" />
                 <p className="text-gray-400">{isJoiningCall ? 'Joining call...' : 'Connecting...'}</p>
               </div>
             </div>
           ) : (
-            <div className={`h-full grid gap-2 ${
-              participantList.length === 1 ? 'grid-cols-1' :
-              participantList.length === 2 ? 'grid-cols-2' :
-              participantList.length <= 4 ? 'grid-cols-2 grid-rows-2' :
-              'grid-cols-3 grid-rows-2'
-            }`}>
-              {participantList.map((participant) => (
-                <VideoTile
-                  key={participant.odId}
-                  participant={participant}
-                />
-              ))}
-            </div>
+            <>
+              {/* Mobile Layout (FaceTime style) - shown on small screens */}
+              <div className="md:hidden h-full relative">
+                {/* Remote participant takes full screen */}
+                {remoteParticipants.length > 0 ? (
+                  <VideoTile
+                    participant={remoteParticipants[0]}
+                    isFullScreen
+                  />
+                ) : (
+                  <div className="h-full bg-gray-800 flex items-center justify-center">
+                    <div className="text-center">
+                      <Users className="h-16 w-16 text-gray-600 mx-auto mb-4" />
+                      <p className="text-gray-400">Waiting for others to join...</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Local participant as small PiP in top-right */}
+                {localParticipant && (
+                  <div className="absolute top-4 right-4 w-28 h-40 rounded-2xl overflow-hidden shadow-2xl border-2 border-gray-700 z-10">
+                    <VideoTile
+                      participant={localParticipant}
+                      isCompact
+                    />
+                  </div>
+                )}
+
+                {/* Mobile header overlay */}
+                <div className="absolute top-4 left-4 z-10">
+                  <button
+                    onClick={() => router.push(`/family-files/${familyFileId}/kidcoms`)}
+                    className="p-2 bg-black/40 backdrop-blur-sm text-white rounded-full"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Desktop Layout (Grid) - shown on medium screens and up */}
+              <div className="hidden md:grid h-full gap-2 p-2" style={{
+                gridTemplateColumns: participantList.length === 1 ? '1fr' :
+                  participantList.length === 2 ? '1fr 1fr' :
+                  participantList.length <= 4 ? '1fr 1fr' :
+                  '1fr 1fr 1fr',
+                gridTemplateRows: participantList.length <= 2 ? '1fr' :
+                  participantList.length <= 4 ? '1fr 1fr' :
+                  '1fr 1fr'
+              }}>
+                {participantList.map((participant) => (
+                  <VideoTile
+                    key={participant.odId}
+                    participant={participant}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </div>
 
-        {/* Controls Bar */}
-        <div className="bg-gray-800 px-4 py-3">
-          <div className="flex items-center justify-center space-x-3">
+        {/* Controls Bar - Responsive */}
+        <div className="bg-gray-800/90 md:bg-gray-800 px-4 py-3 md:py-3 absolute md:relative bottom-0 left-0 right-0 backdrop-blur-sm md:backdrop-blur-none safe-area-bottom">
+          <div className="flex items-center justify-center space-x-4 md:space-x-3">
             {/* Audio Toggle */}
             <button
               onClick={toggleAudio}
               disabled={!isCallJoined}
-              className={`p-3 rounded-full transition-colors ${
+              className={`p-4 md:p-3 rounded-full transition-colors ${
                 isAudioOn
                   ? 'bg-gray-700 hover:bg-gray-600 text-white'
                   : 'bg-red-600 hover:bg-red-700 text-white'
               } ${!isCallJoined ? 'opacity-50 cursor-not-allowed' : ''}`}
               title={isAudioOn ? 'Mute' : 'Unmute'}
             >
-              {isAudioOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+              {isAudioOn ? <Mic className="h-6 w-6 md:h-5 md:w-5" /> : <MicOff className="h-6 w-6 md:h-5 md:w-5" />}
             </button>
 
             {/* Video Toggle */}
             <button
               onClick={toggleVideo}
               disabled={!isCallJoined}
-              className={`p-3 rounded-full transition-colors ${
+              className={`p-4 md:p-3 rounded-full transition-colors ${
                 isVideoOn
                   ? 'bg-gray-700 hover:bg-gray-600 text-white'
                   : 'bg-red-600 hover:bg-red-700 text-white'
               } ${!isCallJoined ? 'opacity-50 cursor-not-allowed' : ''}`}
               title={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
             >
-              {isVideoOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+              {isVideoOn ? <Video className="h-6 w-6 md:h-5 md:w-5" /> : <VideoOff className="h-6 w-6 md:h-5 md:w-5" />}
             </button>
 
             {/* End Call */}
             <button
               onClick={handleEndCall}
-              className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white"
+              className="p-4 md:p-3 rounded-full bg-red-600 hover:bg-red-700 text-white"
               title="Leave Call"
             >
-              <PhoneOff className="h-5 w-5" />
+              <PhoneOff className="h-6 w-6 md:h-5 md:w-5" />
             </button>
 
-            {/* Divider */}
-            <div className="w-px h-8 bg-gray-700" />
+            {/* Divider - hidden on mobile */}
+            <div className="hidden md:block w-px h-8 bg-gray-700" />
 
-            {/* Chat Toggle */}
+            {/* Chat Toggle - hidden on mobile */}
             <button
               onClick={() => setActivePanel(activePanel === 'chat' ? null : 'chat')}
-              className={`p-3 rounded-full transition-colors ${
+              className={`hidden md:flex p-3 rounded-full transition-colors ${
                 activePanel === 'chat'
                   ? 'bg-purple-600 text-white'
                   : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
@@ -401,10 +449,10 @@ export default function SessionPage() {
               <MessageCircle className="h-5 w-5" />
             </button>
 
-            {/* Participants Toggle */}
+            {/* Participants Toggle - hidden on mobile */}
             <button
               onClick={() => setActivePanel(activePanel === 'participants' ? null : 'participants')}
-              className={`p-3 rounded-full transition-colors ${
+              className={`hidden md:flex p-3 rounded-full transition-colors ${
                 activePanel === 'participants'
                   ? 'bg-purple-600 text-white'
                   : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
@@ -414,14 +462,14 @@ export default function SessionPage() {
               <Users className="h-5 w-5" />
             </button>
 
-            {/* Future features */}
-            <button disabled className="p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Theater (Coming Soon)">
+            {/* Future features - hidden on mobile */}
+            <button disabled className="hidden md:flex p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Theater (Coming Soon)">
               <Film className="h-5 w-5" />
             </button>
-            <button disabled className="p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Arcade (Coming Soon)">
+            <button disabled className="hidden md:flex p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Arcade (Coming Soon)">
               <Gamepad2 className="h-5 w-5" />
             </button>
-            <button disabled className="p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Whiteboard (Coming Soon)">
+            <button disabled className="hidden md:flex p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Whiteboard (Coming Soon)">
               <PenTool className="h-5 w-5" />
             </button>
           </div>
@@ -514,7 +562,13 @@ export default function SessionPage() {
 }
 
 // Video Tile Component
-function VideoTile({ participant }: { participant: VideoParticipant }) {
+interface VideoTileProps {
+  participant: VideoParticipant;
+  isFullScreen?: boolean;
+  isCompact?: boolean;
+}
+
+function VideoTile({ participant, isFullScreen, isCompact }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -547,8 +601,80 @@ function VideoTile({ participant }: { participant: VideoParticipant }) {
     }
   }, [participant.audioTrack, participant.isLocal]);
 
+  // Compact mode for PiP (picture-in-picture)
+  if (isCompact) {
+    return (
+      <div className="relative h-full w-full bg-gray-800">
+        {participant.videoOn && participant.videoTrack ? (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted={participant.isLocal}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-700">
+            <div className="w-12 h-12 rounded-full bg-purple-600 flex items-center justify-center text-white text-lg font-semibold">
+              {participant.odName[0]?.toUpperCase() || '?'}
+            </div>
+          </div>
+        )}
+        {/* Small mute indicator */}
+        {!participant.audioOn && (
+          <div className="absolute bottom-1 right-1 p-1 bg-red-500 rounded-full">
+            <MicOff className="h-3 w-3 text-white" />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Full screen mode for remote participant on mobile
+  if (isFullScreen) {
+    return (
+      <div className="relative h-full w-full bg-gray-900">
+        {participant.videoOn && participant.videoTrack ? (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted={participant.isLocal}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-800">
+            <div className="w-32 h-32 rounded-full bg-purple-600 flex items-center justify-center text-white text-5xl font-semibold">
+              {participant.odName[0]?.toUpperCase() || '?'}
+            </div>
+          </div>
+        )}
+        {/* Name overlay at bottom */}
+        <div className="absolute bottom-20 left-0 right-0 text-center">
+          <span className="text-white text-lg font-medium bg-black/30 px-4 py-2 rounded-full backdrop-blur-sm">
+            {participant.odName}
+          </span>
+        </div>
+        {/* Status indicators */}
+        <div className="absolute bottom-20 right-4 flex items-center space-x-2">
+          {!participant.audioOn && (
+            <div className="p-2 bg-red-500/80 rounded-full">
+              <MicOff className="h-4 w-4 text-white" />
+            </div>
+          )}
+          {!participant.videoOn && (
+            <div className="p-2 bg-red-500/80 rounded-full">
+              <VideoOff className="h-4 w-4 text-white" />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Default grid tile mode for desktop
   return (
-    <div className="relative bg-gray-800 rounded-xl overflow-hidden">
+    <div className="relative bg-gray-800 rounded-xl overflow-hidden h-full">
       {participant.videoOn && participant.videoTrack ? (
         <video
           ref={videoRef}
