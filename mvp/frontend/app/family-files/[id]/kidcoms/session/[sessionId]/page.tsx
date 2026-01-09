@@ -20,6 +20,8 @@ import {
   Send,
 } from 'lucide-react';
 import { kidcomsAPI, KidComsSession, KidComsMessage } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { TheaterMode } from '@/components/kidcoms/theater-mode';
 
 interface VideoParticipant {
   odId: string;
@@ -34,6 +36,7 @@ interface VideoParticipant {
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useAuth();
   const familyFileId = params.id as string;
   const sessionId = params.sessionId as string;
 
@@ -58,6 +61,9 @@ export default function SessionPage() {
   const [messages, setMessages] = useState<KidComsMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+
+  // Theater mode
+  const [isTheaterMode, setIsTheaterMode] = useState(false);
 
   // Load session data
   useEffect(() => {
@@ -462,8 +468,17 @@ export default function SessionPage() {
               <Users className="h-5 w-5" />
             </button>
 
-            {/* Future features - hidden on mobile */}
-            <button disabled className="hidden md:flex p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Theater (Coming Soon)">
+            {/* Theater Mode */}
+            <button
+              onClick={() => setIsTheaterMode(true)}
+              disabled={!isCallJoined}
+              className={`hidden md:flex p-3 rounded-full transition-colors ${
+                !isCallJoined
+                  ? 'bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed'
+                  : 'bg-gray-700 hover:bg-purple-600 text-gray-300 hover:text-white'
+              }`}
+              title="Theater Mode"
+            >
               <Film className="h-5 w-5" />
             </button>
             <button disabled className="hidden md:flex p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Arcade (Coming Soon)">
@@ -557,6 +572,21 @@ export default function SessionPage() {
           </div>
         </div>
       )}
+
+      {/* Theater Mode Overlay */}
+      <TheaterMode
+        isActive={isTheaterMode}
+        isController={true}
+        userId={user?.id || ''}
+        userName={user?.first_name || 'Guest'}
+        callRef={callRef}
+        participants={participants}
+        isVideoOn={isVideoOn}
+        isAudioOn={isAudioOn}
+        onToggleVideo={toggleVideo}
+        onToggleAudio={toggleAudio}
+        onExit={() => setIsTheaterMode(false)}
+      />
     </div>
   );
 }
