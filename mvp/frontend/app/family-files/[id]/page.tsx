@@ -308,6 +308,22 @@ function FamilyFileDetailContent() {
                   </div>
                 </Button>
 
+                <Button
+                  variant="outline"
+                  className="h-auto py-4 justify-start"
+                  onClick={() => router.push(`/family-files/${id}/my-circle`)}
+                >
+                  <div className="flex items-start gap-3">
+                    <Users className="h-5 w-5 text-teal-500 mt-0.5" />
+                    <div className="text-left">
+                      <div className="font-medium">My Circle</div>
+                      <div className="text-xs text-muted-foreground">
+                        Manage trusted contacts
+                      </div>
+                    </div>
+                  </div>
+                </Button>
+
                 {!familyFile.parent_b_id && (
                   <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
                     <DialogTrigger asChild>
