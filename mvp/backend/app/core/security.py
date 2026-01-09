@@ -71,7 +71,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
-    to_encode.update({"exp": expire, "type": "access"})
+    # Set expiration, and only set type to "access" if not already specified
+    to_encode["exp"] = expire
+    if "type" not in to_encode:
+        to_encode["type"] = "access"
 
     # Use JWT_SECRET_KEY if set, otherwise fall back to SECRET_KEY
     secret_key = settings.JWT_SECRET_KEY or settings.SECRET_KEY

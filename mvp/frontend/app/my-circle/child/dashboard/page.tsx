@@ -13,6 +13,7 @@ import {
   Star,
 } from 'lucide-react';
 import { ChildContact, kidcomsAPI, ChildSessionCreate } from '@/lib/api';
+import { ChildIncomingCallBanner } from '@/components/kidcoms/child-incoming-call-banner';
 
 const ROOM_COLORS = [
   'from-red-400 to-pink-500',
@@ -168,6 +169,9 @@ export default function ChildDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-400 via-purple-400 to-pink-400">
+      {/* Incoming Call Banner */}
+      <ChildIncomingCallBanner />
+
       {/* Header */}
       <header className="bg-white/20 backdrop-blur-sm p-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">

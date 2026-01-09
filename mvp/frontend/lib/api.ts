@@ -5221,6 +5221,26 @@ export const kidcomsAPI = {
     });
   },
 
+  /**
+   * Get active sessions for a child (incoming calls)
+   * Uses child_token from localStorage for authentication
+   */
+  async getChildActiveSessions(): Promise<KidComsSessionList> {
+    return fetchAPIWithChildAuth<KidComsSessionList>('/kidcoms/sessions/child/active', {
+      method: 'GET',
+    });
+  },
+
+  /**
+   * Child joins an existing session
+   * Uses child_token from localStorage for authentication
+   */
+  async childJoinSession(sessionId: string): Promise<JoinSessionResponse> {
+    return fetchAPIWithChildAuth<JoinSessionResponse>(`/kidcoms/sessions/child/${sessionId}/join`, {
+      method: 'POST',
+    });
+  },
+
   // Messages
   /**
    * Get messages for a session

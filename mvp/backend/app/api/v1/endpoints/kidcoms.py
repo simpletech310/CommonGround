@@ -751,6 +751,119 @@ async def create_child_session(
     )
 
 
+@router.get(
+    "/sessions/child/active",
+    response_model=KidComsSessionListResponse,
+    summary="Get active sessions for child",
+    description="Get active/waiting sessions where the child is a participant."
+)
+async def get_child_active_sessions(
+    current_child: ChildUser = Depends(get_current_child_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get active sessions for a child to show incoming call notifications.
+    Returns sessions where:
+    - Child is a participant
+    - Status is 'waiting' or 'active'
+    """
+    # Get sessions where child is participant
+    result = await db.execute(
+        select(KidComsSession)
+        .where(
+            and_(
+                KidComsSession.child_id == current_child.child_id,
+                KidComsSession.status.in_([
+                    SessionStatus.WAITING.value,
+                    SessionStatus.ACTIVE.value
+                ])
+            )
+        )
+        .order_by(KidComsSession.created_at.desc())
+        .limit(10)
+    )
+    sessions = result.scalars().all()
+
+    return KidComsSessionListResponse(
+        items=[_session_to_response(s) for s in sessions],
+        total=len(sessions),
+    )
+
+
+@router.post(
+    "/sessions/child/{session_id}/join",
+    response_model=KidComsJoinResponse,
+    summary="Child joins session",
+    description="Allow a child to join an existing session they're part of."
+)
+async def child_join_session(
+    session_id: str,
+    current_child: ChildUser = Depends(get_current_child_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Join a KidComs session as a child and get a Daily.co token."""
+    # Get session
+    result = await db.execute(
+        select(KidComsSession).where(KidComsSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+
+    # Verify child is part of this session
+    if session.child_id != current_child.child_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a participant in this session"
+        )
+
+    if session.status not in [SessionStatus.WAITING.value, SessionStatus.ACTIVE.value]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot join session with status: {session.status}"
+        )
+
+    # Get child info for name
+    child_result = await db.execute(
+        select(Child).where(Child.id == current_child.child_id)
+    )
+    child = child_result.scalar_one_or_none()
+    child_name = child.display_name if child else "Child"
+
+    # Mark session as active if first join
+    if session.status == SessionStatus.WAITING.value:
+        session.start()
+        await db.commit()
+
+    # Generate Daily.co meeting token
+    try:
+        token = await daily_service.create_meeting_token(
+            room_name=session.daily_room_name,
+            user_name=child_name,
+            user_id=str(current_child.child_id),
+            is_owner=False,  # Children are not owners
+            exp_minutes=120,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create meeting token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to generate meeting token. Please try again."
+        )
+
+    return KidComsJoinResponse(
+        session_id=session.id,
+        room_url=session.daily_room_url,
+        token=token,
+        participant_name=child_name,
+        participant_type=ParticipantType.CHILD.value,
+    )
+
+
 # ============================================================
 # Message Endpoints
 # ============================================================
