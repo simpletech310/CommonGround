@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import DailyIframe, { DailyCall } from '@daily-co/daily-js';
+import DailyIframe, { DailyCall, DailyParticipant } from '@daily-co/daily-js';
 import {
   PhoneOff,
   Video,
@@ -21,6 +21,16 @@ import {
 } from 'lucide-react';
 import { kidcomsAPI, KidComsSession, KidComsMessage } from '@/lib/api';
 
+interface VideoParticipant {
+  odId: string;
+  odName: string;
+  isLocal: boolean;
+  videoTrack: MediaStreamTrack | null;
+  audioTrack: MediaStreamTrack | null;
+  videoOn: boolean;
+  audioOn: boolean;
+}
+
 export default function SessionPage() {
   const params = useParams();
   const router = useRouter();
@@ -35,11 +45,13 @@ export default function SessionPage() {
 
   // Daily.co call object
   const callRef = useRef<DailyCall | null>(null);
-  const videoContainerRef = useRef<HTMLDivElement>(null);
   const [isCallJoined, setIsCallJoined] = useState(false);
   const [isJoiningCall, setIsJoiningCall] = useState(false);
 
-  // Note: Video/audio controls are handled by Daily.co's prebuilt UI
+  // Video/audio state
+  const [isVideoOn, setIsVideoOn] = useState(true);
+  const [isAudioOn, setIsAudioOn] = useState(true);
+  const [participants, setParticipants] = useState<Map<string, VideoParticipant>>(new Map());
 
   // Side panel
   const [activePanel, setActivePanel] = useState<'chat' | 'participants' | null>(null);
@@ -58,11 +70,9 @@ export default function SessionPage() {
 
     const pollData = async () => {
       try {
-        // Poll messages
         const messagesData = await kidcomsAPI.getMessages(sessionId);
         setMessages(messagesData.items);
 
-        // Also refresh session to get latest participant list
         const sessionData = await kidcomsAPI.getSession(sessionId);
         setSession(sessionData);
       } catch (err) {
@@ -70,124 +80,110 @@ export default function SessionPage() {
       }
     };
 
-    // Poll every 3 seconds
     const interval = setInterval(pollData, 3000);
-
     return () => clearInterval(interval);
   }, [sessionId, session?.id]);
 
-  // Track when video container is mounted
-  const [isContainerReady, setIsContainerReady] = useState(false);
-
-  // Callback ref to know when container is mounted
-  const setVideoContainerRef = useCallback((node: HTMLDivElement | null) => {
-    videoContainerRef.current = node;
-    if (node) {
-      setIsContainerReady(true);
-    }
-  }, []);
-
-  // Initialize Daily.co call when token, roomUrl, AND container are ready
+  // Initialize Daily.co call when token and roomUrl are available
   useEffect(() => {
-    if (token && roomUrl && isContainerReady && !callRef.current && !isJoiningCall) {
-      console.log('All conditions met, initializing Daily.co call...');
+    if (token && roomUrl && !callRef.current && !isJoiningCall) {
+      console.log('Initializing Daily.co call...');
       initializeCall();
     }
 
-    // Cleanup on unmount
     return () => {
       if (callRef.current) {
         callRef.current.destroy();
         callRef.current = null;
       }
     };
-  }, [token, roomUrl, isContainerReady]);
+  }, [token, roomUrl]);
+
+  function updateParticipants(dailyParticipants: Record<string, DailyParticipant>) {
+    const newParticipants = new Map<string, VideoParticipant>();
+
+    Object.values(dailyParticipants).forEach((p) => {
+      const tracks = p.tracks;
+      newParticipants.set(p.session_id, {
+        odId: p.session_id,
+        odName: p.user_name || 'Guest',
+        isLocal: p.local,
+        videoTrack: tracks?.video?.persistentTrack || null,
+        audioTrack: tracks?.audio?.persistentTrack || null,
+        videoOn: tracks?.video?.state === 'playable',
+        audioOn: tracks?.audio?.state === 'playable',
+      });
+    });
+
+    setParticipants(newParticipants);
+  }
 
   async function initializeCall() {
-    if (!token || !roomUrl || !videoContainerRef.current) return;
+    if (!token || !roomUrl) return;
 
     try {
       setIsJoiningCall(true);
-      console.log('Initializing Daily.co call with:', { roomUrl, tokenLength: token?.length });
+      console.log('Creating Daily.co call object...');
 
-      // Create Daily call frame with explicit video/audio settings
-      const callFrame = DailyIframe.createFrame(videoContainerRef.current, {
-        iframeStyle: {
-          width: '100%',
-          height: '100%',
-          minHeight: '400px',
-          border: '0',
-          borderRadius: '12px',
-        },
-        showLeaveButton: false,
-        showFullscreenButton: true,
-        // Explicitly enable video and audio
-        startVideoOff: false,
-        startAudioOff: false,
+      // Create call object (no iframe - we control the UI)
+      const call = DailyIframe.createCallObject({
+        audioSource: true,
+        videoSource: true,
       });
 
-      callRef.current = callFrame;
+      callRef.current = call;
 
-      // Set up event listeners
-      callFrame.on('joining-meeting', () => {
-        console.log('Daily.co: joining-meeting');
-      });
-
-      callFrame.on('joined-meeting', (event) => {
-        console.log('Daily.co: joined-meeting', event);
+      // Event handlers
+      call.on('joined-meeting', () => {
+        console.log('Daily.co: joined-meeting');
         setIsCallJoined(true);
         setIsJoiningCall(false);
+        updateParticipants(call.participants());
       });
 
-      callFrame.on('participant-joined', (event) => {
-        console.log('Daily.co: participant-joined', event);
+      call.on('participant-joined', () => {
+        console.log('Daily.co: participant-joined');
+        updateParticipants(call.participants());
       });
 
-      callFrame.on('participant-left', (event) => {
-        console.log('Daily.co: participant-left', event);
+      call.on('participant-left', () => {
+        console.log('Daily.co: participant-left');
+        updateParticipants(call.participants());
       });
 
-      callFrame.on('left-meeting', () => {
+      call.on('participant-updated', () => {
+        updateParticipants(call.participants());
+      });
+
+      call.on('track-started', () => {
+        console.log('Daily.co: track-started');
+        updateParticipants(call.participants());
+      });
+
+      call.on('track-stopped', () => {
+        console.log('Daily.co: track-stopped');
+        updateParticipants(call.participants());
+      });
+
+      call.on('left-meeting', () => {
         console.log('Daily.co: left-meeting');
         setIsCallJoined(false);
       });
 
-      callFrame.on('error', (event) => {
+      call.on('error', (event) => {
         console.error('Daily.co error:', event);
         setError('Video call error occurred');
         setIsJoiningCall(false);
       });
 
-      callFrame.on('camera-error', (event) => {
-        console.error('Daily.co camera error:', event);
-      });
-
-      callFrame.on('track-started', (event) => {
-        console.log('Daily.co: track-started', event);
-      });
-
-      callFrame.on('track-stopped', (event) => {
-        console.log('Daily.co: track-stopped', event);
-      });
-
-      callFrame.on('active-speaker-change', (event) => {
-        console.log('Daily.co: active-speaker-change', event);
-      });
-
-      // Join the call with the token
-      console.log('Attempting to join Daily.co room...', { roomUrl });
-      await callFrame.join({
+      // Join the call
+      console.log('Joining Daily.co room...', { roomUrl });
+      await call.join({
         url: roomUrl,
         token: token,
-        // Request camera/microphone access
-        startVideoOff: false,
-        startAudioOff: false,
       });
-      console.log('Daily.co join call completed');
 
-      // Log participants after join
-      const participants = callFrame.participants();
-      console.log('Daily.co participants after join:', participants);
+      console.log('Daily.co join completed');
 
     } catch (err) {
       console.error('Error initializing Daily.co call:', err);
@@ -201,18 +197,15 @@ export default function SessionPage() {
       setIsLoading(true);
       setError(null);
 
-      // Get session details
       const sessionData = await kidcomsAPI.getSession(sessionId);
       setSession(sessionData);
 
-      // If session is active, join it
       if (sessionData.status === 'active' || sessionData.status === 'waiting') {
         const joinData = await kidcomsAPI.joinSession(sessionId);
         setToken(joinData.token);
         setRoomUrl(joinData.room_url);
       }
 
-      // Load messages
       const messagesData = await kidcomsAPI.getMessages(sessionId);
       setMessages(messagesData.items);
     } catch (err) {
@@ -225,20 +218,34 @@ export default function SessionPage() {
 
   async function handleEndCall() {
     try {
-      // Leave Daily.co call first
       if (callRef.current) {
         await callRef.current.leave();
         callRef.current.destroy();
         callRef.current = null;
       }
 
-      // End the session on the backend
       await kidcomsAPI.endSession(sessionId);
       router.push(`/family-files/${familyFileId}/kidcoms`);
     } catch (err) {
       console.error('Error ending call:', err);
     }
   }
+
+  const toggleVideo = useCallback(async () => {
+    if (callRef.current) {
+      const newState = !isVideoOn;
+      await callRef.current.setLocalVideo(newState);
+      setIsVideoOn(newState);
+    }
+  }, [isVideoOn]);
+
+  const toggleAudio = useCallback(async () => {
+    if (callRef.current) {
+      const newState = !isAudioOn;
+      await callRef.current.setLocalAudio(newState);
+      setIsAudioOn(newState);
+    }
+  }, [isAudioOn]);
 
   async function handleSendMessage() {
     if (!newMessage.trim()) return;
@@ -283,67 +290,93 @@ export default function SessionPage() {
     );
   }
 
+  const participantList = Array.from(participants.values());
+
   return (
     <div className="flex h-screen bg-gray-900">
       {/* Main Video Area */}
       <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <header className="bg-gray-800 px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
+        {/* Minimal Header */}
+        <header className="bg-gray-800/50 px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
             <button
               onClick={() => router.push(`/family-files/${familyFileId}/kidcoms`)}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
+              className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg"
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
             <div>
-              <h1 className="text-white font-semibold">{session.title || 'Video Call'}</h1>
-              <p className="text-sm text-gray-400">
+              <h1 className="text-white font-medium text-sm">{session.title || 'Video Call'}</h1>
+              <p className="text-xs text-gray-400">
                 {isCallJoined ? 'Connected' : isJoiningCall ? 'Connecting...' : session.status}
               </p>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
-            <span className={`px-2 py-1 rounded text-xs ${
-              isCallJoined
-                ? 'bg-green-500/20 text-green-400'
-                : 'bg-yellow-500/20 text-yellow-400'
-            }`}>
-              {session.participants.length} participants
-            </span>
-          </div>
+          <span className={`px-2 py-1 rounded text-xs ${
+            isCallJoined ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'
+          }`}>
+            {participantList.length} in call
+          </span>
         </header>
 
-        {/* Video Grid */}
-        <div className="flex-1 p-4 min-h-[500px]">
-          {token && roomUrl ? (
-            <div
-              ref={setVideoContainerRef}
-              className="h-full min-h-[450px] bg-gray-800 rounded-xl overflow-hidden"
-            >
-              {isJoiningCall && !isCallJoined && (
-                <div className="h-full flex items-center justify-center">
-                  <div className="text-center">
-                    <Loader2 className="h-12 w-12 animate-spin text-purple-500 mx-auto mb-4" />
-                    <p className="text-gray-400">Joining video call...</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
+        {/* Video Grid - Takes most of the screen */}
+        <div className="flex-1 p-2">
+          {!isCallJoined ? (
             <div className="h-full bg-gray-800 rounded-xl flex items-center justify-center">
               <div className="text-center">
                 <Loader2 className="h-12 w-12 animate-spin text-purple-500 mx-auto mb-4" />
-                <p className="text-gray-400">Waiting to connect...</p>
+                <p className="text-gray-400">{isJoiningCall ? 'Joining call...' : 'Connecting...'}</p>
               </div>
+            </div>
+          ) : (
+            <div className={`h-full grid gap-2 ${
+              participantList.length === 1 ? 'grid-cols-1' :
+              participantList.length === 2 ? 'grid-cols-2' :
+              participantList.length <= 4 ? 'grid-cols-2 grid-rows-2' :
+              'grid-cols-3 grid-rows-2'
+            }`}>
+              {participantList.map((participant) => (
+                <VideoTile
+                  key={participant.odId}
+                  participant={participant}
+                />
+              ))}
             </div>
           )}
         </div>
 
-        {/* Controls Bar - Only features not in Daily.co's UI */}
+        {/* Controls Bar */}
         <div className="bg-gray-800 px-4 py-3">
-          <div className="flex items-center justify-center space-x-4">
-            {/* End Call - backup button */}
+          <div className="flex items-center justify-center space-x-3">
+            {/* Audio Toggle */}
+            <button
+              onClick={toggleAudio}
+              disabled={!isCallJoined}
+              className={`p-3 rounded-full transition-colors ${
+                isAudioOn
+                  ? 'bg-gray-700 hover:bg-gray-600 text-white'
+                  : 'bg-red-600 hover:bg-red-700 text-white'
+              } ${!isCallJoined ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title={isAudioOn ? 'Mute' : 'Unmute'}
+            >
+              {isAudioOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+            </button>
+
+            {/* Video Toggle */}
+            <button
+              onClick={toggleVideo}
+              disabled={!isCallJoined}
+              className={`p-3 rounded-full transition-colors ${
+                isVideoOn
+                  ? 'bg-gray-700 hover:bg-gray-600 text-white'
+                  : 'bg-red-600 hover:bg-red-700 text-white'
+              } ${!isCallJoined ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title={isVideoOn ? 'Turn off camera' : 'Turn on camera'}
+            >
+              {isVideoOn ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+            </button>
+
+            {/* End Call */}
             <button
               onClick={handleEndCall}
               className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white"
@@ -355,7 +388,7 @@ export default function SessionPage() {
             {/* Divider */}
             <div className="w-px h-8 bg-gray-700" />
 
-            {/* Feature Toggles - Chat panel, participants, etc */}
+            {/* Chat Toggle */}
             <button
               onClick={() => setActivePanel(activePanel === 'chat' ? null : 'chat')}
               className={`p-3 rounded-full transition-colors ${
@@ -363,10 +396,12 @@ export default function SessionPage() {
                   ? 'bg-purple-600 text-white'
                   : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
               }`}
+              title="Chat"
             >
               <MessageCircle className="h-5 w-5" />
             </button>
 
+            {/* Participants Toggle */}
             <button
               onClick={() => setActivePanel(activePanel === 'participants' ? null : 'participants')}
               className={`p-3 rounded-full transition-colors ${
@@ -374,29 +409,19 @@ export default function SessionPage() {
                   ? 'bg-purple-600 text-white'
                   : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
               }`}
+              title="Participants"
             >
               <Users className="h-5 w-5" />
             </button>
 
-            {/* Feature buttons - disabled for now */}
-            <button
-              disabled
-              className="p-3 rounded-full bg-gray-700 text-gray-500 cursor-not-allowed opacity-50"
-            >
+            {/* Future features */}
+            <button disabled className="p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Theater (Coming Soon)">
               <Film className="h-5 w-5" />
             </button>
-
-            <button
-              disabled
-              className="p-3 rounded-full bg-gray-700 text-gray-500 cursor-not-allowed opacity-50"
-            >
+            <button disabled className="p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Arcade (Coming Soon)">
               <Gamepad2 className="h-5 w-5" />
             </button>
-
-            <button
-              disabled
-              className="p-3 rounded-full bg-gray-700 text-gray-500 cursor-not-allowed opacity-50"
-            >
+            <button disabled className="p-3 rounded-full bg-gray-700 text-gray-500 opacity-50 cursor-not-allowed" title="Whiteboard (Coming Soon)">
               <PenTool className="h-5 w-5" />
             </button>
           </div>
@@ -406,16 +431,13 @@ export default function SessionPage() {
       {/* Side Panel */}
       {activePanel && (
         <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
-          {/* Panel Header */}
           <div className="p-4 border-b border-gray-700">
             <h3 className="text-white font-semibold capitalize">{activePanel}</h3>
           </div>
 
-          {/* Panel Content */}
           <div className="flex-1 overflow-y-auto">
             {activePanel === 'chat' && (
               <div className="flex flex-col h-full">
-                {/* Messages */}
                 <div className="flex-1 p-4 space-y-3 overflow-y-auto">
                   {messages.length === 0 ? (
                     <p className="text-gray-500 text-center text-sm">No messages yet</p>
@@ -424,31 +446,21 @@ export default function SessionPage() {
                       <div
                         key={msg.id}
                         className={`p-3 rounded-lg ${
-                          msg.aria_flagged
-                            ? 'bg-yellow-900/30 border border-yellow-700'
-                            : 'bg-gray-700'
+                          msg.aria_flagged ? 'bg-yellow-900/30 border border-yellow-700' : 'bg-gray-700'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-purple-400">
-                            {msg.sender_name}
-                          </span>
+                          <span className="text-sm font-medium text-purple-400">{msg.sender_name}</span>
                           <span className="text-xs text-gray-500">
                             {new Date(msg.sent_at).toLocaleTimeString()}
                           </span>
                         </div>
                         <p className="text-white text-sm">{msg.content}</p>
-                        {msg.aria_flagged && (
-                          <p className="text-xs text-yellow-500 mt-1">
-                            Moderated by ARIA
-                          </p>
-                        )}
                       </div>
                     ))
                   )}
                 </div>
 
-                {/* Message Input */}
                 <div className="p-4 border-t border-gray-700">
                   <div className="flex space-x-2">
                     <input
@@ -497,6 +509,75 @@ export default function SessionPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Video Tile Component
+function VideoTile({ participant }: { participant: VideoParticipant }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (participant.videoTrack) {
+      const stream = new MediaStream([participant.videoTrack]);
+      video.srcObject = stream;
+      video.play().catch(console.error);
+    } else {
+      video.srcObject = null;
+    }
+  }, [participant.videoTrack]);
+
+  // Also handle audio for remote participants
+  useEffect(() => {
+    if (participant.isLocal) return; // Don't play own audio
+
+    if (participant.audioTrack) {
+      const audio = new Audio();
+      const stream = new MediaStream([participant.audioTrack]);
+      audio.srcObject = stream;
+      audio.play().catch(console.error);
+
+      return () => {
+        audio.pause();
+        audio.srcObject = null;
+      };
+    }
+  }, [participant.audioTrack, participant.isLocal]);
+
+  return (
+    <div className="relative bg-gray-800 rounded-xl overflow-hidden">
+      {participant.videoOn && participant.videoTrack ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={participant.isLocal}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center bg-gray-700">
+          <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-white text-3xl font-semibold">
+            {participant.odName[0]?.toUpperCase() || '?'}
+          </div>
+        </div>
+      )}
+
+      {/* Name and status overlay */}
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-3">
+        <div className="flex items-center justify-between">
+          <span className="text-white text-sm font-medium">
+            {participant.odName}
+            {participant.isLocal && ' (You)'}
+          </span>
+          <div className="flex items-center space-x-2">
+            {!participant.audioOn && <MicOff className="h-4 w-4 text-red-400" />}
+            {!participant.videoOn && <VideoOff className="h-4 w-4 text-red-400" />}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
