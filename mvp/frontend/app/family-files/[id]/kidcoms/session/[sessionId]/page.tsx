@@ -100,16 +100,20 @@ export default function SessionPage() {
       setIsJoiningCall(true);
       console.log('Initializing Daily.co call with:', { roomUrl, tokenLength: token?.length });
 
-      // Create Daily call frame
+      // Create Daily call frame with explicit video/audio settings
       const callFrame = DailyIframe.createFrame(videoContainerRef.current, {
         iframeStyle: {
           width: '100%',
           height: '100%',
+          minHeight: '400px',
           border: '0',
           borderRadius: '12px',
         },
         showLeaveButton: false,
         showFullscreenButton: true,
+        // Explicitly enable video and audio
+        startVideoOff: false,
+        startAudioOff: false,
       });
 
       callRef.current = callFrame;
@@ -148,13 +152,32 @@ export default function SessionPage() {
         console.error('Daily.co camera error:', event);
       });
 
+      callFrame.on('track-started', (event) => {
+        console.log('Daily.co: track-started', event);
+      });
+
+      callFrame.on('track-stopped', (event) => {
+        console.log('Daily.co: track-stopped', event);
+      });
+
+      callFrame.on('active-speaker-change', (event) => {
+        console.log('Daily.co: active-speaker-change', event);
+      });
+
       // Join the call with the token
-      console.log('Attempting to join Daily.co room...');
+      console.log('Attempting to join Daily.co room...', { roomUrl });
       await callFrame.join({
         url: roomUrl,
         token: token,
+        // Request camera/microphone access
+        startVideoOff: false,
+        startAudioOff: false,
       });
       console.log('Daily.co join call completed');
+
+      // Log participants after join
+      const participants = callFrame.participants();
+      console.log('Daily.co participants after join:', participants);
 
     } catch (err) {
       console.error('Error initializing Daily.co call:', err);
@@ -298,11 +321,11 @@ export default function SessionPage() {
         </header>
 
         {/* Video Grid */}
-        <div className="flex-1 p-4">
+        <div className="flex-1 p-4 min-h-[500px]">
           {token && roomUrl ? (
             <div
               ref={videoContainerRef}
-              className="h-full bg-gray-800 rounded-xl overflow-hidden"
+              className="h-full min-h-[450px] bg-gray-800 rounded-xl overflow-hidden"
             >
               {isJoiningCall && !isCallJoined && (
                 <div className="h-full flex items-center justify-center">

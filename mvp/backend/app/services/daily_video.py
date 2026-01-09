@@ -23,7 +23,7 @@ class DailyVideoService:
 
     def __init__(self):
         self.api_key = getattr(settings, 'DAILY_API_KEY', None)
-        self.domain = getattr(settings, 'DAILY_DOMAIN', 'commonground.daily.co')
+        self.domain = getattr(settings, 'DAILY_DOMAIN', 'cg-mvp.daily.co')
 
     @property
     def headers(self) -> Dict[str, str]:
