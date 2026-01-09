@@ -536,6 +536,15 @@ class CircleUserInviteRequest(BaseModel):
     circle_contact_id: str
 
 
+class CircleUserCreateAndInviteRequest(BaseModel):
+    """Schema for creating a new circle contact and sending an invitation."""
+    family_file_id: str
+    email: str
+    contact_name: str
+    relationship_type: Optional[str] = None
+    room_number: Optional[int] = Field(None, ge=3, le=10)  # 1-2 are reserved for parents
+
+
 class CircleUserInviteResponse(BaseModel):
     """Response after sending invite to circle contact."""
     id: str

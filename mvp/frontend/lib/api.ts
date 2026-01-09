@@ -5199,5 +5199,461 @@ export const kidcomsAPI = {
   },
 };
 
+// =============================================================================
+// My Circle API - Child/Contact Communication Portal
+// =============================================================================
+
+// My Circle Types
+export interface KidComsRoom {
+  id: string;
+  family_file_id: string;
+  room_number: number;
+  room_type: 'parent_a' | 'parent_b' | 'circle';
+  room_name?: string;
+  assigned_to_id?: string;
+  assigned_contact_name?: string;
+  assigned_contact_relationship?: string;
+  daily_room_name?: string;
+  daily_room_url?: string;
+  is_active: boolean;
+  is_reserved: boolean;
+  is_assigned: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KidComsRoomList {
+  items: KidComsRoom[];
+  total: number;
+  assigned_count: number;
+  available_count: number;
+}
+
+export interface CirclePermission {
+  id: string;
+  circle_contact_id: string;
+  child_id: string;
+  family_file_id: string;
+  can_video_call: boolean;
+  can_voice_call: boolean;
+  can_chat: boolean;
+  can_theater: boolean;
+  allowed_days?: number[];
+  allowed_start_time?: string;
+  allowed_end_time?: string;
+  is_within_allowed_time: boolean;
+  max_call_duration_minutes: number;
+  require_parent_present: boolean;
+  set_by_parent_id?: string;
+  created_at: string;
+  updated_at: string;
+  contact_name?: string;
+  child_name?: string;
+}
+
+export interface CirclePermissionList {
+  items: CirclePermission[];
+  total: number;
+}
+
+export interface ChildUser {
+  id: string;
+  child_id: string;
+  family_file_id: string;
+  username: string;
+  avatar_id?: string;
+  is_active: boolean;
+  last_login?: string;
+  created_at: string;
+  updated_at: string;
+  child_name?: string;
+  child_photo_url?: string;
+}
+
+export interface ChildUserList {
+  items: ChildUser[];
+  total: number;
+}
+
+export interface CircleUserInvite {
+  id: string;
+  circle_contact_id: string;
+  email: string;
+  invite_token: string;
+  invite_url: string;
+  invite_expires_at: string;
+  contact_name: string;
+  relationship_type: string;
+  room_number?: number;
+}
+
+export interface ChildAvatar {
+  id: string;
+  emoji: string;
+  name: string;
+}
+
+export interface ChildContact {
+  contact_id: string;
+  contact_type: 'parent_a' | 'parent_b' | 'circle';
+  display_name: string;
+  relationship?: string;
+  room_number: number;
+  can_video_call: boolean;
+  can_voice_call: boolean;
+  can_chat: boolean;
+  can_theater: boolean;
+}
+
+export interface ChildLoginResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user_id: string;
+  child_id: string;
+  child_name: string;
+  avatar_id?: string;
+  family_file_id: string;
+  contacts: ChildContact[];
+}
+
+export interface CircleLoginResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  user_id: string;
+  circle_contact_id: string;
+  contact_name: string;
+  family_file_id: string;
+  child_ids: string[];
+}
+
+export interface CommunicationLog {
+  id: string;
+  room_id?: string;
+  session_id?: string;
+  family_file_id: string;
+  child_id: string;
+  contact_type: string;
+  contact_id?: string;
+  contact_name?: string;
+  communication_type: string;
+  started_at: string;
+  ended_at?: string;
+  duration_seconds?: number;
+  duration_display?: string;
+  aria_flags?: Record<string, unknown>;
+  total_messages: number;
+  flagged_messages: number;
+  has_flags: boolean;
+}
+
+export const myCircleAPI = {
+  // ==========================================================================
+  // Room Management (Parent-facing)
+  // ==========================================================================
+
+  /**
+   * Get all rooms for a family
+   */
+  async getRooms(familyFileId: string): Promise<KidComsRoomList> {
+    return fetchAPI<KidComsRoomList>(`/my-circle/rooms/${familyFileId}`);
+  },
+
+  /**
+   * Assign a contact to a room
+   */
+  async assignRoom(
+    roomId: string,
+    circleContactId: string,
+    roomName?: string
+  ): Promise<KidComsRoom> {
+    return fetchAPI<KidComsRoom>(`/my-circle/rooms/${roomId}/assign`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        circle_contact_id: circleContactId,
+        room_name: roomName,
+      }),
+    });
+  },
+
+  /**
+   * Unassign a contact from a room
+   */
+  async unassignRoom(roomId: string): Promise<KidComsRoom> {
+    return fetchAPI<KidComsRoom>(`/my-circle/rooms/${roomId}/unassign`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Update room name/status
+   */
+  async updateRoom(
+    roomId: string,
+    data: { room_name?: string; is_active?: boolean }
+  ): Promise<KidComsRoom> {
+    return fetchAPI<KidComsRoom>(`/my-circle/rooms/${roomId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // ==========================================================================
+  // Circle User Authentication
+  // ==========================================================================
+
+  /**
+   * Invite an existing circle contact to create an account
+   */
+  async inviteExistingCircleUser(circleContactId: string): Promise<CircleUserInvite> {
+    return fetchAPI<CircleUserInvite>('/my-circle/circle-users/invite', {
+      method: 'POST',
+      body: JSON.stringify({ circle_contact_id: circleContactId }),
+    });
+  },
+
+  /**
+   * Create a new circle contact and send them an invitation
+   */
+  async inviteCircleUser(
+    familyFileId: string,
+    data: {
+      email: string;
+      contact_name: string;
+      relationship_type?: string;
+      room_number?: number;
+    }
+  ): Promise<CircleUserInvite> {
+    return fetchAPI<CircleUserInvite>('/my-circle/circle-users/create-and-invite', {
+      method: 'POST',
+      body: JSON.stringify({
+        family_file_id: familyFileId,
+        email: data.email,
+        contact_name: data.contact_name,
+        relationship_type: data.relationship_type,
+        room_number: data.room_number,
+      }),
+    });
+  },
+
+  /**
+   * Get invite info (before accepting)
+   */
+  async getInviteInfo(inviteToken: string): Promise<{
+    email: string;
+    contact_name?: string;
+    relationship_type?: string;
+    invite_expires_at: string;
+  }> {
+    return fetchAPI(`/my-circle/circle-users/${inviteToken}/info`);
+  },
+
+  /**
+   * Accept circle invite and set password
+   */
+  async acceptCircleInvite(
+    inviteToken: string,
+    password: string,
+    confirmPassword: string
+  ): Promise<CircleLoginResponse> {
+    return fetchAPI<CircleLoginResponse>('/my-circle/circle-users/accept-invite', {
+      method: 'POST',
+      body: JSON.stringify({
+        invite_token: inviteToken,
+        password,
+        confirm_password: confirmPassword,
+      }),
+    });
+  },
+
+  /**
+   * Circle user login
+   */
+  async circleUserLogin(email: string, password: string): Promise<CircleLoginResponse> {
+    return fetchAPI<CircleLoginResponse>('/my-circle/circle-users/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  },
+
+  // ==========================================================================
+  // Child User Authentication
+  // ==========================================================================
+
+  /**
+   * Set up a child's login
+   */
+  async setupChildUser(data: {
+    child_id: string;
+    username: string;
+    pin: string;
+    avatar_id?: string;
+  }): Promise<ChildUser> {
+    return fetchAPI<ChildUser>('/my-circle/child-users/setup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update a child's login
+   */
+  async updateChildUser(
+    childUserId: string,
+    data: {
+      username?: string;
+      pin?: string;
+      avatar_id?: string;
+      is_active?: boolean;
+    }
+  ): Promise<ChildUser> {
+    return fetchAPI<ChildUser>(`/my-circle/child-users/${childUserId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * List child users for a family
+   */
+  async listChildUsers(familyFileId: string): Promise<ChildUserList> {
+    return fetchAPI<ChildUserList>(`/my-circle/child-users/family/${familyFileId}`);
+  },
+
+  /**
+   * Child user login (PIN-based)
+   */
+  async childUserLogin(
+    familyFileId: string,
+    username: string,
+    pin: string
+  ): Promise<ChildLoginResponse> {
+    return fetchAPI<ChildLoginResponse>('/my-circle/child-users/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        family_file_id: familyFileId,
+        username,
+        pin,
+      }),
+    });
+  },
+
+  /**
+   * Get available avatars
+   */
+  async getAvatars(): Promise<ChildAvatar[]> {
+    return fetchAPI<ChildAvatar[]>('/my-circle/child-users/avatars');
+  },
+
+  // ==========================================================================
+  // Permission Management
+  // ==========================================================================
+
+  /**
+   * Create or update permissions
+   */
+  async createPermission(data: {
+    circle_contact_id: string;
+    child_id: string;
+    can_video_call?: boolean;
+    can_voice_call?: boolean;
+    can_chat?: boolean;
+    can_theater?: boolean;
+    allowed_days?: number[];
+    allowed_start_time?: string;
+    allowed_end_time?: string;
+    max_call_duration_minutes?: number;
+    require_parent_present?: boolean;
+  }): Promise<CirclePermission> {
+    return fetchAPI<CirclePermission>('/my-circle/permissions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Update existing permission
+   */
+  async updatePermission(
+    permissionId: string,
+    data: {
+      can_video_call?: boolean;
+      can_voice_call?: boolean;
+      can_chat?: boolean;
+      can_theater?: boolean;
+      allowed_days?: number[];
+      allowed_start_time?: string;
+      allowed_end_time?: string;
+      max_call_duration_minutes?: number;
+      require_parent_present?: boolean;
+    }
+  ): Promise<CirclePermission> {
+    return fetchAPI<CirclePermission>(`/my-circle/permissions/${permissionId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get a permission by ID
+   */
+  async getPermission(permissionId: string): Promise<CirclePermission> {
+    return fetchAPI<CirclePermission>(`/my-circle/permissions/${permissionId}`);
+  },
+
+  /**
+   * List permissions for a family
+   */
+  async listPermissions(
+    familyFileId: string,
+    options?: { childId?: string; contactId?: string }
+  ): Promise<CirclePermissionList> {
+    const params = new URLSearchParams();
+    if (options?.childId) params.append('child_id', options.childId);
+    if (options?.contactId) params.append('contact_id', options.contactId);
+    const queryString = params.toString();
+    return fetchAPI<CirclePermissionList>(
+      `/my-circle/permissions/family/${familyFileId}${queryString ? `?${queryString}` : ''}`
+    );
+  },
+
+  /**
+   * Delete a permission
+   */
+  async deletePermission(permissionId: string): Promise<void> {
+    await fetchAPI(`/my-circle/permissions/${permissionId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // ==========================================================================
+  // Communication Logs
+  // ==========================================================================
+
+  /**
+   * Get communication logs for audit/monitoring
+   */
+  async getCommunicationLogs(
+    familyFileId: string,
+    options?: {
+      childId?: string;
+      contactId?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<CommunicationLog[]> {
+    const params = new URLSearchParams();
+    if (options?.childId) params.append('child_id', options.childId);
+    if (options?.contactId) params.append('contact_id', options.contactId);
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+    const queryString = params.toString();
+    return fetchAPI<CommunicationLog[]>(
+      `/my-circle/logs/${familyFileId}${queryString ? `?${queryString}` : ''}`
+    );
+  },
+};
+
 // Export commonly used functions
 export { getAuthToken, clearAuthTokens };

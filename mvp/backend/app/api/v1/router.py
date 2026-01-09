@@ -30,6 +30,7 @@ from app.api.v1.endpoints import (
     activities,
     circle,
     kidcoms,
+    my_circle,
 )
 
 api_router = APIRouter()
@@ -82,3 +83,6 @@ api_router.include_router(activities.router, tags=["Activities"])
 # KidComs - Child Communication Hub
 api_router.include_router(circle.router, prefix="/circle", tags=["Circle Contacts"])
 api_router.include_router(kidcoms.router, prefix="/kidcoms", tags=["KidComs"])
+
+# My Circle - Child/Contact Communication Portal
+api_router.include_router(my_circle.router, prefix="/my-circle", tags=["My Circle"])
