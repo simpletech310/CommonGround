@@ -5,11 +5,13 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",  // Next.js needs unsafe-inline/eval for dev
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.daily.co",  // Next.js + Daily.co SDK
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",  // Tailwind + Google Fonts
       "img-src 'self' data: https:",
       "font-src 'self' https://fonts.gstatic.com",  // Google Fonts
-      "connect-src 'self' http://localhost:8000 ws://localhost:8000 https://commonground-api-gdxg.onrender.com https://*.onrender.com",  // Backend API
+      "connect-src 'self' http://localhost:8000 ws://localhost:8000 wss://*.daily.co https://*.daily.co https://commonground-api-gdxg.onrender.com https://*.onrender.com",  // Backend API + Daily.co
+      "frame-src 'self' https://*.daily.co",  // Allow Daily.co video iframe
+      "media-src 'self' https://*.daily.co blob:",  // Allow media from Daily.co
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -33,7 +35,7 @@ const securityHeaders = [
   },
   {
     key: 'Permissions-Policy',
-    value: 'camera=(), microphone=(), geolocation=()'
+    value: 'camera=(self "https://*.daily.co"), microphone=(self "https://*.daily.co"), geolocation=()'  // Allow camera/mic for Daily.co
   }
 ];
 
