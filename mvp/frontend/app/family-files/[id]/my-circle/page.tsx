@@ -107,7 +107,7 @@ export default function MyCircleManagementPage({ params }: PageParams) {
     try {
       setIsLoading(true);
       const roomList = await myCircleAPI.getRooms(familyFileId);
-      setRooms(roomList.rooms);
+      setRooms(roomList.items);
     } catch (err) {
       console.error('Error loading rooms:', err);
       setError('Failed to load rooms');
