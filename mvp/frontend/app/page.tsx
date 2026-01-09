@@ -4,12 +4,12 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
+import { MarketingHeader, MarketingFooter } from '@/components/marketing';
 import {
   MessageSquare,
   Calendar,
   Wallet,
   FileText,
-  Search,
   ArrowRight,
   Shield,
   Heart,
@@ -102,45 +102,6 @@ function FloatingShapes() {
   );
 }
 
-// Logo component
-function Logo({ className = '' }: { className?: string }) {
-  return (
-    <div className={`flex items-center gap-2 ${className}`}>
-      <div className="w-10 h-10 bg-cg-sage rounded-xl flex items-center justify-center">
-        <svg
-          width="24"
-          height="24"
-          viewBox="0 0 24 24"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M12 4C7.58 4 4 7.58 4 12C4 16.42 7.58 20 12 20"
-            stroke="white"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <path
-            d="M12 4C16.42 4 20 7.58 20 12C20 16.42 16.42 20 12 20"
-            stroke="white"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeDasharray="4 4"
-          />
-          <circle cx="12" cy="12" r="3" fill="white" />
-          <path
-            d="M12 9V6M15 12H18M12 15V18M9 12H6"
-            stroke="white"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-      </div>
-      <span className="text-xl font-semibold text-foreground">CommonGround</span>
-    </div>
-  );
-}
-
 // Feature item for the grid
 function FeatureItem({
   icon: Icon,
@@ -190,24 +151,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation */}
-      <header className="fixed top-0 left-0 right-0 z-50 cg-glass border-b border-border/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <Logo />
-            <div className="flex items-center gap-3">
-              <Link href="/login" className="cg-btn-ghost text-sm">
-                Sign In
-              </Link>
-              <Link
-                href="/register"
-                className="bg-cg-sage text-white font-medium px-5 py-2 rounded-full text-sm transition-all duration-200 hover:bg-cg-sage-light hover:shadow-lg active:scale-[0.98]"
-              >
-                Sign In
-              </Link>
-            </div>
-          </div>
-        </div>
-      </header>
+      <MarketingHeader />
 
       {/* Hero Section */}
       <section className="relative min-h-screen flex items-center pt-16 overflow-hidden">
@@ -595,67 +539,7 @@ export default function HomePage() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-card border-t border-border py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-4 gap-8">
-            {/* Brand */}
-            <div className="md:col-span-2">
-              <Logo className="mb-4" />
-              <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-                Reducing conflict in separated families through technology, transparency, and
-                AI-powered communication tools.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                &copy; {new Date().getFullYear()} CommonGround. All rights reserved.
-              </p>
-            </div>
-
-            {/* Platform */}
-            <div>
-              <h4 className="font-semibold text-foreground mb-4">Platform</h4>
-              <ul className="space-y-3 text-sm text-muted-foreground">
-                <li>
-                  <Link href="/register" className="hover:text-foreground transition-colors">
-                    Get Started
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/login" className="hover:text-foreground transition-colors">
-                    Sign In
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/court-portal" className="hover:text-foreground transition-colors">
-                    Court Portal
-                  </Link>
-                </li>
-              </ul>
-            </div>
-
-            {/* Legal */}
-            <div>
-              <h4 className="font-semibold text-foreground mb-4">Legal</h4>
-              <ul className="space-y-3 text-sm text-muted-foreground">
-                <li>
-                  <Link href="#" className="hover:text-foreground transition-colors">
-                    Privacy Policy
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="hover:text-foreground transition-colors">
-                    Terms of Service
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="hover:text-foreground transition-colors">
-                    Contact Support
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <MarketingFooter />
     </div>
   );
 }
