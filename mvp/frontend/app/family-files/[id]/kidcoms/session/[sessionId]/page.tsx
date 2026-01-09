@@ -576,7 +576,6 @@ export default function SessionPage() {
       {/* Theater Mode Overlay */}
       <TheaterMode
         isActive={isTheaterMode}
-        isController={true}
         userId={user?.id || ''}
         userName={user?.first_name || 'Guest'}
         callRef={callRef}

@@ -15,7 +15,6 @@ import { ContentLibrary } from './content-library';
 import {
   TheaterSyncMessage,
   createTheaterMessage,
-  extractYouTubeId,
 } from '@/lib/theater-content';
 
 type ContentType = 'video' | 'pdf' | 'youtube';
@@ -45,7 +44,6 @@ interface VideoParticipant {
 
 interface TheaterModeProps {
   isActive: boolean;
-  isController: boolean;  // Is this user the parent/controller
   userId: string;
   userName: string;
   callRef: React.RefObject<DailyCall | null>;
@@ -59,7 +57,6 @@ interface TheaterModeProps {
 
 export function TheaterMode({
   isActive,
-  isController,
   userId,
   userName,
   callRef,
@@ -77,10 +74,13 @@ export function TheaterMode({
     currentTime: 0,
   });
 
+  // Track if we're the one who initiated the last action (to avoid echo)
+  const lastActionRef = useRef<string>('');
+
   // Sync interval for periodic state updates
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Handle incoming theater messages
+  // Handle incoming theater messages from other participant
   useEffect(() => {
     const call = callRef.current;
     if (!call) return;
@@ -89,13 +89,16 @@ export function TheaterMode({
       const message = event.data;
       if (message.type !== 'theater_control') return;
 
+      // Ignore messages from ourselves
+      if (message.data.senderId === userId) return;
+
       const { action, contentType, contentUrl, currentTime, currentPage, isPlaying, contentTitle } = message.data;
 
       console.log('Theater message received:', action, { contentType, contentUrl, currentTime, isPlaying });
 
       switch (action) {
         case 'start':
-          // Parent started theater with content
+          // Other person selected content - load it
           setContent({
             type: contentType,
             url: contentUrl,
@@ -109,21 +112,36 @@ export function TheaterMode({
           break;
 
         case 'stop':
-          // Parent stopped theater
+          // Other person exited theater
           setContent(null);
           setTheaterState({ isPlaying: false, currentTime: 0 });
           break;
 
         case 'play':
-        case 'pause':
-        case 'seek':
-          // Playback control
           setTheaterState((prev) => ({
             ...prev,
-            isPlaying: action === 'play' ? true : action === 'pause' ? false : prev.isPlaying,
+            isPlaying: true,
             currentTime: currentTime ?? prev.currentTime,
-            currentPage: currentPage ?? prev.currentPage,
           }));
+          break;
+
+        case 'pause':
+          setTheaterState((prev) => ({
+            ...prev,
+            isPlaying: false,
+            currentTime: currentTime ?? prev.currentTime,
+          }));
+          break;
+
+        case 'seek':
+          // Sync to other person's position
+          if (currentTime !== undefined) {
+            setTheaterState((prev) => ({
+              ...prev,
+              currentTime: currentTime,
+              isPlaying: isPlaying ?? prev.isPlaying,
+            }));
+          }
           break;
 
         case 'page':
@@ -135,9 +153,9 @@ export function TheaterMode({
           break;
 
         case 'sync_request':
-          // Non-controller requesting sync (controller responds with current state)
-          if (isController && content) {
-            broadcastState('play');
+          // Other person requesting current state - send it
+          if (content) {
+            broadcastState('seek');
           }
           break;
       }
@@ -148,27 +166,29 @@ export function TheaterMode({
     return () => {
       call.off('app-message', handleAppMessage);
     };
-  }, [callRef, isController, content]);
+  }, [callRef, userId, content]);
 
-  // Request sync when joining as non-controller
+  // Request sync when entering theater mode
   useEffect(() => {
-    if (isActive && !isController && callRef.current) {
-      // Request current state from controller
-      const syncRequest = createTheaterMessage(
-        'sync_request',
-        'video',
-        '',
-        userId,
-        { senderName: userName }
-      );
-      callRef.current.sendAppMessage(syncRequest, '*');
+    if (isActive && callRef.current) {
+      // Small delay to let other participant know we're here
+      setTimeout(() => {
+        const syncRequest = createTheaterMessage(
+          'sync_request',
+          'video',
+          '',
+          userId,
+          { senderName: userName }
+        );
+        callRef.current?.sendAppMessage(syncRequest, '*');
+      }, 500);
     }
-  }, [isActive, isController, userId, userName, callRef]);
+  }, [isActive, userId, userName, callRef]);
 
-  // Broadcast current state to all participants
+  // Broadcast current state to other participant
   const broadcastState = useCallback((action: TheaterSyncMessage['data']['action']) => {
     const call = callRef.current;
-    if (!call || !content || !isController) return;
+    if (!call || !content) return;
 
     const message = createTheaterMessage(
       action,
@@ -185,14 +205,14 @@ export function TheaterMode({
     );
 
     call.sendAppMessage(message, '*');
-  }, [callRef, content, isController, userId, userName, theaterState]);
+  }, [callRef, content, userId, userName, theaterState]);
 
-  // Periodic sync (every 5 seconds while playing)
+  // Periodic sync while playing (every 3 seconds)
   useEffect(() => {
-    if (isController && content && theaterState.isPlaying) {
+    if (content && theaterState.isPlaying) {
       syncIntervalRef.current = setInterval(() => {
         broadcastState('seek');
-      }, 5000);
+      }, 3000);
     }
 
     return () => {
@@ -200,15 +220,15 @@ export function TheaterMode({
         clearInterval(syncIntervalRef.current);
       }
     };
-  }, [isController, content, theaterState.isPlaying, broadcastState]);
+  }, [content, theaterState.isPlaying, broadcastState]);
 
-  // Content selection handler
+  // Content selection handler - either caller can select
   const handleContentSelect = (selected: { type: ContentType; url: string; title: string }) => {
     setContent(selected);
     setShowLibrary(false);
     setTheaterState({ isPlaying: false, currentTime: 0, currentPage: 1 });
 
-    // Broadcast to all participants
+    // Broadcast to other participant
     if (callRef.current) {
       const message = createTheaterMessage(
         'start',
@@ -227,29 +247,77 @@ export function TheaterMode({
     }
   };
 
-  // Playback control handlers (controller only)
+  // Playback control handlers - either caller can control
   const handlePlay = () => {
     setTheaterState((prev) => ({ ...prev, isPlaying: true }));
-    broadcastState('play');
+    // Broadcast immediately with current time
+    const call = callRef.current;
+    if (call && content) {
+      const message = createTheaterMessage(
+        'play',
+        content.type,
+        content.url,
+        userId,
+        {
+          contentTitle: content.title,
+          currentTime: theaterState.currentTime,
+          isPlaying: true,
+          senderName: userName,
+        }
+      );
+      call.sendAppMessage(message, '*');
+    }
   };
 
   const handlePause = () => {
     setTheaterState((prev) => ({ ...prev, isPlaying: false }));
-    broadcastState('pause');
+    // Broadcast immediately with current time
+    const call = callRef.current;
+    if (call && content) {
+      const message = createTheaterMessage(
+        'pause',
+        content.type,
+        content.url,
+        userId,
+        {
+          contentTitle: content.title,
+          currentTime: theaterState.currentTime,
+          isPlaying: false,
+          senderName: userName,
+        }
+      );
+      call.sendAppMessage(message, '*');
+    }
   };
 
   const handleSeek = (time: number) => {
     setTheaterState((prev) => ({ ...prev, currentTime: time }));
-    broadcastState('seek');
+    // Broadcast the seek immediately
+    const call = callRef.current;
+    if (call && content) {
+      const message = createTheaterMessage(
+        'seek',
+        content.type,
+        content.url,
+        userId,
+        {
+          contentTitle: content.title,
+          currentTime: time,
+          isPlaying: theaterState.isPlaying,
+          senderName: userName,
+        }
+      );
+      call.sendAppMessage(message, '*');
+    }
   };
 
   const handleTimeUpdate = (time: number, duration: number) => {
     setTheaterState((prev) => ({ ...prev, currentTime: time, duration }));
   };
 
-  // Exit theater
+  // Exit theater - notify other participant
   const handleExit = () => {
-    if (isController && callRef.current) {
+    if (callRef.current) {
       const message = createTheaterMessage('stop', 'video', '', userId, { senderName: userName });
       callRef.current.sendAppMessage(message, '*');
     }
@@ -274,38 +342,48 @@ export function TheaterMode({
             Theater Mode
           </span>
           {content && (
-            <span className="text-white font-medium">{content.title}</span>
+            <span className="text-white font-medium hidden sm:inline">{content.title}</span>
           )}
         </div>
         <div className="flex items-center space-x-2">
-          {isController && (
-            <button
-              onClick={() => setShowLibrary(true)}
-              className="flex items-center space-x-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-            >
-              <Library className="h-4 w-4" />
-              <span className="text-sm">Library</span>
-            </button>
-          )}
+          <button
+            onClick={() => setShowLibrary(true)}
+            className="flex items-center space-x-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+          >
+            <Library className="h-4 w-4" />
+            <span className="text-sm hidden sm:inline">Library</span>
+          </button>
           <button
             onClick={handleExit}
             className="flex items-center space-x-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
           >
             <X className="h-4 w-4" />
-            <span className="text-sm">Exit Theater</span>
+            <span className="text-sm hidden sm:inline">Exit</span>
           </button>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 relative p-4">
-        {/* PiP Video Windows */}
-        <div className="absolute top-4 right-4 z-10 flex flex-col space-y-2">
+      <div className="flex-1 relative overflow-hidden">
+        {/* Mobile: Only show remote participant PiP (to see their reactions) */}
+        <div className="md:hidden absolute top-2 right-2 z-10">
+          {remoteParticipants.slice(0, 1).map((participant) => (
+            <div
+              key={participant.odId}
+              className="w-24 h-32 rounded-xl overflow-hidden shadow-2xl border-2 border-purple-500/50 bg-gray-800"
+            >
+              <PiPVideoTile participant={participant} />
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop: Show both PiP windows */}
+        <div className="hidden md:flex absolute top-4 right-4 z-10 flex-col space-y-2">
           {/* Remote participant(s) PiP */}
           {remoteParticipants.slice(0, 1).map((participant) => (
             <div
               key={participant.odId}
-              className="w-32 h-24 md:w-40 md:h-28 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800"
+              className="w-40 h-28 rounded-xl overflow-hidden shadow-2xl border-2 border-purple-500/50 bg-gray-800"
             >
               <PiPVideoTile participant={participant} />
             </div>
@@ -313,43 +391,39 @@ export function TheaterMode({
 
           {/* Local participant PiP */}
           {localParticipant && (
-            <div className="w-32 h-24 md:w-40 md:h-28 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800">
+            <div className="w-40 h-28 rounded-xl overflow-hidden shadow-2xl border-2 border-gray-700 bg-gray-800">
               <PiPVideoTile participant={localParticipant} />
             </div>
           )}
         </div>
 
         {/* Content Player */}
-        <div className="h-full max-w-5xl mx-auto">
+        <div className="h-full p-2 md:p-4 md:pr-48">
           {!content ? (
             // No content selected - show prompt
             <div className="h-full flex flex-col items-center justify-center">
-              <div className="text-center">
-                <Library className="h-20 w-20 text-gray-600 mx-auto mb-4" />
-                <h2 className="text-xl text-white mb-2">
-                  {isController ? 'Choose something to watch together' : 'Waiting for content...'}
+              <div className="text-center px-4">
+                <Library className="h-16 w-16 md:h-20 md:w-20 text-gray-600 mx-auto mb-4" />
+                <h2 className="text-lg md:text-xl text-white mb-2">
+                  Choose something to watch together
                 </h2>
-                <p className="text-gray-400 mb-6">
-                  {isController
-                    ? 'Select a video, storybook, or YouTube link from the library'
-                    : 'The parent will select something to watch'}
+                <p className="text-gray-400 mb-6 text-sm md:text-base">
+                  Select a video or storybook from the library
                 </p>
-                {isController && (
-                  <button
-                    onClick={() => setShowLibrary(true)}
-                    className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium transition-colors"
-                  >
-                    Open Library
-                  </button>
-                )}
+                <button
+                  onClick={() => setShowLibrary(true)}
+                  className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium transition-colors"
+                >
+                  Open Library
+                </button>
               </div>
             </div>
           ) : content.type === 'video' ? (
-            // Video player
+            // Video player - both callers can control
             <TheaterVideoPlayer
               src={content.url}
               title={content.title}
-              isController={isController}
+              isController={true}
               currentTime={theaterState.currentTime}
               isPlaying={theaterState.isPlaying}
               onPlay={handlePlay}
@@ -358,7 +432,7 @@ export function TheaterMode({
               onTimeUpdate={handleTimeUpdate}
             />
           ) : content.type === 'youtube' ? (
-            // YouTube player (placeholder for now)
+            // YouTube player (placeholder)
             <div className="h-full flex items-center justify-center bg-gray-800 rounded-xl">
               <div className="text-center">
                 <p className="text-white mb-4">YouTube: {content.url}</p>
@@ -366,7 +440,7 @@ export function TheaterMode({
               </div>
             </div>
           ) : content.type === 'pdf' ? (
-            // PDF viewer (placeholder for now)
+            // PDF viewer (placeholder)
             <div className="h-full flex items-center justify-center bg-gray-800 rounded-xl">
               <div className="text-center">
                 <p className="text-white mb-4">{content.title}</p>
@@ -378,7 +452,7 @@ export function TheaterMode({
       </div>
 
       {/* Bottom Controls */}
-      <div className="px-4 py-3 bg-gray-800/90">
+      <div className="px-4 py-3 bg-gray-800/90 safe-area-bottom">
         <div className="flex items-center justify-center space-x-4">
           <button
             onClick={onToggleAudio}
