@@ -208,7 +208,9 @@ async def create_session(
     settings = await get_or_create_settings(db, session_data.family_file_id)
 
     # Check if session type is allowed
-    if not settings.is_feature_allowed(session_data.session_type.replace("_", "")):
+    # Map session types to feature keys: video_call -> video, theater -> theater, etc.
+    feature_key = session_data.session_type.split("_")[0]
+    if not settings.is_feature_allowed(feature_key):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Session type '{session_data.session_type}' is not allowed for this family"
