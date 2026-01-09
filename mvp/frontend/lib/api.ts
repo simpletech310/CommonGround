@@ -5050,9 +5050,11 @@ export interface KidComsMessageList {
 }
 
 export interface JoinSessionResponse {
-  session: KidComsSession;
-  token: string;
+  session_id: string;
   room_url: string;
+  token: string;
+  participant_name: string;
+  participant_type: string;
 }
 
 export const kidcomsAPI = {

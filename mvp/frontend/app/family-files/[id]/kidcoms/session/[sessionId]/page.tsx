@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import DailyIframe, { DailyCall } from '@daily-co/daily-js';
 import {
   PhoneOff,
   Video,
@@ -32,6 +33,12 @@ export default function SessionPage() {
   const [token, setToken] = useState<string | null>(null);
   const [roomUrl, setRoomUrl] = useState<string | null>(null);
 
+  // Daily.co call object
+  const callRef = useRef<DailyCall | null>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const [isCallJoined, setIsCallJoined] = useState(false);
+  const [isJoiningCall, setIsJoiningCall] = useState(false);
+
   // Video controls
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [isAudioOn, setIsAudioOn] = useState(true);
@@ -46,6 +53,70 @@ export default function SessionPage() {
   useEffect(() => {
     loadSession();
   }, [sessionId]);
+
+  // Initialize Daily.co call when token and roomUrl are available
+  useEffect(() => {
+    if (token && roomUrl && !callRef.current && !isJoiningCall) {
+      initializeCall();
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (callRef.current) {
+        callRef.current.destroy();
+        callRef.current = null;
+      }
+    };
+  }, [token, roomUrl]);
+
+  async function initializeCall() {
+    if (!token || !roomUrl || !videoContainerRef.current) return;
+
+    try {
+      setIsJoiningCall(true);
+
+      // Create Daily call frame
+      const callFrame = DailyIframe.createFrame(videoContainerRef.current, {
+        iframeStyle: {
+          width: '100%',
+          height: '100%',
+          border: '0',
+          borderRadius: '12px',
+        },
+        showLeaveButton: false,
+        showFullscreenButton: true,
+      });
+
+      callRef.current = callFrame;
+
+      // Set up event listeners
+      callFrame.on('joined-meeting', () => {
+        setIsCallJoined(true);
+        setIsJoiningCall(false);
+      });
+
+      callFrame.on('left-meeting', () => {
+        setIsCallJoined(false);
+      });
+
+      callFrame.on('error', (event) => {
+        console.error('Daily.co error:', event);
+        setError('Video call error occurred');
+        setIsJoiningCall(false);
+      });
+
+      // Join the call with the token
+      await callFrame.join({
+        url: roomUrl,
+        token: token,
+      });
+
+    } catch (err) {
+      console.error('Error initializing Daily.co call:', err);
+      setError('Failed to initialize video call');
+      setIsJoiningCall(false);
+    }
+  }
 
   async function loadSession() {
     try {
@@ -76,6 +147,14 @@ export default function SessionPage() {
 
   async function handleEndCall() {
     try {
+      // Leave Daily.co call first
+      if (callRef.current) {
+        await callRef.current.leave();
+        callRef.current.destroy();
+        callRef.current = null;
+      }
+
+      // End the session on the backend
       await kidcomsAPI.endSession(sessionId);
       router.push(`/family-files/${familyFileId}/kidcoms`);
     } catch (err) {
@@ -98,15 +177,21 @@ export default function SessionPage() {
     }
   }
 
-  const toggleVideo = useCallback(() => {
-    setIsVideoOn((prev) => !prev);
-    // TODO: Toggle Daily.co video
-  }, []);
+  const toggleVideo = useCallback(async () => {
+    if (callRef.current) {
+      const newState = !isVideoOn;
+      await callRef.current.setLocalVideo(newState);
+      setIsVideoOn(newState);
+    }
+  }, [isVideoOn]);
 
-  const toggleAudio = useCallback(() => {
-    setIsAudioOn((prev) => !prev);
-    // TODO: Toggle Daily.co audio
-  }, []);
+  const toggleAudio = useCallback(async () => {
+    if (callRef.current) {
+      const newState = !isAudioOn;
+      await callRef.current.setLocalAudio(newState);
+      setIsAudioOn(newState);
+    }
+  }, [isAudioOn]);
 
   if (isLoading) {
     return (
@@ -152,13 +237,13 @@ export default function SessionPage() {
             <div>
               <h1 className="text-white font-semibold">{session.title || 'Video Call'}</h1>
               <p className="text-sm text-gray-400">
-                {session.status === 'active' ? 'In Progress' : session.status}
+                {isCallJoined ? 'Connected' : isJoiningCall ? 'Connecting...' : session.status}
               </p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
             <span className={`px-2 py-1 rounded text-xs ${
-              session.status === 'active'
+              isCallJoined
                 ? 'bg-green-500/20 text-green-400'
                 : 'bg-yellow-500/20 text-yellow-400'
             }`}>
@@ -170,17 +255,18 @@ export default function SessionPage() {
         {/* Video Grid */}
         <div className="flex-1 p-4">
           {token && roomUrl ? (
-            // Daily.co video container will go here
-            <div className="h-full bg-gray-800 rounded-xl flex items-center justify-center">
-              <div className="text-center">
-                <Video className="h-16 w-16 text-gray-600 mx-auto mb-4" />
-                <p className="text-gray-400 mb-2">Video call ready</p>
-                <p className="text-sm text-gray-500">Room: {session.daily_room_name}</p>
-                <p className="text-xs text-gray-600 mt-2 max-w-md">
-                  Daily.co integration will render the video call here.
-                  Token and room URL are available.
-                </p>
-              </div>
+            <div
+              ref={videoContainerRef}
+              className="h-full bg-gray-800 rounded-xl overflow-hidden"
+            >
+              {isJoiningCall && !isCallJoined && (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-center">
+                    <Loader2 className="h-12 w-12 animate-spin text-purple-500 mx-auto mb-4" />
+                    <p className="text-gray-400">Joining video call...</p>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="h-full bg-gray-800 rounded-xl flex items-center justify-center">
@@ -198,11 +284,12 @@ export default function SessionPage() {
             {/* Audio Toggle */}
             <button
               onClick={toggleAudio}
+              disabled={!isCallJoined}
               className={`p-4 rounded-full transition-colors ${
                 isAudioOn
                   ? 'bg-gray-700 hover:bg-gray-600 text-white'
                   : 'bg-red-600 hover:bg-red-700 text-white'
-              }`}
+              } ${!isCallJoined ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isAudioOn ? <Mic className="h-6 w-6" /> : <MicOff className="h-6 w-6" />}
             </button>
@@ -210,11 +297,12 @@ export default function SessionPage() {
             {/* Video Toggle */}
             <button
               onClick={toggleVideo}
+              disabled={!isCallJoined}
               className={`p-4 rounded-full transition-colors ${
                 isVideoOn
                   ? 'bg-gray-700 hover:bg-gray-600 text-white'
                   : 'bg-red-600 hover:bg-red-700 text-white'
-              }`}
+              } ${!isCallJoined ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isVideoOn ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
             </button>

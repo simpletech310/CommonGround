@@ -223,8 +223,8 @@ class KidComsJoinRequest(BaseModel):
 class KidComsJoinResponse(BaseModel):
     """Response when joining a session (includes token)."""
     session_id: str
-    daily_room_url: str
-    daily_token: str  # Participant-specific token
+    room_url: str  # Daily.co room URL
+    token: str  # Daily.co participant token
     participant_name: str
     participant_type: str
 

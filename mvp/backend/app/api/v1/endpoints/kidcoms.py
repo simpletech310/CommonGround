@@ -14,6 +14,7 @@ import secrets
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.services.daily_video import daily_service
 from app.models.user import User
 from app.models.family_file import FamilyFile
 from app.models.child import Child
@@ -225,8 +226,17 @@ async def create_session(
 
     # Generate Daily.co room
     room_name = generate_room_name()
-    # TODO: Call Daily.co API to create room
-    room_url = f"https://commonground.daily.co/{room_name}"
+
+    # Create room via Daily.co API
+    room_data = await daily_service.create_room(
+        room_name=room_name,
+        privacy="private",
+        exp_minutes=settings.max_session_duration_minutes + 30,  # Add buffer
+        max_participants=settings.max_participants_per_session,
+        enable_chat=settings.allowed_features.get("chat", True),
+        enable_recording=settings.record_sessions,
+    )
+    room_url = room_data.get("url", f"https://{daily_service.domain}/{room_name}")
 
     # Create session
     session = KidComsSession(
@@ -416,14 +426,21 @@ async def join_session(
 
     await db.commit()
 
-    # TODO: Generate actual Daily.co token via API
-    mock_token = secrets.token_urlsafe(64)
+    # Generate Daily.co meeting token
+    participant_name = f"{current_user.first_name} {current_user.last_name}"
+    token = await daily_service.create_meeting_token(
+        room_name=session.daily_room_name,
+        user_name=participant_name,
+        user_id=str(current_user.id),
+        is_owner=True,  # Parents are owners
+        exp_minutes=120,
+    )
 
     return KidComsJoinResponse(
         session_id=session.id,
-        daily_room_url=session.daily_room_url,
-        daily_token=mock_token,
-        participant_name=f"{current_user.first_name} {current_user.last_name}",
+        room_url=session.daily_room_url,
+        token=token,
+        participant_name=participant_name,
         participant_type=ParticipantType.PARENT.value,
     )
 
@@ -464,7 +481,8 @@ async def end_session(
     if end_data and end_data.notes:
         session.notes = end_data.notes
 
-    # TODO: Call Daily.co API to close room
+    # Delete Daily.co room
+    await daily_service.delete_room(session.daily_room_name)
 
     await db.commit()
     await db.refresh(session)
