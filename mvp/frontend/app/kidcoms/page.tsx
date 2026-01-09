@@ -33,6 +33,14 @@ interface Child {
   photo_url?: string;
 }
 
+interface FamilyFile {
+  id: string;
+  title: string;
+  family_file_number: string;
+  status: string;
+  children?: Child[];
+}
+
 function KidComsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -40,6 +48,7 @@ function KidComsContent() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [familyFiles, setFamilyFiles] = useState<FamilyFile[]>([]);
   const [children, setChildren] = useState<Child[]>([]);
   const [selectedChild, setSelectedChild] = useState<Child | null>(null);
   const [contacts, setContacts] = useState<CircleContact[]>([]);
@@ -47,14 +56,32 @@ function KidComsContent() {
   const [settings, setSettings] = useState<KidComsSettings | null>(null);
   const [isStartingSession, setIsStartingSession] = useState(false);
 
-  // Load data when family file is selected
+  // Load family files if none selected, otherwise load family file data
   useEffect(() => {
     if (familyFileId) {
       loadData();
     } else {
-      setIsLoading(false);
+      loadFamilyFiles();
     }
   }, [familyFileId]);
+
+  async function loadFamilyFiles() {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await familyFilesAPI.list();
+      setFamilyFiles(response.items || []);
+    } catch (err) {
+      console.error('Error loading family files:', err);
+      setError('Failed to load family files');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function selectFamilyFile(id: string) {
+    router.push(`/kidcoms?case=${id}`);
+  }
 
   // Load child-specific data when child is selected
   useEffect(() => {
@@ -159,18 +186,83 @@ function KidComsContent() {
 
   if (!familyFileId) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center p-8">
-          <Users className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-600 mb-2">Select a Family File</h2>
-          <p className="text-gray-500 mb-4">Choose a family file to access KidComs features</p>
-          <button
-            onClick={() => router.push('/family-files')}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-          >
-            Go to Family Files
-          </button>
-        </div>
+      <div className="min-h-screen bg-gradient-to-b from-purple-50 to-white">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b border-purple-100">
+          <div className="max-w-4xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Video className="h-6 w-6 text-purple-600" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">KidComs</h1>
+                <p className="text-sm text-gray-500">Safe video calls with your circle</p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+              {error}
+            </div>
+          )}
+
+          <div className="text-center mb-8">
+            <Users className="h-16 w-16 text-purple-300 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-gray-700 mb-2">Select a Family File</h2>
+            <p className="text-gray-500">Choose a family file to access KidComs features</p>
+          </div>
+
+          {isLoading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+            </div>
+          ) : familyFiles.length === 0 ? (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+              <p className="text-gray-500 mb-4">You don&apos;t have any family files yet.</p>
+              <button
+                onClick={() => router.push('/family-files/new')}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              >
+                Create Family File
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {familyFiles.map((ff) => (
+                <button
+                  key={ff.id}
+                  onClick={() => selectFamilyFile(ff.id)}
+                  className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-left hover:border-purple-300 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-1">{ff.title}</h3>
+                      <p className="text-sm text-gray-500">{ff.family_file_number}</p>
+                    </div>
+                    <span className={`px-2 py-1 text-xs rounded-full ${
+                      ff.status === 'active'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}>
+                      {ff.status}
+                    </span>
+                  </div>
+                  {ff.children && ff.children.length > 0 && (
+                    <div className="mt-4 flex items-center space-x-2">
+                      <Users className="h-4 w-4 text-gray-400" />
+                      <span className="text-sm text-gray-600">
+                        {ff.children.length} {ff.children.length === 1 ? 'child' : 'children'}
+                      </span>
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </main>
       </div>
     );
   }
