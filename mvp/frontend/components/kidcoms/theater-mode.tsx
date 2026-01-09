@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { TheaterVideoPlayer } from './theater-video-player';
 import { TheaterPdfViewer } from './theater-pdf-viewer';
+import { TheaterYoutubePlayer, extractYoutubeId } from './theater-youtube-player';
 import { ContentLibrary } from './content-library';
 import {
   TheaterSyncMessage,
@@ -470,12 +471,18 @@ export function TheaterMode({
               />
             </div>
           ) : content.type === 'youtube' ? (
-            // YouTube player (placeholder)
-            <div className="flex-1 min-h-0 flex items-center justify-center bg-gray-800 rounded-xl">
-              <div className="text-center">
-                <p className="text-white mb-4">YouTube: {content.url}</p>
-                <p className="text-gray-400">YouTube player coming soon</p>
-              </div>
+            // YouTube player - synced between callers
+            <div className="flex-1 min-h-0">
+              <TheaterYoutubePlayer
+                videoId={extractYoutubeId(content.url) || content.url}
+                title={content.title}
+                currentTime={theaterState.currentTime}
+                isPlaying={theaterState.isPlaying}
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onSeek={handleSeek}
+                onTimeUpdate={handleTimeUpdate}
+              />
             </div>
           ) : content.type === 'pdf' ? (
             // PDF storybook viewer - synced page navigation
