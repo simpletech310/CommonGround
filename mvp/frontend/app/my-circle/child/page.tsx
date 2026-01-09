@@ -96,6 +96,11 @@ function ChildLoginContent() {
         familyFileId: response.family_file_id,
       }));
 
+      // Store contacts from login response
+      if (response.contacts && response.contacts.length > 0) {
+        localStorage.setItem('child_contacts', JSON.stringify(response.contacts));
+      }
+
       // Redirect to child dashboard
       router.push('/my-circle/child/dashboard');
     } catch (err: unknown) {
