@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     # Mapbox (for geocoding in Silent Handoff)
     MAPBOX_API_KEY: str = "pk.eyJ1IjoidGVlamF5MzEwIiwiYSI6ImNtano1aGIzeTdidTYzZHB5ZWtkYTZoOHEifQ.ZIGoggSuBeAEIzeHaTk6tA"
 
+    # Daily.co (for KidComs video calls)
+    DAILY_API_KEY: str = "de7d1077f85d7fafece0cbb8502722ff66418ce8b366241d40d14239c42e12eb"
+    DAILY_DOMAIN: str = "commonground.daily.co"
+
     # File Upload
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB
 

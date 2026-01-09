@@ -4770,5 +4770,424 @@ export const activitiesAPI = {
   },
 };
 
+// =========================================================================
+// Circle API - Approved Contacts for KidComs
+// =========================================================================
+
+export interface CircleContact {
+  id: string;
+  family_file_id: string;
+  child_id?: string;
+  contact_name: string;
+  contact_email?: string;
+  contact_phone?: string;
+  relationship_type: string;
+  photo_url?: string;
+  notes?: string;
+  added_by: string;
+  approved_by_parent_a_at?: string;
+  approved_by_parent_b_at?: string;
+  is_fully_approved: boolean;
+  is_partially_approved: boolean;
+  can_communicate: boolean;
+  is_active: boolean;
+  is_verified: boolean;
+  verified_at?: string;
+  availability_override?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CircleContactCreate {
+  family_file_id: string;
+  child_id?: string;
+  contact_name: string;
+  contact_email?: string;
+  contact_phone?: string;
+  relationship_type: string;
+  photo_url?: string;
+  notes?: string;
+  availability_override?: Record<string, unknown>;
+}
+
+export interface CircleContactUpdate {
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  relationship_type?: string;
+  photo_url?: string;
+  notes?: string;
+  is_active?: boolean;
+  availability_override?: Record<string, unknown>;
+}
+
+export interface CircleContactList {
+  items: CircleContact[];
+  total: number;
+  fully_approved_count: number;
+  pending_approval_count: number;
+}
+
+export interface RelationshipChoice {
+  value: string;
+  label: string;
+}
+
+export const circleAPI = {
+  /**
+   * Create a new circle contact
+   */
+  async create(data: CircleContactCreate): Promise<CircleContact> {
+    return fetchAPI<CircleContact>('/circle/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * List circle contacts for a family file
+   */
+  async list(
+    familyFileId: string,
+    options?: { childId?: string; includeInactive?: boolean }
+  ): Promise<CircleContactList> {
+    const params = new URLSearchParams();
+    if (options?.childId) params.append('child_id', options.childId);
+    if (options?.includeInactive) params.append('include_inactive', 'true');
+    const queryString = params.toString();
+    return fetchAPI<CircleContactList>(
+      `/circle/family/${familyFileId}${queryString ? `?${queryString}` : ''}`
+    );
+  },
+
+  /**
+   * Get a circle contact by ID
+   */
+  async get(contactId: string): Promise<CircleContact> {
+    return fetchAPI<CircleContact>(`/circle/${contactId}`);
+  },
+
+  /**
+   * Update a circle contact
+   */
+  async update(contactId: string, data: CircleContactUpdate): Promise<CircleContact> {
+    return fetchAPI<CircleContact>(`/circle/${contactId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Delete (deactivate) a circle contact
+   */
+  async delete(contactId: string): Promise<void> {
+    await fetchAPI(`/circle/${contactId}`, { method: 'DELETE' });
+  },
+
+  /**
+   * Approve or revoke approval for a circle contact
+   */
+  async approve(contactId: string, approved: boolean): Promise<CircleContact> {
+    return fetchAPI<CircleContact>(`/circle/${contactId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ approved }),
+    });
+  },
+
+  /**
+   * Send verification invite to a circle contact
+   */
+  async sendInvite(
+    contactId: string,
+    options: { sendEmail?: boolean; sendSms?: boolean }
+  ): Promise<{ success: boolean; message: string; email_sent: boolean; sms_sent: boolean }> {
+    return fetchAPI(`/circle/${contactId}/invite`, {
+      method: 'POST',
+      body: JSON.stringify({
+        send_email: options.sendEmail ?? true,
+        send_sms: options.sendSms ?? false,
+      }),
+    });
+  },
+
+  /**
+   * Get relationship type choices
+   */
+  async getRelationshipChoices(): Promise<RelationshipChoice[]> {
+    return fetchAPI<RelationshipChoice[]>('/circle/relationships/choices');
+  },
+};
+
+// =========================================================================
+// KidComs API - Video Calls, Sessions, Chat
+// =========================================================================
+
+export interface KidComsSettings {
+  id: string;
+  family_file_id: string;
+  circle_approval_mode: 'both_parents' | 'either_parent';
+  availability_schedule?: Record<string, unknown>;
+  enforce_availability: boolean;
+  require_parent_notification: boolean;
+  notify_on_session_start: boolean;
+  notify_on_session_end: boolean;
+  notify_on_aria_flag: boolean;
+  allowed_features: {
+    video: boolean;
+    chat: boolean;
+    theater: boolean;
+    arcade: boolean;
+    whiteboard: boolean;
+  };
+  max_session_duration_minutes: number;
+  max_daily_sessions: number;
+  max_participants_per_session: number;
+  require_parent_in_call: boolean;
+  allow_child_to_initiate: boolean;
+  record_sessions: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KidComsSettingsUpdate {
+  circle_approval_mode?: 'both_parents' | 'either_parent';
+  availability_schedule?: Record<string, unknown>;
+  enforce_availability?: boolean;
+  require_parent_notification?: boolean;
+  notify_on_session_start?: boolean;
+  notify_on_session_end?: boolean;
+  notify_on_aria_flag?: boolean;
+  allowed_features?: {
+    video?: boolean;
+    chat?: boolean;
+    theater?: boolean;
+    arcade?: boolean;
+    whiteboard?: boolean;
+  };
+  max_session_duration_minutes?: number;
+  max_daily_sessions?: number;
+  max_participants_per_session?: number;
+  require_parent_in_call?: boolean;
+  allow_child_to_initiate?: boolean;
+  record_sessions?: boolean;
+}
+
+export type SessionType = 'video_call' | 'theater' | 'arcade' | 'whiteboard' | 'mixed';
+export type SessionStatus = 'waiting' | 'active' | 'completed' | 'cancelled';
+
+export interface SessionParticipant {
+  id: string;
+  participant_type: 'child' | 'parent' | 'circle_contact';
+  name: string;
+  photo_url?: string;
+  joined_at?: string;
+  left_at?: string;
+}
+
+export interface KidComsSession {
+  id: string;
+  family_file_id: string;
+  child_id: string;
+  child_name?: string;
+  session_type: SessionType;
+  title?: string;
+  status: SessionStatus;
+  daily_room_name: string;
+  daily_room_url: string;
+  daily_room_token?: string;
+  initiated_by_id: string;
+  initiated_by_type: string;
+  participants: SessionParticipant[];
+  scheduled_for?: string;
+  started_at?: string;
+  ended_at?: string;
+  duration_seconds?: number;
+  features_used: string[];
+  total_messages: number;
+  flagged_messages: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KidComsSessionCreate {
+  family_file_id: string;
+  child_id: string;
+  session_type?: SessionType;
+  title?: string;
+  scheduled_for?: string;
+  invited_contact_ids?: string[];
+}
+
+export interface KidComsMessage {
+  id: string;
+  session_id: string;
+  sender_id: string;
+  sender_type: string;
+  sender_name: string;
+  content: string;
+  original_content?: string;
+  aria_analyzed: boolean;
+  aria_flagged: boolean;
+  aria_category?: string;
+  aria_reason?: string;
+  aria_score?: number;
+  is_delivered: boolean;
+  is_hidden: boolean;
+  sent_at: string;
+}
+
+export interface KidComsSessionList {
+  items: KidComsSession[];
+  total: number;
+  has_more: boolean;
+}
+
+export interface KidComsMessageList {
+  items: KidComsMessage[];
+  total: number;
+  has_more: boolean;
+}
+
+export interface JoinSessionResponse {
+  session: KidComsSession;
+  token: string;
+  room_url: string;
+}
+
+export const kidcomsAPI = {
+  // Settings
+  /**
+   * Get KidComs settings for a family file
+   */
+  async getSettings(familyFileId: string): Promise<KidComsSettings> {
+    return fetchAPI<KidComsSettings>(`/kidcoms/settings/${familyFileId}`);
+  },
+
+  /**
+   * Update KidComs settings
+   */
+  async updateSettings(familyFileId: string, data: KidComsSettingsUpdate): Promise<KidComsSettings> {
+    return fetchAPI<KidComsSettings>(`/kidcoms/settings/${familyFileId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Sessions
+  /**
+   * Create a new KidComs session
+   */
+  async createSession(data: KidComsSessionCreate): Promise<KidComsSession> {
+    return fetchAPI<KidComsSession>('/kidcoms/sessions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * List sessions for a family file
+   */
+  async listSessions(
+    familyFileId: string,
+    options?: { childId?: string; status?: SessionStatus; limit?: number; offset?: number }
+  ): Promise<KidComsSessionList> {
+    const params = new URLSearchParams();
+    params.append('family_file_id', familyFileId);
+    if (options?.childId) params.append('child_id', options.childId);
+    if (options?.status) params.append('status', options.status);
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+    return fetchAPI<KidComsSessionList>(`/kidcoms/sessions?${params.toString()}`);
+  },
+
+  /**
+   * Get a session by ID
+   */
+  async getSession(sessionId: string): Promise<KidComsSession> {
+    return fetchAPI<KidComsSession>(`/kidcoms/sessions/${sessionId}`);
+  },
+
+  /**
+   * Join an existing session
+   */
+  async joinSession(sessionId: string): Promise<JoinSessionResponse> {
+    return fetchAPI<JoinSessionResponse>(`/kidcoms/sessions/${sessionId}/join`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * End a session
+   */
+  async endSession(sessionId: string, notes?: string): Promise<KidComsSession> {
+    return fetchAPI<KidComsSession>(`/kidcoms/sessions/${sessionId}/end`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    });
+  },
+
+  /**
+   * Cancel a scheduled session
+   */
+  async cancelSession(sessionId: string, reason?: string): Promise<KidComsSession> {
+    return fetchAPI<KidComsSession>(`/kidcoms/sessions/${sessionId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  // Messages
+  /**
+   * Get messages for a session
+   */
+  async getMessages(
+    sessionId: string,
+    options?: { limit?: number; before?: string }
+  ): Promise<KidComsMessageList> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.before) params.append('before', options.before);
+    const queryString = params.toString();
+    return fetchAPI<KidComsMessageList>(
+      `/kidcoms/sessions/${sessionId}/messages${queryString ? `?${queryString}` : ''}`
+    );
+  },
+
+  /**
+   * Send a message in a session
+   */
+  async sendMessage(sessionId: string, content: string): Promise<KidComsMessage> {
+    return fetchAPI<KidComsMessage>(`/kidcoms/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  },
+
+  // Invites
+  /**
+   * Invite a circle contact to a session
+   */
+  async inviteContact(
+    sessionId: string,
+    circleContactId: string
+  ): Promise<{ success: boolean; invite_url: string }> {
+    return fetchAPI(`/kidcoms/sessions/${sessionId}/invite`, {
+      method: 'POST',
+      body: JSON.stringify({ circle_contact_id: circleContactId }),
+    });
+  },
+
+  // Daily.co tokens
+  /**
+   * Get a meeting token for a participant
+   */
+  async getMeetingToken(sessionId: string): Promise<{ token: string; room_url: string }> {
+    return fetchAPI(`/kidcoms/sessions/${sessionId}/token`, {
+      method: 'POST',
+    });
+  },
+};
+
 // Export commonly used functions
 export { getAuthToken, clearAuthTokens };

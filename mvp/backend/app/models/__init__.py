@@ -128,6 +128,20 @@ from app.models.intake import (
     generate_session_number,
     generate_access_token,
 )
+from app.models.circle import (
+    CircleContact,
+    RelationshipType,
+    ApprovalMode,
+)
+from app.models.kidcoms import (
+    KidComsSettings,
+    KidComsSession,
+    KidComsMessage,
+    KidComsSessionInvite,
+    SessionType,
+    SessionStatus,
+    ParticipantType,
+)
 
 __all__ = [
     "Base",
@@ -256,4 +270,16 @@ __all__ = [
     "IntakeQuestionType",
     "generate_session_number",
     "generate_access_token",
+    # Circle (KidComs contacts)
+    "CircleContact",
+    "RelationshipType",
+    "ApprovalMode",
+    # KidComs (child communication)
+    "KidComsSettings",
+    "KidComsSession",
+    "KidComsMessage",
+    "KidComsSessionInvite",
+    "SessionType",
+    "SessionStatus",
+    "ParticipantType",
 ]

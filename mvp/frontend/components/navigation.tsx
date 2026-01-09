@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Calendar,
   Wallet,
+  Video,
   Menu,
   X,
   Settings,
@@ -37,6 +38,7 @@ const navItems: NavItem[] = [
   { name: 'Chat', path: '/messages', icon: MessageSquare },
   { name: 'Calendar', path: '/schedule', icon: Calendar },
   { name: 'Wallet', path: '/payments', icon: Wallet },
+  { name: 'KidComs', path: '/kidcoms', icon: Video },
 ];
 
 // Logo component

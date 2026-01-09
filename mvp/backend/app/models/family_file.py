@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from app.models.my_time_collection import MyTimeCollection
     from app.models.clearfund import Obligation
     from app.models.activity import Activity
+    from app.models.circle import CircleContact
+    from app.models.kidcoms import KidComsSettings, KidComsSession
 
 
 class FamilyFileStatus(str, Enum):
@@ -188,6 +190,21 @@ class FamilyFile(Base, UUIDMixin, TimestampMixin):
     # Legacy Cases (for migration from old Case model)
     cases: Mapped[list["Case"]] = relationship(
         "Case", backref="family_file"
+    )
+
+    # KidComs - Circle contacts (approved people children can communicate with)
+    circle_contacts: Mapped[list["CircleContact"]] = relationship(
+        "CircleContact", back_populates="family_file", cascade="all, delete-orphan"
+    )
+
+    # KidComs - Settings (per-family configuration)
+    kidcoms_settings: Mapped[Optional["KidComsSettings"]] = relationship(
+        "KidComsSettings", back_populates="family_file", uselist=False
+    )
+
+    # KidComs - Sessions (video calls, theater, arcade, etc.)
+    kidcoms_sessions: Mapped[list["KidComsSession"]] = relationship(
+        "KidComsSession", back_populates="family_file", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
