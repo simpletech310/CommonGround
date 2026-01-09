@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 import Link from 'next/link';
-import { Calendar, Clock, ArrowRight, User } from 'lucide-react';
+import { Calendar, Clock, ArrowRight } from 'lucide-react';
+import { NewsletterForm } from '@/components/marketing/newsletter-form';
 
 export const metadata: Metadata = {
   title: 'Blog | CommonGround',
@@ -255,19 +256,7 @@ export default function BlogPage() {
               Join thousands of parents receiving weekly advice on communication,
               scheduling, and building a better co-parenting relationship.
             </p>
-            <form className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto" onSubmit={(e) => e.preventDefault()}>
-              <input
-                type="email"
-                placeholder="Enter your email"
-                className="flex-1 px-4 py-3 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-cg-sage focus:border-transparent"
-              />
-              <button
-                type="submit"
-                className="bg-cg-sage text-white font-medium px-6 py-3 rounded-lg transition-all duration-200 hover:bg-cg-sage-light hover:shadow-lg whitespace-nowrap"
-              >
-                Subscribe
-              </button>
-            </form>
+            <NewsletterForm />
             <p className="text-xs text-muted-foreground mt-4">
               No spam. Unsubscribe anytime.
             </p>
