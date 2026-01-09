@@ -124,6 +124,27 @@ export default function KidComsPage() {
     }
   }
 
+  async function startVoiceCall(contactId?: string) {
+    if (!selectedChild || !familyFileId) return;
+
+    try {
+      setIsStartingSession(true);
+      const session = await kidcomsAPI.createSession({
+        family_file_id: familyFileId,
+        child_id: selectedChild.id,
+        session_type: 'voice_call',
+        invited_contact_ids: contactId ? [contactId] : undefined,
+      });
+
+      router.push(`/family-files/${familyFileId}/kidcoms/session/${session.id}?mode=voice`);
+    } catch (err) {
+      console.error('Error starting session:', err);
+      setError('Failed to start voice call');
+    } finally {
+      setIsStartingSession(false);
+    }
+  }
+
   function getSessionStatusIcon(status: string) {
     switch (status) {
       case 'active':
@@ -232,7 +253,7 @@ export default function KidComsPage() {
             {/* Quick Actions */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
               <h3 className="text-sm font-medium text-gray-500 mb-3">Quick Actions</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <button
                   onClick={() => startVideoCall()}
                   disabled={!selectedChild || isStartingSession}
@@ -246,25 +267,23 @@ export default function KidComsPage() {
                   <span className="mt-2 text-sm font-medium text-purple-700">Video Call</span>
                 </button>
                 <button
+                  onClick={() => startVoiceCall()}
+                  disabled={!selectedChild || isStartingSession}
+                  className="flex flex-col items-center p-4 bg-green-50 hover:bg-green-100 rounded-xl transition-colors disabled:opacity-50"
+                >
+                  {isStartingSession ? (
+                    <Loader2 className="h-8 w-8 text-green-600 animate-spin" />
+                  ) : (
+                    <Phone className="h-8 w-8 text-green-600" />
+                  )}
+                  <span className="mt-2 text-sm font-medium text-green-700">Voice Call</span>
+                </button>
+                <button
                   disabled
                   className="flex flex-col items-center p-4 bg-gray-50 rounded-xl opacity-50 cursor-not-allowed"
                 >
                   <MessageCircle className="h-8 w-8 text-gray-400" />
                   <span className="mt-2 text-sm font-medium text-gray-500">Chat</span>
-                </button>
-                <button
-                  disabled
-                  className="flex flex-col items-center p-4 bg-gray-50 rounded-xl opacity-50 cursor-not-allowed"
-                >
-                  <Film className="h-8 w-8 text-gray-400" />
-                  <span className="mt-2 text-sm font-medium text-gray-500">Theater</span>
-                </button>
-                <button
-                  disabled
-                  className="flex flex-col items-center p-4 bg-gray-50 rounded-xl opacity-50 cursor-not-allowed"
-                >
-                  <Gamepad2 className="h-8 w-8 text-gray-400" />
-                  <span className="mt-2 text-sm font-medium text-gray-500">Arcade</span>
                 </button>
               </div>
             </div>
