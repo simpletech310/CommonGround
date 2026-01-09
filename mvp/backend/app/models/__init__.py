@@ -138,9 +138,15 @@ from app.models.kidcoms import (
     KidComsSession,
     KidComsMessage,
     KidComsSessionInvite,
+    KidComsRoom,
+    CircleUser,
+    ChildUser,
+    CirclePermission,
+    KidComsCommunicationLog,
     SessionType,
     SessionStatus,
     ParticipantType,
+    RoomType,
 )
 
 __all__ = [
@@ -279,7 +285,13 @@ __all__ = [
     "KidComsSession",
     "KidComsMessage",
     "KidComsSessionInvite",
+    "KidComsRoom",
+    "CircleUser",
+    "ChildUser",
+    "CirclePermission",
+    "KidComsCommunicationLog",
     "SessionType",
     "SessionStatus",
     "ParticipantType",
+    "RoomType",
 ]

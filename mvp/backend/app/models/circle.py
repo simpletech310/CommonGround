@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional, List
 from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, Index, JSON
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, Index, JSON, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -78,10 +78,16 @@ class CircleContact(Base, UUIDMixin, TimestampMixin):
     # Availability (optional per-contact schedule)
     availability_override: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    # Room assignment (for My Circle communication)
+    room_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 3-10
+    invite_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     # Relationships
     family_file = relationship("FamilyFile", back_populates="circle_contacts")
     child = relationship("Child", back_populates="circle_contacts")
     added_by_user = relationship("User", foreign_keys=[added_by])
+    user_account = relationship("CircleUser", back_populates="circle_contact", uselist=False)
+    permissions = relationship("CirclePermission", back_populates="circle_contact")
 
     # Indexes
     __table_args__ = (

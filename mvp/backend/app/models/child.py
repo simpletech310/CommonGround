@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from app.models.family_file import FamilyFile
     from app.models.user import User
     from app.models.circle import CircleContact
-    from app.models.kidcoms import KidComsSession
+    from app.models.kidcoms import KidComsSession, ChildUser, CirclePermission
 
 
 class ChildProfileStatus(str, Enum):
@@ -178,6 +178,16 @@ class Child(Base, UUIDMixin, TimestampMixin):
     # KidComs - Sessions (video calls, theater, arcade, etc.)
     kidcoms_sessions: Mapped[list["KidComsSession"]] = relationship(
         "KidComsSession", back_populates="child"
+    )
+
+    # My Circle - Child login account
+    user_account: Mapped[Optional["ChildUser"]] = relationship(
+        "ChildUser", back_populates="child", uselist=False
+    )
+
+    # My Circle - Permissions for contacts to communicate with this child
+    circle_permissions: Mapped[list["CirclePermission"]] = relationship(
+        "CirclePermission", back_populates="child"
     )
 
     def __repr__(self) -> str:

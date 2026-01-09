@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from app.models.clearfund import Obligation
     from app.models.activity import Activity
     from app.models.circle import CircleContact
-    from app.models.kidcoms import KidComsSettings, KidComsSession
+    from app.models.kidcoms import KidComsSettings, KidComsSession, KidComsRoom, ChildUser
 
 
 class FamilyFileStatus(str, Enum):
@@ -205,6 +205,16 @@ class FamilyFile(Base, UUIDMixin, TimestampMixin):
     # KidComs - Sessions (video calls, theater, arcade, etc.)
     kidcoms_sessions: Mapped[list["KidComsSession"]] = relationship(
         "KidComsSession", back_populates="family_file", cascade="all, delete-orphan"
+    )
+
+    # My Circle - Communication rooms (10 per family)
+    kidcoms_rooms: Mapped[list["KidComsRoom"]] = relationship(
+        "KidComsRoom", back_populates="family_file", cascade="all, delete-orphan"
+    )
+
+    # My Circle - Child login accounts
+    child_users: Mapped[list["ChildUser"]] = relationship(
+        "ChildUser", back_populates="family_file", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
