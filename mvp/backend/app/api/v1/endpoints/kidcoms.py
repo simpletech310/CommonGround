@@ -5,12 +5,15 @@ KidComs enables children to have video calls, chat, watch movies together,
 play games, and use collaborative whiteboards with their approved circle.
 """
 
+import logging
 from typing import List, Optional
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 import secrets
+
+logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -228,15 +231,22 @@ async def create_session(
     room_name = generate_room_name()
 
     # Create room via Daily.co API
-    room_data = await daily_service.create_room(
-        room_name=room_name,
-        privacy="private",
-        exp_minutes=settings.max_session_duration_minutes + 30,  # Add buffer
-        max_participants=settings.max_participants_per_session,
-        enable_chat=settings.allowed_features.get("chat", True),
-        enable_recording=settings.record_sessions,
-    )
-    room_url = room_data.get("url", f"https://{daily_service.domain}/{room_name}")
+    try:
+        room_data = await daily_service.create_room(
+            room_name=room_name,
+            privacy="private",
+            exp_minutes=settings.max_session_duration_minutes + 30,  # Add buffer
+            max_participants=settings.max_participants_per_session,
+            enable_chat=settings.allowed_features.get("chat", True),
+            enable_recording=settings.record_sessions,
+        )
+        room_url = room_data.get("url", f"https://{daily_service.domain}/{room_name}")
+    except Exception as e:
+        logger.error(f"Failed to create Daily.co room: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to create video room. Please try again later."
+        )
 
     # Create session
     session = KidComsSession(
@@ -428,13 +438,20 @@ async def join_session(
 
     # Generate Daily.co meeting token
     participant_name = f"{current_user.first_name} {current_user.last_name}"
-    token = await daily_service.create_meeting_token(
-        room_name=session.daily_room_name,
-        user_name=participant_name,
-        user_id=str(current_user.id),
-        is_owner=True,  # Parents are owners
-        exp_minutes=120,
-    )
+    try:
+        token = await daily_service.create_meeting_token(
+            room_name=session.daily_room_name,
+            user_name=participant_name,
+            user_id=str(current_user.id),
+            is_owner=True,  # Parents are owners
+            exp_minutes=120,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create meeting token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to generate meeting token. Please try again."
+        )
 
     return KidComsJoinResponse(
         session_id=session.id,
