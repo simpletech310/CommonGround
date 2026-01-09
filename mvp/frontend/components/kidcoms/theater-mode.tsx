@@ -397,11 +397,11 @@ export function TheaterMode({
           )}
         </div>
 
-        {/* Content Player */}
-        <div className="h-full p-2 md:p-4 md:pr-48">
+        {/* Content Player - full height container */}
+        <div className="h-full flex flex-col p-2 md:p-4 md:pr-48">
           {!content ? (
             // No content selected - show prompt
-            <div className="h-full flex flex-col items-center justify-center">
+            <div className="flex-1 flex flex-col items-center justify-center">
               <div className="text-center px-4">
                 <Library className="h-16 w-16 md:h-20 md:w-20 text-gray-600 mx-auto mb-4" />
                 <h2 className="text-lg md:text-xl text-white mb-2">
@@ -419,21 +419,23 @@ export function TheaterMode({
               </div>
             </div>
           ) : content.type === 'video' ? (
-            // Video player - both callers can control
-            <TheaterVideoPlayer
-              src={content.url}
-              title={content.title}
-              isController={true}
-              currentTime={theaterState.currentTime}
-              isPlaying={theaterState.isPlaying}
-              onPlay={handlePlay}
-              onPause={handlePause}
-              onSeek={handleSeek}
-              onTimeUpdate={handleTimeUpdate}
-            />
+            // Video player - both callers can control (flex-1 ensures full height)
+            <div className="flex-1 min-h-0">
+              <TheaterVideoPlayer
+                src={content.url}
+                title={content.title}
+                isController={true}
+                currentTime={theaterState.currentTime}
+                isPlaying={theaterState.isPlaying}
+                onPlay={handlePlay}
+                onPause={handlePause}
+                onSeek={handleSeek}
+                onTimeUpdate={handleTimeUpdate}
+              />
+            </div>
           ) : content.type === 'youtube' ? (
             // YouTube player (placeholder)
-            <div className="h-full flex items-center justify-center bg-gray-800 rounded-xl">
+            <div className="flex-1 min-h-0 flex items-center justify-center bg-gray-800 rounded-xl">
               <div className="text-center">
                 <p className="text-white mb-4">YouTube: {content.url}</p>
                 <p className="text-gray-400">YouTube player coming soon</p>
@@ -441,7 +443,7 @@ export function TheaterMode({
             </div>
           ) : content.type === 'pdf' ? (
             // PDF viewer (placeholder)
-            <div className="h-full flex items-center justify-center bg-gray-800 rounded-xl">
+            <div className="flex-1 min-h-0 flex items-center justify-center bg-gray-800 rounded-xl">
               <div className="text-center">
                 <p className="text-white mb-4">{content.title}</p>
                 <p className="text-gray-400">PDF viewer coming soon</p>

@@ -181,15 +181,15 @@ export function TheaterVideoPlayer({
 
   return (
     <div
-      className="relative bg-black rounded-xl overflow-hidden group"
+      className="relative bg-black rounded-xl overflow-hidden group h-full w-full"
       onMouseMove={showControlsTemporarily}
       onMouseLeave={() => isPlaying && setShowControls(false)}
     >
-      {/* Video Element */}
+      {/* Video Element - use aspect ratio for mobile, fill for desktop */}
       <video
         ref={videoRef}
         src={src}
-        className="w-full h-full object-contain"
+        className="w-full h-full object-contain absolute inset-0"
         playsInline
         onClick={handlePlayPause}
       />
