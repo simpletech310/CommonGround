@@ -54,6 +54,30 @@ export default function SessionPage() {
     loadSession();
   }, [sessionId]);
 
+  // Poll for new messages and session updates every 3 seconds
+  useEffect(() => {
+    if (!session) return;
+
+    const pollData = async () => {
+      try {
+        // Poll messages
+        const messagesData = await kidcomsAPI.getMessages(sessionId);
+        setMessages(messagesData.items);
+
+        // Also refresh session to get latest participant list
+        const sessionData = await kidcomsAPI.getSession(sessionId);
+        setSession(sessionData);
+      } catch (err) {
+        console.error('Error polling data:', err);
+      }
+    };
+
+    // Poll every 3 seconds
+    const interval = setInterval(pollData, 3000);
+
+    return () => clearInterval(interval);
+  }, [sessionId, session?.id]);
+
   // Initialize Daily.co call when token and roomUrl are available
   useEffect(() => {
     if (token && roomUrl && !callRef.current && !isJoiningCall) {
@@ -74,6 +98,7 @@ export default function SessionPage() {
 
     try {
       setIsJoiningCall(true);
+      console.log('Initializing Daily.co call with:', { roomUrl, tokenLength: token?.length });
 
       // Create Daily call frame
       const callFrame = DailyIframe.createFrame(videoContainerRef.current, {
@@ -90,12 +115,26 @@ export default function SessionPage() {
       callRef.current = callFrame;
 
       // Set up event listeners
-      callFrame.on('joined-meeting', () => {
+      callFrame.on('joining-meeting', () => {
+        console.log('Daily.co: joining-meeting');
+      });
+
+      callFrame.on('joined-meeting', (event) => {
+        console.log('Daily.co: joined-meeting', event);
         setIsCallJoined(true);
         setIsJoiningCall(false);
       });
 
+      callFrame.on('participant-joined', (event) => {
+        console.log('Daily.co: participant-joined', event);
+      });
+
+      callFrame.on('participant-left', (event) => {
+        console.log('Daily.co: participant-left', event);
+      });
+
       callFrame.on('left-meeting', () => {
+        console.log('Daily.co: left-meeting');
         setIsCallJoined(false);
       });
 
@@ -105,11 +144,17 @@ export default function SessionPage() {
         setIsJoiningCall(false);
       });
 
+      callFrame.on('camera-error', (event) => {
+        console.error('Daily.co camera error:', event);
+      });
+
       // Join the call with the token
+      console.log('Attempting to join Daily.co room...');
       await callFrame.join({
         url: roomUrl,
         token: token,
       });
+      console.log('Daily.co join call completed');
 
     } catch (err) {
       console.error('Error initializing Daily.co call:', err);
