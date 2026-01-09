@@ -39,9 +39,7 @@ export default function SessionPage() {
   const [isCallJoined, setIsCallJoined] = useState(false);
   const [isJoiningCall, setIsJoiningCall] = useState(false);
 
-  // Video controls
-  const [isVideoOn, setIsVideoOn] = useState(true);
-  const [isAudioOn, setIsAudioOn] = useState(true);
+  // Note: Video/audio controls are handled by Daily.co's prebuilt UI
 
   // Side panel
   const [activePanel, setActivePanel] = useState<'chat' | 'participants' | null>(null);
@@ -257,22 +255,6 @@ export default function SessionPage() {
     }
   }
 
-  const toggleVideo = useCallback(async () => {
-    if (callRef.current) {
-      const newState = !isVideoOn;
-      await callRef.current.setLocalVideo(newState);
-      setIsVideoOn(newState);
-    }
-  }, [isVideoOn]);
-
-  const toggleAudio = useCallback(async () => {
-    if (callRef.current) {
-      const newState = !isAudioOn;
-      await callRef.current.setLocalAudio(newState);
-      setIsAudioOn(newState);
-    }
-  }, [isAudioOn]);
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-900">
@@ -358,47 +340,22 @@ export default function SessionPage() {
           )}
         </div>
 
-        {/* Controls Bar */}
-        <div className="bg-gray-800 px-4 py-4">
+        {/* Controls Bar - Only features not in Daily.co's UI */}
+        <div className="bg-gray-800 px-4 py-3">
           <div className="flex items-center justify-center space-x-4">
-            {/* Audio Toggle */}
-            <button
-              onClick={toggleAudio}
-              disabled={!isCallJoined}
-              className={`p-4 rounded-full transition-colors ${
-                isAudioOn
-                  ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                  : 'bg-red-600 hover:bg-red-700 text-white'
-              } ${!isCallJoined ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isAudioOn ? <Mic className="h-6 w-6" /> : <MicOff className="h-6 w-6" />}
-            </button>
-
-            {/* Video Toggle */}
-            <button
-              onClick={toggleVideo}
-              disabled={!isCallJoined}
-              className={`p-4 rounded-full transition-colors ${
-                isVideoOn
-                  ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                  : 'bg-red-600 hover:bg-red-700 text-white'
-              } ${!isCallJoined ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isVideoOn ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
-            </button>
-
-            {/* End Call */}
+            {/* End Call - backup button */}
             <button
               onClick={handleEndCall}
-              className="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white"
+              className="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white"
+              title="Leave Call"
             >
-              <PhoneOff className="h-6 w-6" />
+              <PhoneOff className="h-5 w-5" />
             </button>
 
             {/* Divider */}
             <div className="w-px h-8 bg-gray-700" />
 
-            {/* Feature Toggles */}
+            {/* Feature Toggles - Chat panel, participants, etc */}
             <button
               onClick={() => setActivePanel(activePanel === 'chat' ? null : 'chat')}
               className={`p-3 rounded-full transition-colors ${
