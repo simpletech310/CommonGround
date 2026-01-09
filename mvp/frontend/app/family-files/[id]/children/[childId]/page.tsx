@@ -330,6 +330,7 @@ function ChildProfileContent() {
   const [activeTab, setActiveTab] = useState('basic');
   const [editMode, setEditMode] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Form states
@@ -521,6 +522,7 @@ function ChildProfileContent() {
     try {
       setUploadingPhoto(true);
       setError(null);
+      setImageError(false); // Reset image error state for new upload
       const updatedChild = await childrenAPI.uploadPhoto(childId, file);
       setChild(updatedChild);
       setSuccess('Photo updated successfully!');
@@ -695,8 +697,13 @@ function ChildProfileContent() {
             {/* Photo with Upload */}
             <div className="relative group">
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-white shadow-lg ring-4 ring-white overflow-hidden flex-shrink-0">
-                {child.photo_url ? (
-                  <img src={getImageUrl(child.photo_url) || ''} alt={child.first_name} className="w-full h-full object-cover" />
+                {child.photo_url && !imageError ? (
+                  <img
+                    src={getImageUrl(child.photo_url) || ''}
+                    alt={child.first_name}
+                    className="w-full h-full object-cover"
+                    onError={() => setImageError(true)}
+                  />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-cg-sage/20 to-cg-sage/5 flex items-center justify-center">
                     <span className="text-3xl sm:text-4xl">
