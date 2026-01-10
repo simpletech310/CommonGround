@@ -628,6 +628,7 @@ async def create_child_session(
     # Validate target contact based on type
     target_user_name = None
     target_user_id = None
+    target_circle_contact_id = None
 
     if session_data.contact_type == "parent_a":
         if family_file.parent_a_id != session_data.contact_id:
@@ -668,13 +669,14 @@ async def create_child_session(
                 )
             )
         )
-        contact = contact_result.scalar_one_or_none()
-        if not contact:
+        circle_contact = contact_result.scalar_one_or_none()
+        if not circle_contact:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Circle contact not found or not active"
             )
-        target_user_name = contact.contact_name
+        target_user_name = circle_contact.contact_name
+        target_circle_contact_id = circle_contact.id
 
     # Generate Daily.co room
     room_name = generate_room_name()
@@ -701,6 +703,7 @@ async def create_child_session(
     session = KidComsSession(
         family_file_id=family_file_id,
         child_id=current_child.child_id,
+        circle_contact_id=target_circle_contact_id,  # Set if calling a circle contact
         session_type=session_data.session_type,
         title=f"Call from {child.display_name}",
         daily_room_name=room_name,
@@ -708,6 +711,7 @@ async def create_child_session(
         initiated_by_id=current_child.id,
         initiated_by_type=ParticipantType.CHILD.value,
         status=SessionStatus.WAITING.value,
+        ringing_started_at=datetime.utcnow(),  # Track when the call started ringing
     )
 
     # Add child as first participant
@@ -717,11 +721,19 @@ async def create_child_session(
         name=child.display_name
     )
 
-    # Add target as invited participant
+    # Add target as invited participant (parent or circle contact)
     if target_user_id:
+        # Parent is the target
         session.add_participant(
             participant_id=target_user_id,
             participant_type=ParticipantType.PARENT.value,
+            name=target_user_name
+        )
+    elif target_circle_contact_id:
+        # Circle contact is the target
+        session.add_participant(
+            participant_id=target_circle_contact_id,
+            participant_type=ParticipantType.CIRCLE_CONTACT.value,
             name=target_user_name
         )
 
@@ -1036,6 +1048,7 @@ async def create_circle_contact_session(
     session = KidComsSession(
         family_file_id=family_file_id,
         child_id=session_data.child_id,
+        circle_contact_id=contact.id,  # Track which circle contact is in the call
         session_type=session_data.session_type,
         title=f"Call from {contact.contact_name}",
         daily_room_name=room_name,
@@ -1043,6 +1056,7 @@ async def create_circle_contact_session(
         initiated_by_id=current_circle_user.id,
         initiated_by_type=ParticipantType.CIRCLE_CONTACT.value,
         status=SessionStatus.WAITING.value,
+        ringing_started_at=datetime.utcnow(),  # Track when the call started ringing
     )
 
     # Add circle contact as first participant
