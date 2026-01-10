@@ -5770,7 +5770,7 @@ export const myCircleAPI = {
   },
 
   /**
-   * List permissions for a family
+   * List permissions for a family (parent auth)
    */
   async listPermissions(
     familyFileId: string,
@@ -5782,6 +5782,16 @@ export const myCircleAPI = {
     const queryString = params.toString();
     return fetchAPI<CirclePermissionList>(
       `/my-circle/permissions/family/${familyFileId}${queryString ? `?${queryString}` : ''}`
+    );
+  },
+
+  /**
+   * Get my permissions as a circle user (circle auth)
+   * This endpoint is for circle contacts to see their own permissions.
+   */
+  async getMyPermissions(): Promise<CirclePermissionList> {
+    return fetchAPIWithCircleAuth<CirclePermissionList>(
+      '/my-circle/circle-users/me/permissions'
     );
   },
 

@@ -74,18 +74,19 @@ export default function CircleContactDashboardPage() {
       const user = JSON.parse(userStr) as CircleUserData;
       setUserData(user);
 
-      // Load permissions for this contact
-      await loadChildrenWithPermissions(user.familyFileId, user.contactId);
+      // Load permissions for this contact using circle auth
+      await loadChildrenWithPermissions();
     } catch (err) {
       console.error('Error loading user data:', err);
       router.push('/my-circle/contact');
     }
   }
 
-  async function loadChildrenWithPermissions(familyFileId: string, contactId: string) {
+  async function loadChildrenWithPermissions() {
     try {
       setIsLoading(true);
-      const permissionList = await myCircleAPI.listPermissions(familyFileId, { contactId });
+      // Use circle auth endpoint to get permissions for this circle user
+      const permissionList = await myCircleAPI.getMyPermissions();
 
       // Convert permissions to children with permissions
       const childrenData: ChildWithPermissions[] = permissionList.items.map((perm) => ({

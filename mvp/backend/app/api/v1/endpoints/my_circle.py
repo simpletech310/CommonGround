@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.security import get_current_user, create_access_token
+from app.core.security import get_current_user, get_current_circle_user, create_access_token
 from app.models.user import User
 from app.models.family_file import FamilyFile
 from app.models.child import Child
@@ -704,6 +704,48 @@ async def get_circle_invite_info(
         "relationship_type": contact.relationship_type if contact else None,
         "invite_expires_at": circle_user.invite_expires_at,
     }
+
+
+@router.get(
+    "/circle-users/me/permissions",
+    response_model=CirclePermissionListResponse,
+    summary="Get my permissions",
+    description="Get all permissions for the authenticated circle user."
+)
+async def get_my_circle_permissions(
+    current_circle_user: CircleUser = Depends(get_current_circle_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get permissions for the authenticated circle user.
+
+    This endpoint allows circle contacts to see which children they can
+    communicate with and what permissions they have for each child.
+    """
+    # Get the circle contact
+    contact_result = await db.execute(
+        select(CircleContact)
+        .where(CircleContact.id == current_circle_user.circle_contact_id)
+    )
+    contact = contact_result.scalar_one_or_none()
+
+    if not contact:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Circle contact not found"
+        )
+
+    # Get permissions for this contact
+    permissions = await my_circle_service.get_permissions_for_contact(
+        db, str(current_circle_user.circle_contact_id)
+    )
+
+    items = [_permission_to_response(p, p.circle_contact, p.child) for p in permissions]
+
+    return CirclePermissionListResponse(
+        items=items,
+        total=len(items),
+    )
 
 
 # ============================================================
