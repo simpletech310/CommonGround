@@ -18,7 +18,7 @@ from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from passlib.context import CryptContext
+import bcrypt
 
 from app.models import (
     FamilyFile,
@@ -33,28 +33,25 @@ from app.models import (
 )
 from app.core.config import settings
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(password: str) -> str:
-    """Hash a password."""
-    return pwd_context.hash(password)
+    """Hash a password using bcrypt."""
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
 
 
 def hash_pin(pin: str) -> str:
-    """Hash a PIN (simple hash since PINs are short)."""
-    return pwd_context.hash(pin)
+    """Hash a PIN using bcrypt."""
+    return bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_pin(plain_pin: str, hashed_pin: str) -> bool:
     """Verify a PIN against its hash."""
-    return pwd_context.verify(plain_pin, hashed_pin)
+    return bcrypt.checkpw(plain_pin.encode(), hashed_pin.encode())
 
 
 def generate_invite_token() -> str:
