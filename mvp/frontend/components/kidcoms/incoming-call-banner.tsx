@@ -74,27 +74,30 @@ export function IncomingCallBanner({
 
   return (
     <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-2 duration-300">
-      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-xl shadow-2xl p-4 max-w-sm">
-        {/* Pulsing ring effect */}
-        <div className="absolute -inset-1 bg-purple-500 rounded-xl opacity-30 animate-pulse" />
+      <div className="bg-card border border-border rounded-2xl shadow-2xl p-5 max-w-sm relative overflow-hidden">
+        {/* Subtle accent gradient */}
+        <div className="absolute inset-0 bg-gradient-to-br from-cg-sage/5 to-transparent pointer-events-none" />
 
-        <div className="relative flex items-start space-x-4">
+        {/* Pulsing ring effect */}
+        <div className="absolute -inset-1 bg-cg-sage/20 rounded-2xl opacity-50 animate-pulse" />
+
+        <div className="relative flex items-start gap-4">
           {/* Animated phone icon */}
           <div className="flex-shrink-0">
-            <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center animate-bounce">
-              <PhoneIncoming className="h-6 w-6 text-white" />
+            <div className="w-14 h-14 bg-cg-sage-subtle rounded-full flex items-center justify-center animate-bounce shadow-md">
+              <PhoneIncoming className="h-7 w-7 text-cg-sage" />
             </div>
           </div>
 
           {/* Call info */}
           <div className="flex-1 min-w-0">
-            <p className="text-white font-semibold text-lg">Incoming Video Call</p>
-            <p className="text-white/80 text-sm flex items-center mt-1">
-              <User className="h-4 w-4 mr-1" />
+            <p className="text-foreground font-semibold text-lg">Incoming Video Call</p>
+            <p className="text-muted-foreground text-sm flex items-center mt-1">
+              <User className="h-4 w-4 mr-1.5" />
               {callerName} is calling...
             </p>
             {incomingSession.title && (
-              <p className="text-white/60 text-xs mt-1 truncate">
+              <p className="text-muted-foreground/70 text-xs mt-1 truncate">
                 {incomingSession.title}
               </p>
             )}
@@ -103,24 +106,24 @@ export function IncomingCallBanner({
           {/* Dismiss button */}
           <button
             onClick={handleDismiss}
-            className="flex-shrink-0 text-white/60 hover:text-white transition-colors"
+            className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Action buttons */}
-        <div className="relative mt-4 flex space-x-3">
+        <div className="relative mt-5 flex gap-3">
           <button
             onClick={handleDismiss}
-            className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-medium transition-colors flex items-center justify-center"
+            className="flex-1 px-4 py-2.5 bg-muted hover:bg-muted/80 text-foreground rounded-xl font-medium transition-all flex items-center justify-center"
           >
             <Phone className="h-4 w-4 mr-2 rotate-[135deg]" />
             Decline
           </button>
           <button
             onClick={handleJoin}
-            className="flex-1 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors flex items-center justify-center"
+            className="flex-1 px-4 py-2.5 bg-cg-success hover:bg-cg-success/90 text-white rounded-xl font-medium transition-all flex items-center justify-center shadow-md"
           >
             <Video className="h-4 w-4 mr-2" />
             Join Call
@@ -129,7 +132,7 @@ export function IncomingCallBanner({
 
         {/* Session type indicator */}
         <div className="relative mt-3 flex items-center justify-center">
-          <span className="text-white/50 text-xs">
+          <span className="text-muted-foreground text-xs capitalize">
             {incomingSession.session_type.replace('_', ' ')} session
           </span>
         </div>

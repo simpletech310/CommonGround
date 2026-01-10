@@ -24,16 +24,16 @@ import { cn } from '@/lib/utils';
    ============================================================================= */
 
 const ROOM_COLORS = [
-  'from-rose-400 to-pink-500',
+  'from-teal-400 to-emerald-500',
+  'from-cyan-400 to-teal-500',
+  'from-emerald-400 to-green-500',
   'from-orange-400 to-amber-500',
-  'from-yellow-400 to-orange-400',
-  'from-emerald-400 to-teal-500',
-  'from-cyan-400 to-blue-500',
-  'from-blue-400 to-indigo-500',
+  'from-rose-400 to-pink-500',
+  'from-blue-400 to-cyan-500',
   'from-violet-400 to-purple-500',
-  'from-purple-400 to-pink-500',
-  'from-pink-400 to-rose-500',
-  'from-fuchsia-400 to-purple-500',
+  'from-amber-400 to-orange-500',
+  'from-lime-400 to-emerald-500',
+  'from-sky-400 to-blue-500',
 ];
 
 const RELATIONSHIP_EMOJIS: Record<string, string> = {
@@ -180,7 +180,7 @@ export default function ChildDashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-violet-400 via-purple-400 to-fuchsia-400 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-teal-400 via-emerald-400 to-cyan-400 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="relative">
             <div className="w-20 h-20 rounded-full bg-white/30 flex items-center justify-center">
@@ -195,12 +195,12 @@ export default function ChildDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-400 via-purple-400 to-fuchsia-400 pb-24">
+    <div className="min-h-screen bg-gradient-to-br from-teal-400 via-emerald-400 to-cyan-400 pb-24">
       {/* Decorative Elements */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-10 left-10 w-32 h-32 bg-white/10 rounded-full blur-3xl" />
-        <div className="absolute top-40 right-20 w-48 h-48 bg-pink-300/20 rounded-full blur-3xl" />
-        <div className="absolute bottom-40 left-20 w-40 h-40 bg-blue-300/20 rounded-full blur-3xl" />
+        <div className="absolute top-40 right-20 w-48 h-48 bg-emerald-300/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-40 left-20 w-40 h-40 bg-cyan-300/20 rounded-full blur-3xl" />
       </div>
 
       {/* Incoming Call Banner */}

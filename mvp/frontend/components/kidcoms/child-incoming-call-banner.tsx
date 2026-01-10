@@ -117,9 +117,9 @@ export function ChildIncomingCallBanner({
       <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center animate-in zoom-in-95">
         {/* Animated calling indicator */}
         <div className="relative mx-auto w-28 h-28 mb-6">
-          <div className="absolute inset-0 rounded-full bg-green-100 animate-ping opacity-75" />
-          <div className="absolute inset-0 rounded-full bg-green-200 animate-pulse" />
-          <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center shadow-lg">
+          <div className="absolute inset-0 rounded-full bg-teal-100 animate-ping opacity-75" />
+          <div className="absolute inset-0 rounded-full bg-emerald-200 animate-pulse" />
+          <div className="relative w-28 h-28 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center shadow-lg">
             <CallIcon className="h-12 w-12 text-white" />
           </div>
         </div>
@@ -158,16 +158,16 @@ export function ChildIncomingCallBanner({
           <button
             onClick={handleJoin}
             disabled={isJoining || isRejecting}
-            className="flex flex-col items-center gap-3 p-6 bg-green-100 hover:bg-green-200 rounded-2xl transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
+            className="flex flex-col items-center gap-3 p-6 bg-emerald-100 hover:bg-emerald-200 rounded-2xl transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
           >
             {isJoining ? (
-              <Loader2 className="h-10 w-10 text-green-600 animate-spin" />
+              <Loader2 className="h-10 w-10 text-emerald-600 animate-spin" />
             ) : (
-              <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center shadow-md">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center shadow-md">
                 <CallIcon className="h-8 w-8 text-white" />
               </div>
             )}
-            <span className="font-bold text-green-700 text-lg">Answer!</span>
+            <span className="font-bold text-emerald-700 text-lg">Answer!</span>
           </button>
         </div>
 
