@@ -2,16 +2,24 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { familyFilesAPI, FamilyFile, FamilyFileInvitation } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Navigation } from '@/components/navigation';
-import { PageContainer, EmptyState } from '@/components/layout';
+import { PageContainer } from '@/components/layout';
+import {
+  CGCard,
+  CGCardHeader,
+  CGCardTitle,
+  CGCardDescription,
+  CGCardContent,
+  CGButton,
+  CGBadge,
+  CGPageHeader,
+  CGEmptyState,
+  CGAvatar,
+} from '@/components/cg';
 import {
   Plus,
   FolderHeart,
@@ -23,7 +31,15 @@ import {
   FileText,
   Zap,
   Scale,
+  ChevronRight,
+  Sparkles,
+  MapPin,
 } from 'lucide-react';
+
+/* =============================================================================
+   Family Files List Page - "The Sanctuary of Truth"
+   Dashboard showing all family files with invitations
+   ============================================================================= */
 
 function FamilyFilesContent() {
   const { user } = useAuth();
@@ -73,25 +89,25 @@ function FamilyFilesContent() {
   const getStatusBadge = (status: string, isComplete: boolean) => {
     if (status === 'court_linked') {
       return (
-        <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+        <CGBadge variant="slate">
           <Scale className="h-3 w-3 mr-1" />
           Court Linked
-        </Badge>
+        </CGBadge>
       );
     }
     if (!isComplete) {
       return (
-        <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+        <CGBadge variant="amber">
           <Clock className="h-3 w-3 mr-1" />
-          Pending Co-Parent
-        </Badge>
+          Pending
+        </CGBadge>
       );
     }
     return (
-      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+      <CGBadge variant="sage">
         <CheckCircle className="h-3 w-3 mr-1" />
         Active
-      </Badge>
+      </CGBadge>
     );
   };
 
@@ -106,142 +122,203 @@ function FamilyFilesContent() {
     }
   };
 
+  // Get greeting based on time of day
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  };
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="flex flex-col items-center justify-center py-20">
+        <div className="relative">
+          <div className="w-16 h-16 rounded-full bg-cg-sage-subtle flex items-center justify-center">
+            <Sparkles className="h-8 w-8 text-cg-sage animate-pulse" />
+          </div>
+        </div>
+        <p className="mt-4 text-muted-foreground font-medium">Loading your family files...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Family Files</h1>
-          <p className="text-muted-foreground">
-            Manage your family co-parenting arrangements
+          <p className="text-sm text-muted-foreground mb-1">{getGreeting()}</p>
+          <h1 className="text-2xl font-semibold text-foreground">Family Files</h1>
+          <p className="text-muted-foreground mt-1">
+            Manage your co-parenting arrangements
           </p>
         </div>
-        <Button onClick={() => router.push('/family-files/new')}>
+        <CGButton variant="primary" onClick={() => router.push('/family-files/new')}>
           <Plus className="h-4 w-4 mr-2" />
           New Family File
-        </Button>
+        </CGButton>
       </div>
 
+      {/* Error */}
       {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
+        <CGCard variant="default" className="border-cg-error/30 bg-cg-error-subtle">
+          <CGCardContent className="py-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-cg-error" />
+              <p className="text-cg-error font-medium">{error}</p>
+            </div>
+          </CGCardContent>
+        </CGCard>
       )}
 
       {/* Pending Invitations */}
       {invitations.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Mail className="h-5 w-5 text-primary" />
-            Pending Invitations
-          </h2>
-          {invitations.map((invitation) => (
-            <Card key={invitation.id} className="border-primary/20 bg-primary/5">
-              <CardContent className="p-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <h3 className="font-medium">{invitation.title}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {invitation.family_file_number} - You're invited as {getRoleName(invitation.your_role)}
-                    </p>
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-cg-sage-subtle flex items-center justify-center">
+              <Mail className="h-4 w-4 text-cg-sage" />
+            </div>
+            <h2 className="text-lg font-semibold text-foreground">Pending Invitations</h2>
+          </div>
+          <div className="space-y-3">
+            {invitations.map((invitation) => (
+              <CGCard
+                key={invitation.id}
+                variant="default"
+                className="border-cg-sage/30 bg-cg-sage-subtle/20"
+              >
+                <CGCardContent className="py-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-cg-sage-subtle flex items-center justify-center">
+                        <FolderHeart className="h-6 w-6 text-cg-sage" />
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-foreground">{invitation.title}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {invitation.family_file_number} - Invited as {getRoleName(invitation.your_role)}
+                        </p>
+                      </div>
+                    </div>
+                    <CGButton
+                      variant="primary"
+                      onClick={() => handleAcceptInvitation(invitation.id)}
+                      disabled={isAccepting === invitation.id}
+                    >
+                      {isAccepting === invitation.id ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                          Joining...
+                        </>
+                      ) : (
+                        'Accept & Join'
+                      )}
+                    </CGButton>
                   </div>
-                  <Button
-                    onClick={() => handleAcceptInvitation(invitation.id)}
-                    disabled={isAccepting === invitation.id}
-                  >
-                    {isAccepting === invitation.id ? 'Joining...' : 'Accept & Join'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CGCardContent>
+              </CGCard>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Family Files List */}
+      {/* Family Files Grid */}
       {familyFiles.length === 0 && invitations.length === 0 ? (
-        <EmptyState
-          icon={FolderHeart}
-          title="No Family Files Yet"
-          description="Create your first Family File to start managing your co-parenting arrangement. You can invite your co-parent to join."
-          action={{
-            label: "Create Family File",
-            onClick: () => router.push('/family-files/new')
-          }}
-        />
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {familyFiles.map((file) => (
-            <Card
-              key={file.id}
-              className="cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => router.push(`/family-files/${file.id}`)}
-            >
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <FolderHeart className="h-5 w-5 text-primary" />
-                    <CardTitle className="text-lg">{file.title}</CardTitle>
-                  </div>
-                  {getStatusBadge(file.status, file.is_complete)}
-                </div>
-                <CardDescription>{file.family_file_number}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {/* Parents */}
-                  <div className="flex items-center gap-2 text-sm">
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                    <span>
-                      {getRoleName(file.parent_a_role)}
-                      {file.parent_b_id && (
-                        <span className="text-muted-foreground"> & {getRoleName(file.parent_b_role)}</span>
-                      )}
-                      {!file.parent_b_id && file.parent_b_email && (
-                        <span className="text-muted-foreground"> (Invitation pending)</span>
-                      )}
-                    </span>
-                  </div>
-
-                  {/* Location */}
-                  {file.state && (
-                    <div className="text-sm text-muted-foreground">
-                      {file.county && `${file.county}, `}{file.state}
+        <CGCard variant="elevated" className="p-0">
+          <CGEmptyState
+            icon={<FolderHeart className="h-8 w-8" />}
+            title="No Family Files Yet"
+            description="Create your first Family File to start managing your co-parenting arrangement. You can invite your co-parent to join."
+            action={{
+              label: "Create Family File",
+              onClick: () => router.push('/family-files/new'),
+            }}
+            size="lg"
+          />
+        </CGCard>
+      ) : familyFiles.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-cg-slate-subtle flex items-center justify-center">
+              <FolderHeart className="h-4 w-4 text-cg-slate" />
+            </div>
+            <h2 className="text-lg font-semibold text-foreground">Your Family Files</h2>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {familyFiles.map((file) => (
+              <CGCard
+                key={file.id}
+                variant="interactive"
+                className="cursor-pointer"
+                onClick={() => router.push(`/family-files/${file.id}`)}
+              >
+                <CGCardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-cg-sage-subtle flex items-center justify-center flex-shrink-0">
+                        <FolderHeart className="h-5 w-5 text-cg-sage" />
+                      </div>
+                      <div className="min-w-0">
+                        <CGCardTitle className="text-base truncate">{file.title}</CGCardTitle>
+                        <CGCardDescription className="text-xs">
+                          {file.family_file_number}
+                        </CGCardDescription>
+                      </div>
                     </div>
-                  )}
+                    {getStatusBadge(file.status, file.is_complete)}
+                  </div>
+                </CGCardHeader>
+                <CGCardContent className="pt-0">
+                  <div className="space-y-3">
+                    {/* Parents */}
+                    <div className="flex items-center gap-2 text-sm">
+                      <Users className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <span className="truncate">
+                        {getRoleName(file.parent_a_role)}
+                        {file.parent_b_id && (
+                          <span className="text-muted-foreground"> & {getRoleName(file.parent_b_role)}</span>
+                        )}
+                        {!file.parent_b_id && file.parent_b_email && (
+                          <span className="text-cg-amber text-xs ml-1">(pending)</span>
+                        )}
+                      </span>
+                    </div>
 
-                  {/* Stats */}
-                  <div className="flex gap-4 pt-2 border-t">
-                    {file.has_court_case && (
-                      <div className="flex items-center gap-1 text-xs text-purple-600">
-                        <Scale className="h-3 w-3" />
-                        Court Case
+                    {/* Location */}
+                    {file.state && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <MapPin className="h-4 w-4 flex-shrink-0" />
+                        <span className="truncate">
+                          {file.county && `${file.county}, `}{file.state}
+                        </span>
                       </div>
                     )}
-                    {file.can_create_shared_care_agreement && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <FileText className="h-3 w-3" />
-                        SharedCare
+
+                    {/* Features */}
+                    <div className="flex flex-wrap gap-2 pt-3 border-t border-border/50">
+                      {file.has_court_case && (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-purple-50 text-purple-600 text-xs font-medium">
+                          <Scale className="h-3 w-3" />
+                          Court
+                        </div>
+                      )}
+                      {file.can_create_shared_care_agreement && (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-cg-slate-subtle text-cg-slate text-xs font-medium">
+                          <FileText className="h-3 w-3" />
+                          SharedCare
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-cg-amber-subtle text-cg-amber text-xs font-medium">
+                        <Zap className="h-3 w-3" />
+                        QuickAccord
                       </div>
-                    )}
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Zap className="h-3 w-3" />
-                      QuickAccord
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CGCardContent>
+              </CGCard>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -251,7 +328,7 @@ function FamilyFilesContent() {
 export default function FamilyFilesPage() {
   return (
     <ProtectedRoute>
-      <div className="min-h-screen bg-background pb-20 lg:pb-0">
+      <div className="min-h-screen bg-cg-background pb-20 lg:pb-0">
         <Navigation />
         <PageContainer>
           <FamilyFilesContent />

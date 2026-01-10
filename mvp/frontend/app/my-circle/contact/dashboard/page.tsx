@@ -15,10 +15,18 @@ import {
   Shield,
   ChevronRight,
   X,
-  PhoneIncoming,
+  Heart,
+  Sparkles,
 } from 'lucide-react';
 import { myCircleAPI, kidcomsAPI, CirclePermission, IncomingCall } from '@/lib/api';
 import IncomingCallAlert from '@/components/my-circle/incoming-call-alert';
+import { CGCard, CGBadge, CGButton, CGEmptyState } from '@/components/cg';
+import { cn } from '@/lib/utils';
+
+/* =============================================================================
+   Circle Contact Dashboard - "The Sanctuary of Truth"
+   Clean, professional interface for trusted contacts (grandparents, etc.)
+   ============================================================================= */
 
 interface CircleUserData {
   userId: string;
@@ -65,13 +73,11 @@ export default function CircleContactDashboardPage() {
     try {
       const calls = await myCircleAPI.getIncomingCallsForCircle();
       if (calls.items.length > 0) {
-        // Show the first incoming call
         setIncomingCall(calls.items[0]);
       } else {
         setIncomingCall(null);
       }
     } catch (err) {
-      // Silently ignore polling errors
       console.debug('Incoming call check failed:', err);
     }
   }, []);
@@ -80,16 +86,10 @@ export default function CircleContactDashboardPage() {
     loadUserData();
   }, []);
 
-  // Set up polling for incoming calls (every 3 seconds)
   useEffect(() => {
     if (!userData) return;
-
-    // Initial check
     checkIncomingCalls();
-
-    // Poll every 3 seconds
     const interval = setInterval(checkIncomingCalls, 3000);
-
     return () => clearInterval(interval);
   }, [userData, checkIncomingCalls]);
 
@@ -105,8 +105,6 @@ export default function CircleContactDashboardPage() {
 
       const user = JSON.parse(userStr) as CircleUserData;
       setUserData(user);
-
-      // Load permissions for this contact using circle auth
       await loadChildrenWithPermissions();
     } catch (err) {
       console.error('Error loading user data:', err);
@@ -117,17 +115,13 @@ export default function CircleContactDashboardPage() {
   async function loadChildrenWithPermissions() {
     try {
       setIsLoading(true);
-      // Use circle auth endpoint to get permissions for this circle user
       const permissionList = await myCircleAPI.getMyPermissions();
-
-      // Convert permissions to children with permissions
       const childrenData: ChildWithPermissions[] = permissionList.items.map((perm) => ({
         child_id: perm.child_id,
         child_name: perm.child_name || `Child ${perm.child_id.slice(0, 4)}`,
         avatar_id: undefined,
         permissions: perm,
       }));
-
       setChildren(childrenData);
     } catch (err) {
       console.error('Error loading permissions:', err);
@@ -151,42 +145,22 @@ export default function CircleContactDashboardPage() {
   }
 
   function isWithinAllowedHours(permission: CirclePermission): boolean {
-    if (!permission.allowed_start_time || !permission.allowed_end_time) {
-      return true; // No restrictions
-    }
-
+    if (!permission.allowed_start_time || !permission.allowed_end_time) return true;
     const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-    const currentTime = currentHour * 60 + currentMinute;
-
+    const currentTime = now.getHours() * 60 + now.getMinutes();
     const [startHour, startMin] = permission.allowed_start_time.split(':').map(Number);
     const [endHour, endMin] = permission.allowed_end_time.split(':').map(Number);
-    const startTime = startHour * 60 + startMin;
-    const endTime = endHour * 60 + endMin;
-
-    return currentTime >= startTime && currentTime <= endTime;
+    return currentTime >= startHour * 60 + startMin && currentTime <= endHour * 60 + endMin;
   }
 
   function isAllowedDay(permission: CirclePermission): boolean {
-    if (!permission.allowed_days || permission.allowed_days.length === 0) {
-      return true; // No restrictions
-    }
-
-    // allowed_days is number[] where 0=Sunday, 1=Monday, etc.
-    const todayNum = new Date().getDay();
-    return permission.allowed_days.includes(todayNum);
+    if (!permission.allowed_days || permission.allowed_days.length === 0) return true;
+    return permission.allowed_days.includes(new Date().getDay());
   }
 
   function canCommunicate(permission: CirclePermission): { allowed: boolean; reason?: string } {
-    if (!isAllowedDay(permission)) {
-      return { allowed: false, reason: 'Not available on this day' };
-    }
-
-    if (!isWithinAllowedHours(permission)) {
-      return { allowed: false, reason: 'Outside allowed hours' };
-    }
-
+    if (!isAllowedDay(permission)) return { allowed: false, reason: 'Not available on this day' };
+    if (!isWithinAllowedHours(permission)) return { allowed: false, reason: 'Outside allowed hours' };
     return { allowed: true };
   }
 
@@ -211,14 +185,12 @@ export default function CircleContactDashboardPage() {
     setError(null);
 
     try {
-      // Create session via API
       const sessionType = type === 'video' ? 'video_call' : 'voice_call';
       const response = await kidcomsAPI.createCircleContactSession({
         child_id: child.child_id,
         session_type: sessionType,
       });
 
-      // Store session info for the call page
       localStorage.setItem('circle_call_session', JSON.stringify({
         roomUrl: response.room_url,
         token: response.token,
@@ -229,12 +201,10 @@ export default function CircleContactDashboardPage() {
         contactName: userData?.contactName,
       }));
 
-      // Navigate to call page
       router.push('/my-circle/contact/call');
     } catch (err: any) {
       console.error('Error starting call:', err);
-      const errorMessage = err?.message || 'Failed to start call. Please try again.';
-      setError(errorMessage);
+      setError(err?.message || 'Failed to start call. Please try again.');
       setIsStartingCall(false);
     }
   }
@@ -243,31 +213,19 @@ export default function CircleContactDashboardPage() {
     if (!timeStr) return '';
     const [hour, minute] = timeStr.split(':').map(Number);
     const period = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minute.toString().padStart(2, '0')} ${period}`;
+    return `${hour % 12 || 12}:${minute.toString().padStart(2, '0')} ${period}`;
   }
 
   function formatDays(days?: number[]): string {
     if (!days || days.length === 0) return 'Any day';
     if (days.length === 7) return 'Every day';
-
-    // Map day numbers to abbreviations (0=Sunday, 1=Monday, etc.)
     const dayAbbrev: Record<number, string> = {
-      0: 'Sun',
-      1: 'Mon',
-      2: 'Tue',
-      3: 'Wed',
-      4: 'Thu',
-      5: 'Fri',
-      6: 'Sat',
+      0: 'Sun', 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat',
     };
-
     return days.map(d => dayAbbrev[d] || String(d)).join(', ');
   }
 
-  // Handle accepting an incoming call
   function handleAcceptIncomingCall(joinData: { roomUrl: string; token: string; sessionId: string }) {
-    // Store session info for the call page
     localStorage.setItem('circle_call_session', JSON.stringify({
       roomUrl: joinData.roomUrl,
       token: joinData.token,
@@ -278,183 +236,197 @@ export default function CircleContactDashboardPage() {
       contactName: userData?.contactName,
       isIncoming: true,
     }));
-
-    // Clear incoming call state and navigate
     setIncomingCall(null);
     router.push('/my-circle/contact/call');
   }
 
-  // Handle rejecting an incoming call
-  function handleRejectIncomingCall() {
-    setIncomingCall(null);
-  }
-
-  // Handle dismissing an incoming call alert (without action)
-  function handleDismissIncomingCall() {
-    setIncomingCall(null);
-  }
-
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-teal-50 to-cyan-50 flex items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-teal-600" />
+      <div className="min-h-screen bg-cg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <div className="w-16 h-16 rounded-full bg-cg-sage-subtle flex items-center justify-center">
+              <Sparkles className="h-8 w-8 text-cg-sage animate-pulse" />
+            </div>
+          </div>
+          <p className="text-cg-text-secondary font-medium">Loading your circle...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-teal-50 to-cyan-50">
+    <div className="min-h-screen bg-cg-background">
       {/* Incoming Call Alert */}
       {incomingCall && (
         <IncomingCallAlert
           call={incomingCall}
           userType="circle"
           onAccept={handleAcceptIncomingCall}
-          onReject={handleRejectIncomingCall}
-          onDismiss={handleDismissIncomingCall}
+          onReject={() => setIncomingCall(null)}
+          onDismiss={() => setIncomingCall(null)}
         />
       )}
 
       {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center">
-              <Users className="h-5 w-5 text-teal-600" />
+      <header className="bg-card border-b border-border/50 sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            {/* Logo & User Info */}
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-cg-sage-subtle flex items-center justify-center">
+                <Heart className="h-6 w-6 text-cg-sage" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold text-foreground">My Circle</h1>
+                <p className="text-sm text-muted-foreground">Welcome back, {userData?.contactName}</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-800">My Circle</h1>
-              <p className="text-sm text-gray-500">Welcome, {userData?.contactName}</p>
-            </div>
+
+            {/* Logout */}
+            <CGButton
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign Out
+            </CGButton>
           </div>
-          <button
-            onClick={handleLogout}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 py-6">
+      <main className="max-w-4xl mx-auto px-4 py-8">
+        {/* Error Message */}
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600">
-            {error}
-          </div>
+          <CGCard variant="default" className="mb-6 border-cg-error/30 bg-cg-error-subtle">
+            <div className="p-4 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-cg-error/20 flex items-center justify-center flex-shrink-0">
+                <X className="h-4 w-4 text-cg-error" />
+              </div>
+              <p className="text-cg-error font-medium">{error}</p>
+            </div>
+          </CGCard>
         )}
 
-        {/* Children Grid */}
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Your Connections</h2>
+        {/* Section Header */}
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold text-foreground mb-1">Your Connections</h2>
+          <p className="text-sm text-muted-foreground">
+            Children you're approved to connect with
+          </p>
+        </div>
 
+        {/* Empty State */}
         {children.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
-            <div className="text-6xl mb-4">👋</div>
-            <h3 className="text-xl font-semibold text-gray-800 mb-2">No Connections Yet</h3>
-            <p className="text-gray-500">
-              You'll see children you can connect with here once a parent adds you to their circle.
-            </p>
-          </div>
+          <CGCard variant="elevated" className="p-0">
+            <CGEmptyState
+              icon={<Users className="h-8 w-8" />}
+              title="No Connections Yet"
+              description="You'll see children you can connect with here once a parent adds you to their circle."
+              size="lg"
+            />
+          </CGCard>
         ) : (
+          /* Children Grid */
           <div className="grid gap-4 md:grid-cols-2">
             {children.map((child) => {
               const status = canCommunicate(child.permissions);
 
               return (
-                <button
+                <CGCard
                   key={child.child_id}
+                  variant="interactive"
+                  className={cn(
+                    'cursor-pointer transition-all duration-200',
+                    !status.allowed && 'opacity-60 cursor-not-allowed'
+                  )}
                   onClick={() => status.allowed && setSelectedChild(child)}
-                  disabled={!status.allowed}
-                  className={`bg-white rounded-2xl shadow-sm p-6 text-left transition-all ${
-                    status.allowed
-                      ? 'hover:shadow-md hover:scale-[1.02] cursor-pointer'
-                      : 'opacity-60 cursor-not-allowed'
-                  }`}
                 >
-                  <div className="flex items-start gap-4">
-                    {/* Avatar */}
-                    <div className="text-5xl">{getChildAvatar(child.avatar_id)}</div>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-semibold text-gray-800 truncate">
-                          {child.child_name}
-                        </h3>
-                        {status.allowed ? (
-                          <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
-                            Available
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-full">
-                            Unavailable
-                          </span>
-                        )}
+                  <div className="p-5">
+                    <div className="flex items-start gap-4">
+                      {/* Avatar */}
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cg-sage-subtle to-cg-slate-subtle flex items-center justify-center text-4xl flex-shrink-0">
+                        {getChildAvatar(child.avatar_id)}
                       </div>
 
-                      {/* Permissions */}
-                      <div className="flex gap-2 mt-2">
-                        {child.permissions.can_video_call && (
-                          <div className="p-1.5 bg-green-100 rounded-lg" title="Video Calls">
-                            <Video className="h-4 w-4 text-green-600" />
-                          </div>
-                        )}
-                        {child.permissions.can_voice_call && (
-                          <div className="p-1.5 bg-blue-100 rounded-lg" title="Voice Calls">
-                            <Phone className="h-4 w-4 text-blue-600" />
-                          </div>
-                        )}
-                        {child.permissions.can_chat && (
-                          <div className="p-1.5 bg-purple-100 rounded-lg" title="Chat">
-                            <MessageCircle className="h-4 w-4 text-purple-600" />
-                          </div>
-                        )}
-                        {child.permissions.can_theater && (
-                          <div className="p-1.5 bg-orange-100 rounded-lg" title="Watch Together">
-                            <Film className="h-4 w-4 text-orange-600" />
-                          </div>
-                        )}
-                      </div>
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="text-lg font-semibold text-foreground truncate">
+                            {child.child_name}
+                          </h3>
+                          <CGBadge variant={status.allowed ? 'sage' : 'default'}>
+                            {status.allowed ? 'Available' : 'Unavailable'}
+                          </CGBadge>
+                        </div>
 
-                      {/* Schedule */}
-                      {(child.permissions.allowed_start_time || child.permissions.allowed_days?.length) && (
-                        <div className="mt-3 space-y-1">
-                          {child.permissions.allowed_start_time && (
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                              <Clock className="h-3.5 w-3.5" />
-                              <span>
-                                {formatTime(child.permissions.allowed_start_time)} - {formatTime(child.permissions.allowed_end_time)}
-                              </span>
+                        {/* Permission Icons */}
+                        <div className="flex gap-2 mb-3">
+                          {child.permissions.can_video_call && (
+                            <div className="p-2 bg-cg-sage-subtle rounded-lg" title="Video Calls">
+                              <Video className="h-4 w-4 text-cg-sage" />
                             </div>
                           )}
-                          {child.permissions.allowed_days && child.permissions.allowed_days.length > 0 && (
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                              <Calendar className="h-3.5 w-3.5" />
-                              <span>{formatDays(child.permissions.allowed_days)}</span>
+                          {child.permissions.can_voice_call && (
+                            <div className="p-2 bg-cg-slate-subtle rounded-lg" title="Voice Calls">
+                              <Phone className="h-4 w-4 text-cg-slate" />
+                            </div>
+                          )}
+                          {child.permissions.can_chat && (
+                            <div className="p-2 bg-purple-100 rounded-lg" title="Chat">
+                              <MessageCircle className="h-4 w-4 text-purple-600" />
+                            </div>
+                          )}
+                          {child.permissions.can_theater && (
+                            <div className="p-2 bg-cg-amber-subtle rounded-lg" title="Watch Together">
+                              <Film className="h-4 w-4 text-cg-amber" />
                             </div>
                           )}
                         </div>
-                      )}
 
-                      {/* Status Reason */}
-                      {!status.allowed && status.reason && (
-                        <p className="mt-2 text-xs text-amber-600">{status.reason}</p>
+                        {/* Schedule */}
+                        {(child.permissions.allowed_start_time || child.permissions.allowed_days?.length) && (
+                          <div className="space-y-1.5">
+                            {child.permissions.allowed_start_time && (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Clock className="h-3.5 w-3.5" />
+                                <span>
+                                  {formatTime(child.permissions.allowed_start_time)} - {formatTime(child.permissions.allowed_end_time)}
+                                </span>
+                              </div>
+                            )}
+                            {child.permissions.allowed_days && child.permissions.allowed_days.length > 0 && (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Calendar className="h-3.5 w-3.5" />
+                                <span>{formatDays(child.permissions.allowed_days)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Unavailable Reason */}
+                        {!status.allowed && status.reason && (
+                          <p className="mt-2 text-xs text-cg-amber font-medium">{status.reason}</p>
+                        )}
+                      </div>
+
+                      {/* Arrow */}
+                      {status.allowed && (
+                        <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                       )}
                     </div>
-
-                    {/* Arrow */}
-                    {status.allowed && (
-                      <ChevronRight className="h-5 w-5 text-gray-400" />
-                    )}
                   </div>
-                </button>
+                </CGCard>
               );
             })}
           </div>
         )}
 
         {/* Safety Notice */}
-        <div className="mt-8 flex items-center justify-center gap-2 text-gray-400 text-sm">
+        <div className="mt-10 flex items-center justify-center gap-2 text-muted-foreground text-sm">
           <Shield className="h-4 w-4" />
           <span>All communications are monitored for child safety</span>
         </div>
@@ -462,87 +434,105 @@ export default function CircleContactDashboardPage() {
 
       {/* Call Modal */}
       {selectedChild && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full animate-in zoom-in-95">
-            {/* Close Button */}
-            <button
-              onClick={() => setSelectedChild(null)}
-              className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-5 w-5" />
-            </button>
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          onClick={() => setSelectedChild(null)}
+        >
+          <CGCard
+            variant="elevated"
+            className="max-w-sm w-full animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-8 text-center">
+              {/* Avatar */}
+              <div className="relative inline-block mb-6">
+                <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-cg-sage-subtle to-cg-slate-subtle flex items-center justify-center text-6xl mx-auto shadow-lg">
+                  {getChildAvatar(selectedChild.avatar_id)}
+                </div>
+                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+                  <CGBadge variant="sage" className="shadow-sm">Online</CGBadge>
+                </div>
+              </div>
 
-            {/* Avatar */}
-            <div className="text-center">
-              <div className="text-7xl mb-4">{getChildAvatar(selectedChild.avatar_id)}</div>
-              <h2 className="text-2xl font-bold text-gray-800 mb-1">
+              {/* Name */}
+              <h2 className="text-2xl font-semibold text-foreground mb-1">
                 {selectedChild.child_name}
               </h2>
-              <p className="text-gray-500 mb-6">Choose how to connect</p>
-            </div>
+              <p className="text-muted-foreground mb-8">Choose how to connect</p>
 
-            {/* Call Options */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {selectedChild.permissions.can_video_call && (
-                <button
-                  onClick={() => handleStartCall(selectedChild, 'video')}
-                  disabled={isStartingCall}
-                  className="flex flex-col items-center gap-2 p-4 bg-green-100 hover:bg-green-200 rounded-2xl transition-colors disabled:opacity-50"
-                >
-                  {isStartingCall ? (
-                    <Loader2 className="h-8 w-8 text-green-600 animate-spin" />
-                  ) : (
-                    <Video className="h-8 w-8 text-green-600" />
-                  )}
-                  <span className="font-semibold text-green-700">Video Call</span>
-                </button>
-              )}
-              {selectedChild.permissions.can_voice_call && (
-                <button
-                  onClick={() => handleStartCall(selectedChild, 'voice')}
-                  disabled={isStartingCall}
-                  className="flex flex-col items-center gap-2 p-4 bg-blue-100 hover:bg-blue-200 rounded-2xl transition-colors disabled:opacity-50"
-                >
-                  {isStartingCall ? (
-                    <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
-                  ) : (
-                    <Phone className="h-8 w-8 text-blue-600" />
-                  )}
-                  <span className="font-semibold text-blue-700">Voice Call</span>
-                </button>
-              )}
-            </div>
+              {/* Call Options */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                {selectedChild.permissions.can_video_call && (
+                  <button
+                    onClick={() => handleStartCall(selectedChild, 'video')}
+                    disabled={isStartingCall}
+                    className={cn(
+                      'flex flex-col items-center gap-3 p-5 rounded-2xl transition-all',
+                      'bg-cg-sage-subtle hover:bg-cg-sage/20 active:scale-95',
+                      'disabled:opacity-50 disabled:hover:bg-cg-sage-subtle disabled:active:scale-100'
+                    )}
+                  >
+                    {isStartingCall ? (
+                      <Loader2 className="h-10 w-10 text-cg-sage animate-spin" />
+                    ) : (
+                      <Video className="h-10 w-10 text-cg-sage" />
+                    )}
+                    <span className="font-semibold text-cg-sage">Video Call</span>
+                  </button>
+                )}
+                {selectedChild.permissions.can_voice_call && (
+                  <button
+                    onClick={() => handleStartCall(selectedChild, 'voice')}
+                    disabled={isStartingCall}
+                    className={cn(
+                      'flex flex-col items-center gap-3 p-5 rounded-2xl transition-all',
+                      'bg-cg-slate-subtle hover:bg-cg-slate/20 active:scale-95',
+                      'disabled:opacity-50 disabled:hover:bg-cg-slate-subtle disabled:active:scale-100'
+                    )}
+                  >
+                    {isStartingCall ? (
+                      <Loader2 className="h-10 w-10 text-cg-slate animate-spin" />
+                    ) : (
+                      <Phone className="h-10 w-10 text-cg-slate" />
+                    )}
+                    <span className="font-semibold text-cg-slate">Voice Call</span>
+                  </button>
+                )}
+              </div>
 
-            {/* Other Options */}
-            <div className="flex justify-center gap-2 mb-6">
-              {selectedChild.permissions.can_chat && (
-                <button
-                  disabled
-                  className="p-3 bg-purple-100 rounded-xl opacity-50"
-                  title="Coming soon!"
-                >
-                  <MessageCircle className="h-6 w-6 text-purple-600" />
-                </button>
-              )}
-              {selectedChild.permissions.can_theater && (
-                <button
-                  disabled
-                  className="p-3 bg-orange-100 rounded-xl opacity-50"
-                  title="Coming soon!"
-                >
-                  <Film className="h-6 w-6 text-orange-600" />
-                </button>
-              )}
-            </div>
+              {/* Other Options (Coming Soon) */}
+              <div className="flex justify-center gap-3 mb-2">
+                {selectedChild.permissions.can_chat && (
+                  <button
+                    disabled
+                    className="p-4 bg-purple-50 rounded-xl opacity-50"
+                    title="Coming soon!"
+                  >
+                    <MessageCircle className="h-6 w-6 text-purple-500" />
+                  </button>
+                )}
+                {selectedChild.permissions.can_theater && (
+                  <button
+                    disabled
+                    className="p-4 bg-cg-amber-subtle rounded-xl opacity-50"
+                    title="Coming soon!"
+                  >
+                    <Film className="h-6 w-6 text-cg-amber" />
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mb-6">Chat & Watch Together coming soon!</p>
 
-            {/* Cancel */}
-            <button
-              onClick={() => setSelectedChild(null)}
-              className="w-full py-3 bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-600 font-semibold transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
+              {/* Cancel */}
+              <CGButton
+                variant="secondary"
+                className="w-full"
+                onClick={() => setSelectedChild(null)}
+              >
+                Cancel
+              </CGButton>
+            </div>
+          </CGCard>
         </div>
       )}
     </div>
