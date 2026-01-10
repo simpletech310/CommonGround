@@ -13,6 +13,8 @@ import {
   Edit,
   Trash2,
   Send,
+  Link2,
+  Copy,
   CheckCircle,
   Clock,
   AlertCircle,
@@ -259,14 +261,24 @@ export default function CircleManagementPage() {
 
   async function handleSendInvite(contactId: string) {
     try {
-      const result = await circleAPI.sendInvite(contactId, { sendEmail: true });
-      if (result.success) {
-        alert('Verification invite sent!');
+      // Use the correct endpoint that creates a CircleUser and returns the invite URL
+      const result = await myCircleAPI.inviteExistingCircleUser(contactId);
+
+      // Copy the invite URL to clipboard
+      if (result.invite_url) {
+        await navigator.clipboard.writeText(result.invite_url);
+        alert(`Invite link copied to clipboard!\n\n${result.invite_url}`);
       } else {
-        alert(result.message);
+        alert('Invite created but no URL returned');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error sending invite:', err);
+      // If invite already exists, try to show a helpful message
+      if (err?.message?.includes('already')) {
+        alert('An invite has already been sent to this contact. Check their email or ask them to check their spam folder.');
+      } else {
+        alert(err?.message || 'Failed to create invite');
+      }
     }
   }
 
@@ -542,13 +554,13 @@ export default function CircleManagementPage() {
                             </button>
                           )}
 
-                          {!contact.is_verified && contact.contact_email && (
+                          {contact.contact_email && (
                             <button
                               onClick={() => handleSendInvite(contact.id)}
                               className="p-2 text-cg-sage hover:bg-cg-sage-subtle rounded-lg transition-colors"
-                              title="Send verification invite"
+                              title="Copy invite link"
                             >
-                              <Send className="h-5 w-5" />
+                              <Link2 className="h-5 w-5" />
                             </button>
                           )}
 
