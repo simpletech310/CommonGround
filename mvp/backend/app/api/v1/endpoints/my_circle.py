@@ -446,7 +446,7 @@ async def create_and_invite_circle_user(
             select(KidComsRoom)
             .where(KidComsRoom.family_file_id == invite_data.family_file_id)
             .where(KidComsRoom.room_number >= 3)
-            .where(KidComsRoom.is_assigned == False)
+            .where(KidComsRoom.assigned_to_id.is_(None))
             .order_by(KidComsRoom.room_number)
             .limit(1)
         )
@@ -462,11 +462,11 @@ async def create_and_invite_circle_user(
         # Create the circle contact
         contact = CircleContact(
             family_file_id=invite_data.family_file_id,
-            contact_type="circle_contact",
             contact_name=invite_data.contact_name,
-            email=invite_data.email,
+            contact_email=invite_data.email,
             relationship_type=invite_data.relationship_type,
             room_number=room_number,
+            added_by=current_user.id,
             is_active=True,
         )
         db.add(contact)
@@ -480,11 +480,8 @@ async def create_and_invite_circle_user(
         )
         room = room_result.scalar_one_or_none()
         if room:
-            room.is_assigned = True
-            room.circle_contact_id = contact.id
+            room.assigned_to_id = contact.id
             room.room_name = invite_data.contact_name
-            room.contact_name = invite_data.contact_name
-            room.relationship_type = invite_data.relationship_type
 
         # Create the invite
         base_url = settings.FRONTEND_URL if hasattr(settings, 'FRONTEND_URL') else "http://localhost:3000"
