@@ -18,6 +18,17 @@ import {
   Save,
 } from 'lucide-react';
 import { kidcomsAPI, familyFilesAPI, KidComsSettings, KidComsSettingsUpdate } from '@/lib/api';
+import { Navigation } from '@/components/navigation';
+import { ProtectedRoute } from '@/components/protected-route';
+import { PageContainer } from '@/components/layout';
+import {
+  CGCard,
+  CGCardHeader,
+  CGCardTitle,
+  CGCardContent,
+  CGButton,
+} from '@/components/cg';
+import { Sparkles } from 'lucide-react';
 
 export default function KidComsSettingsPage() {
   const params = useParams();
@@ -103,290 +114,322 @@ export default function KidComsSettingsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-      </div>
+      <ProtectedRoute>
+        <div className="min-h-screen bg-cg-background">
+          <Navigation />
+          <div className="flex flex-col items-center justify-center pt-32">
+            <div className="w-16 h-16 rounded-full bg-cg-sage-subtle flex items-center justify-center">
+              <Sparkles className="h-8 w-8 text-cg-sage animate-pulse" />
+            </div>
+            <p className="mt-4 text-muted-foreground font-medium">Loading Settings...</p>
+          </div>
+        </div>
+      </ProtectedRoute>
     );
   }
 
   if (!settings) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <p className="text-gray-500">Failed to load settings</p>
-      </div>
+      <ProtectedRoute>
+        <div className="min-h-screen bg-cg-background">
+          <Navigation />
+          <div className="flex flex-col items-center justify-center pt-32">
+            <p className="text-muted-foreground">Failed to load settings</p>
+          </div>
+        </div>
+      </ProtectedRoute>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => router.push(`/family-files/${familyFileId}/kidcoms`)}
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <Settings className="h-5 w-5 text-purple-600" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-gray-900">KidComs Settings</h1>
-                  <p className="text-sm text-gray-500">{familyTitle}</p>
-                </div>
+    <ProtectedRoute>
+      <div className="min-h-screen bg-cg-background pb-20 lg:pb-0">
+        <Navigation />
+
+        <PageContainer>
+          {/* Page Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cg-sage-subtle flex items-center justify-center">
+                <Settings className="h-5 w-5 text-cg-sage" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold text-foreground">KidComs Settings</h1>
+                <p className="text-sm text-muted-foreground">{familyTitle}</p>
               </div>
             </div>
-            <button
+            <CGButton
               onClick={handleSave}
               disabled={isSaving}
-              className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+              variant="primary"
             >
               {isSaving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
-                <Save className="h-4 w-4" />
+                <Save className="h-4 w-4 mr-2" />
               )}
-              <span>Save Changes</span>
-            </button>
+              Save Changes
+            </CGButton>
           </div>
-        </div>
-      </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-        {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-            {error}
-          </div>
-        )}
+          {error && (
+            <CGCard variant="default" className="mb-6 border-cg-error/30 bg-cg-error-subtle">
+              <CGCardContent className="py-4">
+                <p className="text-cg-error font-medium">{error}</p>
+              </CGCardContent>
+            </CGCard>
+          )}
 
-        {success && (
-          <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
-            {success}
-          </div>
-        )}
+          {success && (
+            <CGCard variant="default" className="mb-6 border-cg-success/30 bg-cg-success-subtle">
+              <CGCardContent className="py-4">
+                <p className="text-cg-success font-medium">{success}</p>
+              </CGCardContent>
+            </CGCard>
+          )}
 
-        {/* Circle Approval */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <Users className="h-5 w-5 text-purple-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Circle Approval</h2>
-          </div>
-          <p className="text-sm text-gray-500 mb-4">
-            Control how circle contacts are approved for video calls
-          </p>
-          <div className="space-y-3">
-            <label className="flex items-center space-x-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-              <input
-                type="radio"
-                name="approval_mode"
-                checked={settings.circle_approval_mode === 'both_parents'}
-                onChange={() => setSettings({ ...settings, circle_approval_mode: 'both_parents' })}
-                className="text-purple-600"
-              />
-              <div>
-                <p className="font-medium text-gray-900">Both Parents Required</p>
-                <p className="text-sm text-gray-500">Both parents must approve each contact</p>
-              </div>
-            </label>
-            <label className="flex items-center space-x-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-              <input
-                type="radio"
-                name="approval_mode"
-                checked={settings.circle_approval_mode === 'either_parent'}
-                onChange={() => setSettings({ ...settings, circle_approval_mode: 'either_parent' })}
-                className="text-purple-600"
-              />
-              <div>
-                <p className="font-medium text-gray-900">Either Parent</p>
-                <p className="text-sm text-gray-500">One parent approval is sufficient</p>
-              </div>
-            </label>
-          </div>
-        </div>
+          <div className="space-y-6">
 
-        {/* Features */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <Video className="h-5 w-5 text-purple-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Allowed Features</h2>
-          </div>
-          <p className="text-sm text-gray-500 mb-4">
-            Enable or disable KidComs features for your family
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {[
-              { key: 'video', label: 'Video Calls', icon: Video },
-              { key: 'chat', label: 'Chat', icon: MessageCircle },
-              { key: 'theater', label: 'Theater', icon: Film },
-              { key: 'arcade', label: 'Arcade', icon: Gamepad2 },
-              { key: 'whiteboard', label: 'Whiteboard', icon: PenTool },
-            ].map(({ key, label, icon: Icon }) => (
-              <label
-                key={key}
-                className={`flex items-center space-x-3 p-4 border rounded-lg cursor-pointer transition-colors ${
-                  settings.allowed_features[key as keyof typeof settings.allowed_features]
-                    ? 'border-purple-500 bg-purple-50'
-                    : 'hover:bg-gray-50'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={settings.allowed_features[key as keyof typeof settings.allowed_features]}
-                  onChange={(e) => updateFeature(key as keyof typeof settings.allowed_features, e.target.checked)}
-                  className="text-purple-600 rounded"
-                />
-                <Icon className="h-5 w-5 text-gray-600" />
-                <span className="font-medium text-gray-900">{label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
+          {/* Circle Approval */}
+          <CGCard variant="elevated">
+            <CGCardHeader>
+              <CGCardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-cg-sage" />
+                Circle Approval
+              </CGCardTitle>
+            </CGCardHeader>
+            <CGCardContent>
+              <p className="text-sm text-muted-foreground mb-4">
+                Control how circle contacts are approved for video calls
+              </p>
+              <div className="space-y-3">
+                <label className="flex items-center gap-3 p-3 border border-border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
+                  <input
+                    type="radio"
+                    name="approval_mode"
+                    checked={settings.circle_approval_mode === 'both_parents'}
+                    onChange={() => setSettings({ ...settings, circle_approval_mode: 'both_parents' })}
+                    className="text-cg-sage"
+                  />
+                  <div>
+                    <p className="font-medium text-foreground">Both Parents Required</p>
+                    <p className="text-sm text-muted-foreground">Both parents must approve each contact</p>
+                  </div>
+                </label>
+                <label className="flex items-center gap-3 p-3 border border-border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors">
+                  <input
+                    type="radio"
+                    name="approval_mode"
+                    checked={settings.circle_approval_mode === 'either_parent'}
+                    onChange={() => setSettings({ ...settings, circle_approval_mode: 'either_parent' })}
+                    className="text-cg-sage"
+                  />
+                  <div>
+                    <p className="font-medium text-foreground">Either Parent</p>
+                    <p className="text-sm text-muted-foreground">One parent approval is sufficient</p>
+                  </div>
+                </label>
+              </div>
+            </CGCardContent>
+          </CGCard>
 
-        {/* Session Limits */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <Clock className="h-5 w-5 text-purple-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Session Limits</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Max Duration (minutes)
-              </label>
-              <input
-                type="number"
-                value={settings.max_session_duration_minutes}
-                onChange={(e) => setSettings({ ...settings, max_session_duration_minutes: parseInt(e.target.value) || 60 })}
-                min={15}
-                max={180}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Max Daily Sessions
-              </label>
-              <input
-                type="number"
-                value={settings.max_daily_sessions}
-                onChange={(e) => setSettings({ ...settings, max_daily_sessions: parseInt(e.target.value) || 5 })}
-                min={1}
-                max={20}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Max Participants
-              </label>
-              <input
-                type="number"
-                value={settings.max_participants_per_session}
-                onChange={(e) => setSettings({ ...settings, max_participants_per_session: parseInt(e.target.value) || 4 })}
-                min={2}
-                max={10}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-          </div>
-        </div>
+          {/* Features */}
+          <CGCard variant="elevated">
+            <CGCardHeader>
+              <CGCardTitle className="flex items-center gap-2">
+                <Video className="h-5 w-5 text-cg-sage" />
+                Allowed Features
+              </CGCardTitle>
+            </CGCardHeader>
+            <CGCardContent>
+              <p className="text-sm text-muted-foreground mb-4">
+                Enable or disable KidComs features for your family
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {[
+                  { key: 'video', label: 'Video Calls', icon: Video },
+                  { key: 'chat', label: 'Chat', icon: MessageCircle },
+                  { key: 'theater', label: 'Theater', icon: Film },
+                  { key: 'arcade', label: 'Arcade', icon: Gamepad2 },
+                  { key: 'whiteboard', label: 'Whiteboard', icon: PenTool },
+                ].map(({ key, label, icon: Icon }) => (
+                  <label
+                    key={key}
+                    className={`flex items-center gap-3 p-4 border rounded-lg cursor-pointer transition-colors ${
+                      settings.allowed_features[key as keyof typeof settings.allowed_features]
+                        ? 'border-cg-sage bg-cg-sage-subtle'
+                        : 'border-border hover:bg-muted/50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={settings.allowed_features[key as keyof typeof settings.allowed_features]}
+                      onChange={(e) => updateFeature(key as keyof typeof settings.allowed_features, e.target.checked)}
+                      className="text-cg-sage rounded"
+                    />
+                    <Icon className="h-5 w-5 text-muted-foreground" />
+                    <span className="font-medium text-foreground">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </CGCardContent>
+          </CGCard>
 
-        {/* Parental Controls */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <Shield className="h-5 w-5 text-purple-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Parental Controls</h2>
-          </div>
-          <div className="space-y-4">
-            <label className="flex items-center justify-between p-3 border rounded-lg">
-              <div>
-                <p className="font-medium text-gray-900">Allow Child to Initiate Calls</p>
-                <p className="text-sm text-gray-500">Children can start video calls themselves</p>
+          {/* Session Limits */}
+          <CGCard variant="elevated">
+            <CGCardHeader>
+              <CGCardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-cg-sage" />
+                Session Limits
+              </CGCardTitle>
+            </CGCardHeader>
+            <CGCardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Max Duration (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    value={settings.max_session_duration_minutes}
+                    onChange={(e) => setSettings({ ...settings, max_session_duration_minutes: parseInt(e.target.value) || 60 })}
+                    min={15}
+                    max={180}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Max Daily Sessions
+                  </label>
+                  <input
+                    type="number"
+                    value={settings.max_daily_sessions}
+                    onChange={(e) => setSettings({ ...settings, max_daily_sessions: parseInt(e.target.value) || 5 })}
+                    min={1}
+                    max={20}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Max Participants
+                  </label>
+                  <input
+                    type="number"
+                    value={settings.max_participants_per_session}
+                    onChange={(e) => setSettings({ ...settings, max_participants_per_session: parseInt(e.target.value) || 4 })}
+                    min={2}
+                    max={10}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent"
+                  />
+                </div>
               </div>
-              <input
-                type="checkbox"
-                checked={settings.allow_child_to_initiate}
-                onChange={(e) => setSettings({ ...settings, allow_child_to_initiate: e.target.checked })}
-                className="text-purple-600 rounded h-5 w-5"
-              />
-            </label>
-            <label className="flex items-center justify-between p-3 border rounded-lg">
-              <div>
-                <p className="font-medium text-gray-900">Require Parent in Call</p>
-                <p className="text-sm text-gray-500">A parent must be present during calls</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.require_parent_in_call}
-                onChange={(e) => setSettings({ ...settings, require_parent_in_call: e.target.checked })}
-                className="text-purple-600 rounded h-5 w-5"
-              />
-            </label>
-            <label className="flex items-center justify-between p-3 border rounded-lg">
-              <div>
-                <p className="font-medium text-gray-900">Record Sessions</p>
-                <p className="text-sm text-gray-500">Automatically record all video sessions</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.record_sessions}
-                onChange={(e) => setSettings({ ...settings, record_sessions: e.target.checked })}
-                className="text-purple-600 rounded h-5 w-5"
-              />
-            </label>
-          </div>
-        </div>
+            </CGCardContent>
+          </CGCard>
 
-        {/* Notifications */}
-        <div className="bg-white rounded-xl shadow-sm border p-6">
-          <div className="flex items-center space-x-3 mb-4">
-            <Bell className="h-5 w-5 text-purple-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
+          {/* Parental Controls */}
+          <CGCard variant="elevated">
+            <CGCardHeader>
+              <CGCardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-cg-sage" />
+                Parental Controls
+              </CGCardTitle>
+            </CGCardHeader>
+            <CGCardContent>
+              <div className="space-y-4">
+                <label className="flex items-center justify-between p-3 border border-border rounded-lg">
+                  <div>
+                    <p className="font-medium text-foreground">Allow Child to Initiate Calls</p>
+                    <p className="text-sm text-muted-foreground">Children can start video calls themselves</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.allow_child_to_initiate}
+                    onChange={(e) => setSettings({ ...settings, allow_child_to_initiate: e.target.checked })}
+                    className="text-cg-sage rounded h-5 w-5"
+                  />
+                </label>
+                <label className="flex items-center justify-between p-3 border border-border rounded-lg">
+                  <div>
+                    <p className="font-medium text-foreground">Require Parent in Call</p>
+                    <p className="text-sm text-muted-foreground">A parent must be present during calls</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.require_parent_in_call}
+                    onChange={(e) => setSettings({ ...settings, require_parent_in_call: e.target.checked })}
+                    className="text-cg-sage rounded h-5 w-5"
+                  />
+                </label>
+                <label className="flex items-center justify-between p-3 border border-border rounded-lg">
+                  <div>
+                    <p className="font-medium text-foreground">Record Sessions</p>
+                    <p className="text-sm text-muted-foreground">Automatically record all video sessions</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.record_sessions}
+                    onChange={(e) => setSettings({ ...settings, record_sessions: e.target.checked })}
+                    className="text-cg-sage rounded h-5 w-5"
+                  />
+                </label>
+              </div>
+            </CGCardContent>
+          </CGCard>
+
+          {/* Notifications */}
+          <CGCard variant="elevated">
+            <CGCardHeader>
+              <CGCardTitle className="flex items-center gap-2">
+                <Bell className="h-5 w-5 text-cg-sage" />
+                Notifications
+              </CGCardTitle>
+            </CGCardHeader>
+            <CGCardContent>
+              <div className="space-y-4">
+                <label className="flex items-center justify-between p-3 border border-border rounded-lg">
+                  <div>
+                    <p className="font-medium text-foreground">Session Started</p>
+                    <p className="text-sm text-muted-foreground">Notify when a session begins</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.notify_on_session_start}
+                    onChange={(e) => setSettings({ ...settings, notify_on_session_start: e.target.checked })}
+                    className="text-cg-sage rounded h-5 w-5"
+                  />
+                </label>
+                <label className="flex items-center justify-between p-3 border border-border rounded-lg">
+                  <div>
+                    <p className="font-medium text-foreground">Session Ended</p>
+                    <p className="text-sm text-muted-foreground">Notify when a session ends</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.notify_on_session_end}
+                    onChange={(e) => setSettings({ ...settings, notify_on_session_end: e.target.checked })}
+                    className="text-cg-sage rounded h-5 w-5"
+                  />
+                </label>
+                <label className="flex items-center justify-between p-3 border border-border rounded-lg">
+                  <div>
+                    <p className="font-medium text-foreground">ARIA Flags</p>
+                    <p className="text-sm text-muted-foreground">Notify when ARIA flags a message</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.notify_on_aria_flag}
+                    onChange={(e) => setSettings({ ...settings, notify_on_aria_flag: e.target.checked })}
+                    className="text-cg-sage rounded h-5 w-5"
+                  />
+                </label>
+              </div>
+            </CGCardContent>
+          </CGCard>
           </div>
-          <div className="space-y-4">
-            <label className="flex items-center justify-between p-3 border rounded-lg">
-              <div>
-                <p className="font-medium text-gray-900">Session Started</p>
-                <p className="text-sm text-gray-500">Notify when a session begins</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.notify_on_session_start}
-                onChange={(e) => setSettings({ ...settings, notify_on_session_start: e.target.checked })}
-                className="text-purple-600 rounded h-5 w-5"
-              />
-            </label>
-            <label className="flex items-center justify-between p-3 border rounded-lg">
-              <div>
-                <p className="font-medium text-gray-900">Session Ended</p>
-                <p className="text-sm text-gray-500">Notify when a session ends</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.notify_on_session_end}
-                onChange={(e) => setSettings({ ...settings, notify_on_session_end: e.target.checked })}
-                className="text-purple-600 rounded h-5 w-5"
-              />
-            </label>
-            <label className="flex items-center justify-between p-3 border rounded-lg">
-              <div>
-                <p className="font-medium text-gray-900">ARIA Flags</p>
-                <p className="text-sm text-gray-500">Notify when ARIA flags a message</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={settings.notify_on_aria_flag}
-                onChange={(e) => setSettings({ ...settings, notify_on_aria_flag: e.target.checked })}
-                className="text-purple-600 rounded h-5 w-5"
-              />
-            </label>
-          </div>
-        </div>
-      </main>
-    </div>
+        </PageContainer>
+      </div>
+    </ProtectedRoute>
   );
 }

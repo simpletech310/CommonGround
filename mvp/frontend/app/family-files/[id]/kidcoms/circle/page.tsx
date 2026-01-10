@@ -36,6 +36,20 @@ import {
   CirclePermission,
   FamilyFileChild,
 } from '@/lib/api';
+import { Navigation } from '@/components/navigation';
+import { ProtectedRoute } from '@/components/protected-route';
+import { PageContainer } from '@/components/layout';
+import {
+  CGCard,
+  CGCardHeader,
+  CGCardTitle,
+  CGCardContent,
+  CGButton,
+  CGBadge,
+  CGAvatar,
+  CGEmptyState,
+} from '@/components/cg';
+import { Sparkles } from 'lucide-react';
 
 const DAYS_OF_WEEK = [
   { value: 0, label: 'Sun' },
@@ -284,318 +298,325 @@ export default function CircleManagementPage() {
 
   function getApprovalStatus(contact: CircleContact) {
     if (contact.is_fully_approved) {
-      return { icon: CheckCircle, color: 'text-green-500', text: 'Fully Approved' };
+      return { icon: CheckCircle, color: 'text-cg-success', text: 'Fully Approved' };
     }
     if (contact.is_partially_approved) {
-      return { icon: Clock, color: 'text-yellow-500', text: 'Pending Approval' };
+      return { icon: Clock, color: 'text-cg-amber', text: 'Pending Approval' };
     }
-    return { icon: AlertCircle, color: 'text-gray-400', text: 'Not Approved' };
+    return { icon: AlertCircle, color: 'text-muted-foreground', text: 'Not Approved' };
   }
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
-      </div>
+      <ProtectedRoute>
+        <div className="min-h-screen bg-cg-background">
+          <Navigation />
+          <div className="flex flex-col items-center justify-center pt-32">
+            <div className="w-16 h-16 rounded-full bg-cg-sage-subtle flex items-center justify-center">
+              <Sparkles className="h-8 w-8 text-cg-sage animate-pulse" />
+            </div>
+            <p className="mt-4 text-muted-foreground font-medium">Loading Circle...</p>
+          </div>
+        </div>
+      </ProtectedRoute>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => router.push(`/family-files/${familyFileId}/kidcoms`)}
-                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
+    <ProtectedRoute>
+      <div className="min-h-screen bg-cg-background pb-20 lg:pb-0">
+        <Navigation />
+
+        <PageContainer>
+          {/* Page Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cg-sage-subtle flex items-center justify-center">
+                <Users className="h-5 w-5 text-cg-sage" />
+              </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">My Circle</h1>
-                <p className="text-sm text-gray-500">{familyTitle}</p>
+                <h1 className="text-xl font-semibold text-foreground">My Circle</h1>
+                <p className="text-sm text-muted-foreground">{familyTitle}</p>
               </div>
             </div>
-            <button
+            <CGButton
+              variant="primary"
+              size="sm"
               onClick={() => setShowAddForm(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
             >
-              <Plus className="h-4 w-4" />
-              <span>Add Contact</span>
-            </button>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Contact
+            </CGButton>
           </div>
-        </div>
-      </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6">
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-            {error}
-          </div>
-        )}
+          {error && (
+            <CGCard variant="default" className="mb-6 border-cg-error/30 bg-cg-error-subtle">
+              <CGCardContent className="py-4">
+                <p className="text-cg-error font-medium">{error}</p>
+              </CGCardContent>
+            </CGCard>
+          )}
 
-        {/* Add/Edit Form */}
-        {showAddForm && (
-          <div className="mb-6 bg-white rounded-xl shadow-sm border p-6">
-            <h3 className="text-lg font-semibold mb-4">
-              {editingContact ? 'Edit Contact' : 'Add New Contact'}
-            </h3>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.contact_name}
-                    onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, contact_name: e.target.value }))
-                    }
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Relationship
-                  </label>
-                  <select
-                    value={formData.relationship_type}
-                    onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, relationship_type: e.target.value }))
-                    }
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  >
-                    {relationshipChoices.map((choice) => (
-                      <option key={choice.value} value={choice.value}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={formData.contact_email}
-                    onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, contact_email: e.target.value }))
-                    }
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    value={formData.contact_phone}
-                    onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, contact_phone: e.target.value }))
-                    }
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
-                </label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, notes: e.target.value }))
-                  }
-                  rows={2}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                />
-              </div>
-              <div className="flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : editingContact ? (
-                    'Save Changes'
-                  ) : (
-                    'Add Contact'
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {/* Contacts List */}
-        {contacts.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border p-8 text-center">
-            <Users className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No contacts yet</h3>
-            <p className="text-gray-500 mb-4">
-              Add trusted contacts like grandparents, aunts, uncles, or family friends
-            </p>
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-            >
-              Add Your First Contact
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {contacts.map((contact) => {
-              const status = getApprovalStatus(contact);
-              const StatusIcon = status.icon;
-              const isExpanded = expandedContactId === contact.id;
-
-              return (
-                <div
-                  key={contact.id}
-                  className={`bg-white rounded-xl shadow-sm border overflow-hidden ${
-                    !contact.is_active ? 'opacity-50' : ''
-                  }`}
-                >
-                  {/* Contact Header */}
-                  <div className="p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-4">
-                        <div className="w-12 h-12 rounded-full bg-green-200 flex items-center justify-center text-green-700 font-semibold text-lg">
-                          {contact.contact_name[0]}
-                        </div>
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <h3 className="font-semibold text-gray-900">
-                              {contact.contact_name}
-                            </h3>
-                            <span className={`flex items-center space-x-1 text-sm ${status.color}`}>
-                              <StatusIcon className="h-4 w-4" />
-                              <span>{status.text}</span>
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-500 capitalize">
-                            {contact.relationship_type.replace('_', ' ')}
-                          </p>
-                          <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-                            {contact.contact_email && (
-                              <span className="flex items-center space-x-1">
-                                <Mail className="h-4 w-4" />
-                                <span>{contact.contact_email}</span>
-                              </span>
-                            )}
-                            {contact.contact_phone && (
-                              <span className="flex items-center space-x-1">
-                                <Phone className="h-4 w-4" />
-                                <span>{contact.contact_phone}</span>
-                              </span>
-                            )}
-                          </div>
-                          {contact.notes && (
-                            <p className="mt-2 text-sm text-gray-600">{contact.notes}</p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        {!contact.is_fully_approved && (
-                          <button
-                            onClick={() => handleApprove(contact.id, true)}
-                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
-                            title="Approve"
-                          >
-                            <Check className="h-5 w-5" />
-                          </button>
-                        )}
-
-                        {!contact.is_verified && contact.contact_email && (
-                          <button
-                            onClick={() => handleSendInvite(contact.id)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                            title="Send verification invite"
-                          >
-                            <Send className="h-5 w-5" />
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => startEdit(contact)}
-                          className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
-                          title="Edit"
-                        >
-                          <Edit className="h-5 w-5" />
-                        </button>
-
-                        <button
-                          onClick={() => handleDelete(contact.id)}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
-                          title="Remove"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
-                      </div>
+          {/* Add/Edit Form */}
+          {showAddForm && (
+            <CGCard variant="elevated" className="mb-6">
+              <CGCardHeader>
+                <CGCardTitle>
+                  {editingContact ? 'Edit Contact' : 'Add New Contact'}
+                </CGCardTitle>
+              </CGCardHeader>
+              <CGCardContent>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.contact_name}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, contact_name: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        Relationship
+                      </label>
+                      <select
+                        value={formData.relationship_type}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, relationship_type: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent"
+                      >
+                        {relationshipChoices.map((choice) => (
+                          <option key={choice.value} value={choice.value}>
+                            {choice.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        value={formData.contact_email}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, contact_email: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">
+                        Phone
+                      </label>
+                      <input
+                        type="tel"
+                        value={formData.contact_phone}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, contact_phone: e.target.value }))
+                        }
+                        className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent"
+                      />
                     </div>
                   </div>
-
-                  {/* Permissions Toggle */}
-                  {contact.is_fully_approved && children.length > 0 && (
-                    <button
-                      onClick={() => setExpandedContactId(isExpanded ? null : contact.id)}
-                      className="w-full px-4 py-3 bg-gray-50 border-t flex items-center justify-between hover:bg-gray-100 transition-colors"
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">
+                      Notes
+                    </label>
+                    <textarea
+                      value={formData.notes}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, notes: e.target.value }))
+                      }
+                      rows={2}
+                      className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-3">
+                    <CGButton
+                      type="button"
+                      variant="ghost"
+                      onClick={resetForm}
                     >
-                      <div className="flex items-center space-x-2 text-gray-700">
-                        <Settings className="h-4 w-4" />
-                        <span className="text-sm font-medium">Communication Permissions</span>
-                        <span className="text-xs text-gray-500">
-                          ({children.length} {children.length === 1 ? 'child' : 'children'})
-                        </span>
-                      </div>
-                      {isExpanded ? (
-                        <ChevronUp className="h-4 w-4 text-gray-500" />
+                      Cancel
+                    </CGButton>
+                    <CGButton
+                      type="submit"
+                      variant="primary"
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? (
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                      ) : editingContact ? (
+                        'Save Changes'
                       ) : (
-                        <ChevronDown className="h-4 w-4 text-gray-500" />
+                        'Add Contact'
                       )}
-                    </button>
-                  )}
+                    </CGButton>
+                  </div>
+                </form>
+              </CGCardContent>
+            </CGCard>
+          )}
 
-                  {/* Permissions Panel */}
-                  {isExpanded && contact.is_fully_approved && (
-                    <div className="border-t bg-gray-50 p-4">
-                      <div className="space-y-6">
-                        {children.map((child) => (
-                          <PermissionPanel
-                            key={child.id}
-                            contact={contact}
-                            child={child}
-                            initialData={getPermissionFormData(contact.id, child.id)}
-                            onSave={(data) => handleSavePermission(contact.id, child.id, data)}
-                            isSaving={savingPermission === `${contact.id}-${child.id}`}
-                          />
-                        ))}
+          {/* Contacts List */}
+          {contacts.length === 0 ? (
+            <CGCard variant="elevated" className="p-8">
+              <CGEmptyState
+                icon={<Users className="h-8 w-8" />}
+                title="No contacts yet"
+                description="Add trusted contacts like grandparents, aunts, uncles, or family friends"
+                action={{
+                  label: "Add Your First Contact",
+                  onClick: () => setShowAddForm(true),
+                }}
+              />
+            </CGCard>
+          ) : (
+            <div className="space-y-4">
+              {contacts.map((contact) => {
+                const status = getApprovalStatus(contact);
+                const StatusIcon = status.icon;
+                const isExpanded = expandedContactId === contact.id;
+
+                return (
+                  <CGCard
+                    key={contact.id}
+                    variant="elevated"
+                    className={!contact.is_active ? 'opacity-50' : ''}
+                  >
+                    {/* Contact Header */}
+                    <CGCardContent className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-4">
+                          <CGAvatar name={contact.contact_name} size="lg" color="sage" />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-foreground">
+                                {contact.contact_name}
+                              </h3>
+                              <span className={`flex items-center gap-1 text-sm ${status.color}`}>
+                                <StatusIcon className="h-4 w-4" />
+                                <span>{status.text}</span>
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground capitalize">
+                              {contact.relationship_type.replace('_', ' ')}
+                            </p>
+                            <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
+                              {contact.contact_email && (
+                                <span className="flex items-center gap-1">
+                                  <Mail className="h-4 w-4" />
+                                  <span>{contact.contact_email}</span>
+                                </span>
+                              )}
+                              {contact.contact_phone && (
+                                <span className="flex items-center gap-1">
+                                  <Phone className="h-4 w-4" />
+                                  <span>{contact.contact_phone}</span>
+                                </span>
+                              )}
+                            </div>
+                            {contact.notes && (
+                              <p className="mt-2 text-sm text-muted-foreground">{contact.notes}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {!contact.is_fully_approved && (
+                            <button
+                              onClick={() => handleApprove(contact.id, true)}
+                              className="p-2 text-cg-success hover:bg-cg-success-subtle rounded-lg transition-colors"
+                              title="Approve"
+                            >
+                              <Check className="h-5 w-5" />
+                            </button>
+                          )}
+
+                          {!contact.is_verified && contact.contact_email && (
+                            <button
+                              onClick={() => handleSendInvite(contact.id)}
+                              className="p-2 text-cg-sage hover:bg-cg-sage-subtle rounded-lg transition-colors"
+                              title="Send verification invite"
+                            >
+                              <Send className="h-5 w-5" />
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => startEdit(contact)}
+                            className="p-2 text-muted-foreground hover:bg-muted rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <Edit className="h-5 w-5" />
+                          </button>
+
+                          <button
+                            onClick={() => handleDelete(contact.id)}
+                            className="p-2 text-cg-error hover:bg-cg-error-subtle rounded-lg transition-colors"
+                            title="Remove"
+                          >
+                            <Trash2 className="h-5 w-5" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </main>
-    </div>
+                    </CGCardContent>
+
+                    {/* Permissions Toggle */}
+                    {contact.is_fully_approved && children.length > 0 && (
+                      <button
+                        onClick={() => setExpandedContactId(isExpanded ? null : contact.id)}
+                        className="w-full px-4 py-3 bg-muted/50 border-t border-border flex items-center justify-between hover:bg-muted transition-colors"
+                      >
+                        <div className="flex items-center gap-2 text-foreground">
+                          <Settings className="h-4 w-4" />
+                          <span className="text-sm font-medium">Communication Permissions</span>
+                          <span className="text-xs text-muted-foreground">
+                            ({children.length} {children.length === 1 ? 'child' : 'children'})
+                          </span>
+                        </div>
+                        {isExpanded ? (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </button>
+                    )}
+
+                    {/* Permissions Panel */}
+                    {isExpanded && contact.is_fully_approved && (
+                      <div className="border-t border-border bg-muted/30 p-4">
+                        <div className="space-y-6">
+                          {children.map((child) => (
+                            <PermissionPanel
+                              key={child.id}
+                              contact={contact}
+                              child={child}
+                              initialData={getPermissionFormData(contact.id, child.id)}
+                              onSave={(data) => handleSavePermission(contact.id, child.id, data)}
+                              isSaving={savingPermission === `${contact.id}-${child.id}`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CGCard>
+                );
+              })}
+            </div>
+          )}
+        </PageContainer>
+      </div>
+    </ProtectedRoute>
   );
 }
 
@@ -633,53 +654,54 @@ function PermissionPanel({ contact, child, initialData, onSave, isSaving }: Perm
   }
 
   return (
-    <div className="bg-white rounded-lg border p-4">
+    <div className="bg-card rounded-lg border border-border p-4">
       {/* Child Header */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-            <span className="text-purple-600 font-semibold">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-cg-sage-subtle flex items-center justify-center">
+            <span className="text-cg-sage font-semibold">
               {child.first_name[0]}
             </span>
           </div>
           <div>
-            <h4 className="font-medium text-gray-900">{child.first_name}</h4>
-            <p className="text-xs text-gray-500">
+            <h4 className="font-medium text-foreground">{child.first_name}</h4>
+            <p className="text-xs text-muted-foreground">
               Permissions for {contact.contact_name}
             </p>
           </div>
         </div>
         {hasChanges && (
-          <button
+          <CGButton
             onClick={handleSave}
             disabled={isSaving}
-            className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center space-x-1"
+            variant="primary"
+            size="sm"
           >
             {isSaving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <>
-                <Check className="h-4 w-4" />
+                <Check className="h-4 w-4 mr-1" />
                 <span>Save</span>
               </>
             )}
-          </button>
+          </CGButton>
         )}
       </div>
 
       {/* Communication Methods */}
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-foreground mb-2">
           Allowed Communication
         </label>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <button
             type="button"
             onClick={() => updateField('can_video_call', !formData.can_video_call)}
-            className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-colors ${
+            className={`flex items-center justify-center gap-2 p-2 rounded-lg border transition-colors ${
               formData.can_video_call
-                ? 'bg-green-50 border-green-300 text-green-700'
-                : 'bg-gray-50 border-gray-200 text-gray-400'
+                ? 'bg-cg-success-subtle border-cg-success/30 text-cg-success'
+                : 'bg-muted border-border text-muted-foreground'
             }`}
           >
             <Video className="h-4 w-4" />
@@ -688,10 +710,10 @@ function PermissionPanel({ contact, child, initialData, onSave, isSaving }: Perm
           <button
             type="button"
             onClick={() => updateField('can_voice_call', !formData.can_voice_call)}
-            className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-colors ${
+            className={`flex items-center justify-center gap-2 p-2 rounded-lg border transition-colors ${
               formData.can_voice_call
-                ? 'bg-green-50 border-green-300 text-green-700'
-                : 'bg-gray-50 border-gray-200 text-gray-400'
+                ? 'bg-cg-success-subtle border-cg-success/30 text-cg-success'
+                : 'bg-muted border-border text-muted-foreground'
             }`}
           >
             <PhoneCall className="h-4 w-4" />
@@ -700,10 +722,10 @@ function PermissionPanel({ contact, child, initialData, onSave, isSaving }: Perm
           <button
             type="button"
             onClick={() => updateField('can_chat', !formData.can_chat)}
-            className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-colors ${
+            className={`flex items-center justify-center gap-2 p-2 rounded-lg border transition-colors ${
               formData.can_chat
-                ? 'bg-green-50 border-green-300 text-green-700'
-                : 'bg-gray-50 border-gray-200 text-gray-400'
+                ? 'bg-cg-success-subtle border-cg-success/30 text-cg-success'
+                : 'bg-muted border-border text-muted-foreground'
             }`}
           >
             <MessageCircle className="h-4 w-4" />
@@ -712,10 +734,10 @@ function PermissionPanel({ contact, child, initialData, onSave, isSaving }: Perm
           <button
             type="button"
             onClick={() => updateField('can_theater', !formData.can_theater)}
-            className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-colors ${
+            className={`flex items-center justify-center gap-2 p-2 rounded-lg border transition-colors ${
               formData.can_theater
-                ? 'bg-green-50 border-green-300 text-green-700'
-                : 'bg-gray-50 border-gray-200 text-gray-400'
+                ? 'bg-cg-success-subtle border-cg-success/30 text-cg-success'
+                : 'bg-muted border-border text-muted-foreground'
             }`}
           >
             <Film className="h-4 w-4" />
@@ -726,7 +748,7 @@ function PermissionPanel({ contact, child, initialData, onSave, isSaving }: Perm
 
       {/* Allowed Days */}
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
+        <label className="block text-sm font-medium text-foreground mb-2">
           <Calendar className="h-4 w-4 inline mr-1" />
           Allowed Days
         </label>
@@ -738,8 +760,8 @@ function PermissionPanel({ contact, child, initialData, onSave, isSaving }: Perm
               onClick={() => toggleDay(day.value)}
               className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
                 formData.allowed_days.includes(day.value)
-                  ? 'bg-purple-50 border-purple-300 text-purple-700'
-                  : 'bg-gray-50 border-gray-200 text-gray-400'
+                  ? 'bg-cg-sage-subtle border-cg-sage/30 text-cg-sage'
+                  : 'bg-muted border-border text-muted-foreground'
               }`}
             >
               {day.label}
@@ -751,29 +773,29 @@ function PermissionPanel({ contact, child, initialData, onSave, isSaving }: Perm
       {/* Time Restrictions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Start Time
           </label>
           <input
             type="time"
             value={formData.allowed_start_time}
             onChange={(e) => updateField('allowed_start_time', e.target.value)}
-            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent text-sm"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             End Time
           </label>
           <input
             type="time"
             value={formData.allowed_end_time}
             onChange={(e) => updateField('allowed_end_time', e.target.value)}
-            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent text-sm"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Max Duration (min)
           </label>
           <input
@@ -783,18 +805,18 @@ function PermissionPanel({ contact, child, initialData, onSave, isSaving }: Perm
             step="5"
             value={formData.max_call_duration_minutes}
             onChange={(e) => updateField('max_call_duration_minutes', parseInt(e.target.value) || 60)}
-            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+            className="w-full px-3 py-2 bg-background border border-border rounded-lg focus:ring-2 focus:ring-cg-sage focus:border-transparent text-sm"
           />
         </div>
       </div>
 
       {/* Supervision Option */}
-      <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-        <div className="flex items-center space-x-2">
-          <Shield className="h-5 w-5 text-yellow-600" />
+      <div className="flex items-center justify-between p-3 bg-cg-amber-subtle rounded-lg border border-cg-amber/30">
+        <div className="flex items-center gap-2">
+          <Shield className="h-5 w-5 text-cg-amber" />
           <div>
-            <p className="text-sm font-medium text-yellow-800">Require Parent Present</p>
-            <p className="text-xs text-yellow-600">
+            <p className="text-sm font-medium text-foreground">Require Parent Present</p>
+            <p className="text-xs text-muted-foreground">
               A parent must be on the call with the child
             </p>
           </div>
@@ -803,7 +825,7 @@ function PermissionPanel({ contact, child, initialData, onSave, isSaving }: Perm
           type="button"
           onClick={() => updateField('require_parent_present', !formData.require_parent_present)}
           className={`relative w-12 h-6 rounded-full transition-colors ${
-            formData.require_parent_present ? 'bg-yellow-500' : 'bg-gray-300'
+            formData.require_parent_present ? 'bg-cg-amber' : 'bg-muted-foreground/30'
           }`}
         >
           <span

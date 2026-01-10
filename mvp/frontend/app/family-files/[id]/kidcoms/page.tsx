@@ -40,6 +40,9 @@ import {
   CGAvatar,
   CGEmptyState,
 } from '@/components/cg';
+import { Navigation } from '@/components/navigation';
+import { ProtectedRoute } from '@/components/protected-route';
+import { PageContainer } from '@/components/layout';
 import { cn } from '@/lib/utils';
 
 /* =============================================================================
@@ -194,36 +197,36 @@ export default function KidComsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-cg-background">
-        <div className="relative">
-          <div className="w-16 h-16 rounded-full bg-purple-100 flex items-center justify-center">
-            <Sparkles className="h-8 w-8 text-purple-600 animate-pulse" />
+      <ProtectedRoute>
+        <div className="min-h-screen bg-cg-background">
+          <Navigation />
+          <div className="flex flex-col items-center justify-center pt-32">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-cg-sage-subtle flex items-center justify-center">
+                <Sparkles className="h-8 w-8 text-cg-sage animate-pulse" />
+              </div>
+            </div>
+            <p className="mt-4 text-muted-foreground font-medium">Loading KidComs...</p>
           </div>
         </div>
-        <p className="mt-4 text-muted-foreground font-medium">Loading KidComs...</p>
-      </div>
+      </ProtectedRoute>
     );
   }
 
   return (
-    <div className="min-h-screen bg-cg-background">
-      {/* Incoming Call Banner */}
-      <IncomingCallBanner familyFileId={familyFileId} />
+    <ProtectedRoute>
+      <div className="min-h-screen bg-cg-background pb-20 lg:pb-0">
+        <Navigation />
 
-      {/* Header */}
-      <header className="bg-card border-b border-border/50 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <CGButton
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push(`/family-files/${familyFileId}`)}
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </CGButton>
-              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
-                <Video className="h-5 w-5 text-purple-600" />
+        {/* Incoming Call Banner */}
+        <IncomingCallBanner familyFileId={familyFileId} />
+
+        <PageContainer>
+          {/* Page Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cg-sage-subtle flex items-center justify-center">
+                <Video className="h-5 w-5 text-cg-sage" />
               </div>
               <div>
                 <h1 className="text-xl font-semibold text-foreground">KidComs</h1>
@@ -231,7 +234,7 @@ export default function KidComsPage() {
               </div>
             </div>
             <CGButton
-              variant="ghost"
+              variant="secondary"
               size="sm"
               onClick={() => router.push(`/family-files/${familyFileId}/kidcoms/settings`)}
             >
@@ -239,10 +242,6 @@ export default function KidComsPage() {
               Settings
             </CGButton>
           </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
         {/* Error */}
         {error && (
           <CGCard variant="default" className="mb-6 border-cg-error/30 bg-cg-error-subtle">
@@ -516,7 +515,8 @@ export default function KidComsPage() {
             )}
           </div>
         </div>
-      </main>
-    </div>
+        </PageContainer>
+      </div>
+    </ProtectedRoute>
   );
 }
