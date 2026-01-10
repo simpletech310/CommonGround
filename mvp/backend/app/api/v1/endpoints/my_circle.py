@@ -383,37 +383,60 @@ async def invite_circle_user(
     # Verify parent has access to this family
     await get_family_file_with_access(db, contact.family_file_id, current_user.id)
 
-    try:
-        # Create default permissions for all children in the family (if not already created)
-        children_result = await db.execute(
-            select(Child).where(Child.family_file_id == contact.family_file_id)
-        )
-        children = children_result.scalars().all()
+    # Create default permissions for all children in the family (if not already created)
+    children_result = await db.execute(
+        select(Child).where(Child.family_file_id == contact.family_file_id)
+    )
+    children = children_result.scalars().all()
 
-        for child in children:
-            # Check if permission already exists
-            existing_permission = await db.execute(
-                select(CirclePermission).where(
-                    and_(
-                        CirclePermission.circle_contact_id == contact.id,
-                        CirclePermission.child_id == child.id
-                    )
+    for child in children:
+        # Check if permission already exists
+        existing_permission = await db.execute(
+            select(CirclePermission).where(
+                and_(
+                    CirclePermission.circle_contact_id == contact.id,
+                    CirclePermission.child_id == child.id
                 )
             )
-            if not existing_permission.scalar_one_or_none():
-                permission = CirclePermission(
-                    circle_contact_id=contact.id,
-                    child_id=child.id,
-                    family_file_id=contact.family_file_id,
-                    can_video_call=True,
-                    can_voice_call=True,
-                    can_chat=True,
-                    can_theater=True,
-                    set_by_parent_id=current_user.id,
-                )
-                db.add(permission)
+        )
+        if not existing_permission.scalar_one_or_none():
+            permission = CirclePermission(
+                circle_contact_id=contact.id,
+                child_id=child.id,
+                family_file_id=contact.family_file_id,
+                can_video_call=True,
+                can_voice_call=True,
+                can_chat=True,
+                can_theater=True,
+                set_by_parent_id=current_user.id,
+            )
+            db.add(permission)
 
-        base_url = settings.FRONTEND_URL
+    base_url = settings.FRONTEND_URL
+
+    # Check if circle user already exists
+    existing_user_result = await db.execute(
+        select(CircleUser).where(CircleUser.circle_contact_id == contact.id)
+    )
+    existing_circle_user = existing_user_result.scalar_one_or_none()
+
+    # If user already accepted invite, return login URL instead
+    if existing_circle_user and existing_circle_user.invite_accepted_at:
+        await db.commit()  # Commit any permission changes
+        login_url = f"{base_url}/my-circle/contact"
+        return CircleUserInviteResponse(
+            id=existing_circle_user.id,
+            circle_contact_id=existing_circle_user.circle_contact_id,
+            email=existing_circle_user.email,
+            invite_token="",  # No token needed for login
+            invite_url=login_url,  # Return login URL instead
+            invite_expires_at=None,
+            contact_name=contact.contact_name,
+            relationship_type=contact.relationship_type,
+            room_number=contact.room_number,
+        )
+
+    try:
         circle_user = await my_circle_service.create_circle_user_invite(
             db,
             circle_contact_id=invite_data.circle_contact_id,
@@ -423,8 +446,6 @@ async def invite_circle_user(
 
         # Build invite URL
         invite_url = f"{base_url}/my-circle/accept-invite?token={circle_user.invite_token}"
-
-        # TODO: Send email with invite link
 
         return CircleUserInviteResponse(
             id=circle_user.id,
