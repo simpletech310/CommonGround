@@ -258,17 +258,19 @@ async def create_session(
         )
 
     # Create session
+    is_immediate_call = not session_data.scheduled_for
     session = KidComsSession(
         family_file_id=session_data.family_file_id,
         child_id=session_data.child_id,
         session_type=session_data.session_type,
-        title=session_data.title,
+        title=session_data.title or f"Call from {current_user.first_name}",
         daily_room_name=room_name,
         daily_room_url=room_url,
         initiated_by_id=current_user.id,
         initiated_by_type=ParticipantType.PARENT.value,
         scheduled_for=session_data.scheduled_for,
-        status=SessionStatus.WAITING.value if not session_data.scheduled_for else SessionStatus.SCHEDULED.value,
+        status=SessionStatus.WAITING.value if is_immediate_call else SessionStatus.SCHEDULED.value,
+        ringing_started_at=datetime.utcnow() if is_immediate_call else None,  # Track when call started ringing
     )
 
     # Add creating user as first participant
@@ -1140,16 +1142,19 @@ async def get_incoming_calls_for_child(
     Returns sessions where:
     - Child is the target (child_id matches)
     - Status is 'waiting'
-    - Call was initiated by a circle contact (not by the child)
+    - Call was initiated by a parent or circle contact (not by the child)
     """
-    # Get waiting sessions for this child from circle contacts
+    # Get waiting sessions for this child from parents or circle contacts
     result = await db.execute(
         select(KidComsSession)
         .where(
             and_(
                 KidComsSession.child_id == current_child.child_id,
                 KidComsSession.status == SessionStatus.WAITING.value,
-                KidComsSession.initiated_by_type == ParticipantType.CIRCLE_CONTACT.value
+                or_(
+                    KidComsSession.initiated_by_type == ParticipantType.CIRCLE_CONTACT.value,
+                    KidComsSession.initiated_by_type == ParticipantType.PARENT.value
+                )
             )
         )
         .order_by(KidComsSession.created_at.desc())
@@ -1170,6 +1175,7 @@ async def get_incoming_calls_for_child(
 
         # Get caller info from session title and participants
         caller_name = session.title.replace("Call from ", "") if session.title else "Unknown Caller"
+        caller_type = session.initiated_by_type  # "parent" or "circle_contact"
 
         # Get child info
         child_result = await db.execute(
@@ -1180,13 +1186,13 @@ async def get_incoming_calls_for_child(
         incoming_calls.append(IncomingCallResponse(
             session_id=session.id,
             caller_name=caller_name,
-            caller_type="circle_contact",
+            caller_type=caller_type,
             session_type=session.session_type,
             room_url=session.daily_room_url,
             started_ringing_at=session.created_at,  # Use created_at as ring time
             child_id=session.child_id,
             child_name=child.display_name if child else None,
-            circle_contact_id=None,  # Not using this field
+            circle_contact_id=session.circle_contact_id,
             contact_name=caller_name,
         ))
 
