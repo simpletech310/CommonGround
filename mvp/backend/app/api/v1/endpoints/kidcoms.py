@@ -1161,14 +1161,17 @@ async def get_incoming_calls_for_child(
     )
     sessions = result.scalars().all()
 
-    # Check for timed-out calls (more than 60 seconds waiting)
+    # Check for timed-out calls (more than 3 minutes waiting - gives time to notice and respond)
     from datetime import datetime as dt, timedelta
-    timeout_threshold = dt.utcnow() - timedelta(seconds=60)
+    timeout_threshold = dt.utcnow() - timedelta(minutes=3)
 
     incoming_calls = []
     for session in sessions:
+        # Use ringing_started_at if available, fall back to created_at
+        ring_time = session.ringing_started_at or session.created_at
+
         # Mark as cancelled if timed out
-        if session.created_at and session.created_at < timeout_threshold:
+        if ring_time and ring_time < timeout_threshold:
             session.status = SessionStatus.CANCELLED.value
             await db.commit()
             continue
@@ -1189,7 +1192,7 @@ async def get_incoming_calls_for_child(
             caller_type=caller_type,
             session_type=session.session_type,
             room_url=session.daily_room_url,
-            started_ringing_at=session.created_at,  # Use created_at as ring time
+            started_ringing_at=ring_time,
             child_id=session.child_id,
             child_name=child.display_name if child else None,
             circle_contact_id=session.circle_contact_id,
@@ -1249,9 +1252,9 @@ async def get_incoming_calls_for_circle(
     )
     sessions = result.scalars().all()
 
-    # Check for timed-out calls (more than 60 seconds ringing)
+    # Check for timed-out calls (more than 3 minutes ringing - gives time to notice and respond)
     from datetime import datetime as dt, timedelta
-    timeout_threshold = dt.utcnow() - timedelta(seconds=60)
+    timeout_threshold = dt.utcnow() - timedelta(minutes=3)
 
     incoming_calls = []
     for session in sessions:
@@ -1265,8 +1268,11 @@ async def get_incoming_calls_for_circle(
         if not is_participant:
             continue
 
+        # Use ringing_started_at if available, fall back to created_at
+        ring_time = session.ringing_started_at or session.created_at
+
         # Mark as missed if timed out
-        if session.ringing_started_at and session.ringing_started_at < timeout_threshold:
+        if ring_time and ring_time < timeout_threshold:
             session.status = SessionStatus.MISSED.value
             await db.commit()
             continue
