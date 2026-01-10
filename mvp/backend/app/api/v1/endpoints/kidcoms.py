@@ -1032,20 +1032,17 @@ async def create_circle_contact_session(
             detail="Failed to create video room. Please try again later."
         )
 
-    # Create session with RINGING status (waiting for child to answer)
-    from datetime import datetime as dt
+    # Create session with WAITING status (like child-initiated calls)
     session = KidComsSession(
         family_file_id=family_file_id,
         child_id=session_data.child_id,
-        circle_contact_id=contact.id,  # Link to circle contact for incoming call lookup
         session_type=session_data.session_type,
         title=f"Call from {contact.contact_name}",
         daily_room_name=room_name,
         daily_room_url=room_url,
         initiated_by_id=current_circle_user.id,
         initiated_by_type=ParticipantType.CIRCLE_CONTACT.value,
-        status=SessionStatus.RINGING.value,  # Changed: starts as ringing
-        ringing_started_at=dt.utcnow(),  # Track when call started ringing
+        status=SessionStatus.WAITING.value,
     )
 
     # Add circle contact as first participant
@@ -1101,7 +1098,7 @@ async def create_circle_contact_session(
     "/sessions/incoming/child",
     response_model=IncomingCallListResponse,
     summary="Get incoming calls for child",
-    description="Poll for incoming calls. Returns ringing sessions where the child is the recipient."
+    description="Poll for incoming calls. Returns waiting sessions where the child is the recipient."
 )
 async def get_incoming_calls_for_child(
     current_child: ChildUser = Depends(get_current_child_user),
@@ -1112,42 +1109,37 @@ async def get_incoming_calls_for_child(
 
     Returns sessions where:
     - Child is the target (child_id matches)
-    - Status is 'ringing'
-    - Call was initiated by a circle contact
+    - Status is 'waiting'
+    - Call was initiated by a circle contact (not by the child)
     """
-    # Get ringing sessions for this child
+    # Get waiting sessions for this child from circle contacts
     result = await db.execute(
         select(KidComsSession)
         .where(
             and_(
                 KidComsSession.child_id == current_child.child_id,
-                KidComsSession.status == SessionStatus.RINGING.value,
-                KidComsSession.circle_contact_id.isnot(None)  # From circle contact
+                KidComsSession.status == SessionStatus.WAITING.value,
+                KidComsSession.initiated_by_type == ParticipantType.CIRCLE_CONTACT.value
             )
         )
-        .order_by(KidComsSession.ringing_started_at.desc())
+        .order_by(KidComsSession.created_at.desc())
     )
     sessions = result.scalars().all()
 
-    # Check for timed-out calls (more than 60 seconds ringing)
+    # Check for timed-out calls (more than 60 seconds waiting)
     from datetime import datetime as dt, timedelta
     timeout_threshold = dt.utcnow() - timedelta(seconds=60)
 
     incoming_calls = []
     for session in sessions:
-        # Mark as missed if timed out
-        if session.ringing_started_at and session.ringing_started_at < timeout_threshold:
-            session.status = SessionStatus.MISSED.value
+        # Mark as cancelled if timed out
+        if session.created_at and session.created_at < timeout_threshold:
+            session.status = SessionStatus.CANCELLED.value
             await db.commit()
             continue
 
-        # Get caller info (circle contact)
-        contact_result = await db.execute(
-            select(CircleContact).where(CircleContact.id == session.circle_contact_id)
-        )
-        contact = contact_result.scalar_one_or_none()
-
-        caller_name = contact.contact_name if contact else "Unknown Caller"
+        # Get caller info from session title and participants
+        caller_name = session.title.replace("Call from ", "") if session.title else "Unknown Caller"
 
         # Get child info
         child_result = await db.execute(
@@ -1161,10 +1153,10 @@ async def get_incoming_calls_for_child(
             caller_type="circle_contact",
             session_type=session.session_type,
             room_url=session.daily_room_url,
-            started_ringing_at=session.ringing_started_at,
+            started_ringing_at=session.created_at,  # Use created_at as ring time
             child_id=session.child_id,
             child_name=child.display_name if child else None,
-            circle_contact_id=session.circle_contact_id,
+            circle_contact_id=None,  # Not using this field
             contact_name=caller_name,
         ))
 
