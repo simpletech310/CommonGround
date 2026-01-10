@@ -619,7 +619,7 @@ class CircleUserInviteResponse(BaseModel):
     email: str
     invite_token: str
     invite_url: str
-    invite_expires_at: datetime
+    invite_expires_at: Optional[datetime] = None  # None when contact already accepted (returns login URL)
     contact_name: str
     relationship_type: str
     room_number: Optional[int] = None
