@@ -386,31 +386,39 @@ async def get_active_sessions(
     Get active sessions that the current user can join.
 
     Returns sessions that are:
-    - In 'waiting' or 'active' status
+    - In 'waiting' status ONLY (incoming calls, not yet answered)
     - Belong to the user's family file
-    - User hasn't already joined (optional filter)
+    - User is an invited participant (their ID is in the participants list)
+    - User hasn't initiated the call themselves
     """
     await get_family_file_with_access(db, family_file_id, current_user.id)
 
-    # Get active and waiting sessions
+    # Get WAITING sessions only (not active - those are already in progress)
     query = select(KidComsSession).where(
         and_(
             KidComsSession.family_file_id == family_file_id,
-            or_(
-                KidComsSession.status == SessionStatus.WAITING.value,
-                KidComsSession.status == SessionStatus.ACTIVE.value
-            )
+            KidComsSession.status == SessionStatus.WAITING.value
         )
     ).order_by(KidComsSession.created_at.desc())
 
     result = await db.execute(query)
     sessions = result.scalars().all()
 
-    # Filter to sessions the user hasn't initiated (incoming calls)
+    # Filter to sessions where this user is an invited participant
     incoming_sessions = []
+    user_id_str = str(current_user.id)
+
     for session in sessions:
-        if session.initiated_by_id != str(current_user.id):
-            incoming_sessions.append(session)
+        # Skip if user initiated this call
+        if session.initiated_by_id == user_id_str:
+            continue
+
+        # Check if user is in the participants list
+        if session.participants:
+            for participant in session.participants:
+                if participant.get("id") == user_id_str and participant.get("type") == "parent":
+                    incoming_sessions.append(session)
+                    break
 
     return KidComsSessionListResponse(
         items=[_session_to_response(s) for s in incoming_sessions],
