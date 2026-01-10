@@ -239,12 +239,14 @@ async def create_session(
 
     # Create room via Daily.co API
     try:
+        # Handle case where allowed_features might be None for older records
+        enable_chat = settings.allowed_features.get("chat", True) if settings.allowed_features else True
         room_data = await daily_service.create_room(
             room_name=room_name,
             privacy="private",
             exp_minutes=settings.max_session_duration_minutes + 30,  # Add buffer
             max_participants=settings.max_participants_per_session,
-            enable_chat=settings.allowed_features.get("chat", True),
+            enable_chat=enable_chat,
             enable_recording=settings.record_sessions,
         )
         room_url = room_data.get("url", f"https://{daily_service.domain}/{room_name}")
@@ -683,12 +685,14 @@ async def create_child_session(
 
     # Create room via Daily.co API
     try:
+        # Handle case where allowed_features might be None for older records
+        enable_chat = settings.allowed_features.get("chat", True) if settings.allowed_features else True
         room_data = await daily_service.create_room(
             room_name=room_name,
             privacy="private",
             exp_minutes=settings.max_session_duration_minutes + 30,
             max_participants=settings.max_participants_per_session,
-            enable_chat=settings.allowed_features.get("chat", True),
+            enable_chat=enable_chat,
             enable_recording=settings.record_sessions,
         )
         room_url = room_data.get("url", f"https://{daily_service.domain}/{room_name}")
@@ -925,15 +929,9 @@ async def create_circle_contact_session(
             detail="Circle contact is not active"
         )
 
-    if not contact.is_fully_approved:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Circle contact is not fully approved yet"
-        )
-
     family_file_id = contact.family_file_id
 
-    # Get KidComs settings
+    # Get KidComs settings (needed for approval mode check)
     settings_result = await db.execute(
         select(KidComsSettings).where(KidComsSettings.family_file_id == family_file_id)
     )
@@ -949,6 +947,14 @@ async def create_circle_contact_session(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="KidComs is not enabled for this family"
+        )
+
+    # Check approval based on family's approval mode setting
+    approval_mode = ApprovalMode(settings.circle_approval_mode)
+    if not contact.can_communicate(approval_mode):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Circle contact is not approved to communicate"
         )
 
     # Get the child
@@ -1028,12 +1034,14 @@ async def create_circle_contact_session(
     # Create room via Daily.co API
     try:
         max_duration = permission.max_call_duration_minutes or 60
+        # Handle case where allowed_features might be None for older records
+        enable_chat = settings.allowed_features.get("chat", True) if settings.allowed_features else True
         room_data = await daily_service.create_room(
             room_name=room_name,
             privacy="private",
             exp_minutes=max_duration + 30,
             max_participants=settings.max_participants_per_session,
-            enable_chat=settings.allowed_features.get("chat", True),
+            enable_chat=enable_chat,
             enable_recording=settings.record_sessions,
         )
         room_url = room_data.get("url", f"https://{daily_service.domain}/{room_name}")
