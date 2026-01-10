@@ -59,6 +59,8 @@ from app.schemas.kidcoms import (
     SESSION_TYPES,
     ChildSessionCreate,
     CircleContactSessionCreate,
+    IncomingCallResponse,
+    IncomingCallListResponse,
 )
 
 router = APIRouter()
@@ -1030,17 +1032,20 @@ async def create_circle_contact_session(
             detail="Failed to create video room. Please try again later."
         )
 
-    # Create session
+    # Create session with RINGING status (waiting for child to answer)
+    from datetime import datetime as dt
     session = KidComsSession(
         family_file_id=family_file_id,
         child_id=session_data.child_id,
+        circle_contact_id=contact.id,  # Link to circle contact for incoming call lookup
         session_type=session_data.session_type,
         title=f"Call from {contact.contact_name}",
         daily_room_name=room_name,
         daily_room_url=room_url,
         initiated_by_id=current_circle_user.id,
         initiated_by_type=ParticipantType.CIRCLE_CONTACT.value,
-        status=SessionStatus.WAITING.value,
+        status=SessionStatus.RINGING.value,  # Changed: starts as ringing
+        ringing_started_at=dt.utcnow(),  # Track when call started ringing
     )
 
     # Add circle contact as first participant
@@ -1078,6 +1083,413 @@ async def create_circle_contact_session(
         )
 
     # TODO: Send notification to child/parents about incoming call
+
+    return KidComsJoinResponse(
+        session_id=session.id,
+        room_url=session.daily_room_url,
+        token=token,
+        participant_name=contact.contact_name,
+        participant_type=ParticipantType.CIRCLE_CONTACT.value,
+    )
+
+
+# ============================================================
+# Incoming Call Notification Endpoints
+# ============================================================
+
+@router.get(
+    "/sessions/incoming/child",
+    response_model=IncomingCallListResponse,
+    summary="Get incoming calls for child",
+    description="Poll for incoming calls. Returns ringing sessions where the child is the recipient."
+)
+async def get_incoming_calls_for_child(
+    current_child: ChildUser = Depends(get_current_child_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get incoming calls for a child.
+
+    Returns sessions where:
+    - Child is the target (child_id matches)
+    - Status is 'ringing'
+    - Call was initiated by a circle contact
+    """
+    # Get ringing sessions for this child
+    result = await db.execute(
+        select(KidComsSession)
+        .where(
+            and_(
+                KidComsSession.child_id == current_child.child_id,
+                KidComsSession.status == SessionStatus.RINGING.value,
+                KidComsSession.circle_contact_id.isnot(None)  # From circle contact
+            )
+        )
+        .order_by(KidComsSession.ringing_started_at.desc())
+    )
+    sessions = result.scalars().all()
+
+    # Check for timed-out calls (more than 60 seconds ringing)
+    from datetime import datetime as dt, timedelta
+    timeout_threshold = dt.utcnow() - timedelta(seconds=60)
+
+    incoming_calls = []
+    for session in sessions:
+        # Mark as missed if timed out
+        if session.ringing_started_at and session.ringing_started_at < timeout_threshold:
+            session.status = SessionStatus.MISSED.value
+            await db.commit()
+            continue
+
+        # Get caller info (circle contact)
+        contact_result = await db.execute(
+            select(CircleContact).where(CircleContact.id == session.circle_contact_id)
+        )
+        contact = contact_result.scalar_one_or_none()
+
+        caller_name = contact.contact_name if contact else "Unknown Caller"
+
+        # Get child info
+        child_result = await db.execute(
+            select(Child).where(Child.id == session.child_id)
+        )
+        child = child_result.scalar_one_or_none()
+
+        incoming_calls.append(IncomingCallResponse(
+            session_id=session.id,
+            caller_name=caller_name,
+            caller_type="circle_contact",
+            session_type=session.session_type,
+            room_url=session.daily_room_url,
+            started_ringing_at=session.ringing_started_at,
+            child_id=session.child_id,
+            child_name=child.display_name if child else None,
+            circle_contact_id=session.circle_contact_id,
+            contact_name=caller_name,
+        ))
+
+    return IncomingCallListResponse(
+        items=incoming_calls,
+        total=len(incoming_calls)
+    )
+
+
+@router.get(
+    "/sessions/incoming/circle",
+    response_model=IncomingCallListResponse,
+    summary="Get incoming calls for circle contact",
+    description="Poll for incoming calls. Returns ringing sessions where the circle contact is the recipient."
+)
+async def get_incoming_calls_for_circle(
+    current_circle_user: CircleUser = Depends(get_current_circle_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get incoming calls for a circle contact.
+
+    Returns sessions where:
+    - Circle contact is invited
+    - Status is 'ringing' or 'waiting'
+    - Call was initiated by a child
+    """
+    # Get the circle contact
+    contact_result = await db.execute(
+        select(CircleContact).where(
+            CircleContact.id == current_circle_user.circle_contact_id
+        )
+    )
+    contact = contact_result.scalar_one_or_none()
+
+    if not contact:
+        return IncomingCallListResponse(items=[], total=0)
+
+    # Get sessions where child is calling this circle contact
+    # These would have been created by child and include this contact as participant
+    result = await db.execute(
+        select(KidComsSession)
+        .where(
+            and_(
+                KidComsSession.family_file_id == contact.family_file_id,
+                KidComsSession.status.in_([
+                    SessionStatus.RINGING.value,
+                    SessionStatus.WAITING.value
+                ]),
+                KidComsSession.initiated_by_type == ParticipantType.CHILD.value
+            )
+        )
+        .order_by(KidComsSession.created_at.desc())
+    )
+    sessions = result.scalars().all()
+
+    # Check for timed-out calls (more than 60 seconds ringing)
+    from datetime import datetime as dt, timedelta
+    timeout_threshold = dt.utcnow() - timedelta(seconds=60)
+
+    incoming_calls = []
+    for session in sessions:
+        # Check if this contact is a participant
+        participants = session.participants or []
+        is_participant = any(
+            p.get("id") == contact.id and p.get("type") == ParticipantType.CIRCLE_CONTACT.value
+            for p in participants
+        )
+
+        if not is_participant:
+            continue
+
+        # Mark as missed if timed out
+        if session.ringing_started_at and session.ringing_started_at < timeout_threshold:
+            session.status = SessionStatus.MISSED.value
+            await db.commit()
+            continue
+
+        # Get child info (the caller)
+        child_result = await db.execute(
+            select(Child).where(Child.id == session.child_id)
+        )
+        child = child_result.scalar_one_or_none()
+
+        caller_name = child.display_name if child else "Unknown Caller"
+
+        incoming_calls.append(IncomingCallResponse(
+            session_id=session.id,
+            caller_name=caller_name,
+            caller_type="child",
+            session_type=session.session_type,
+            room_url=session.daily_room_url,
+            started_ringing_at=session.ringing_started_at,
+            child_id=session.child_id,
+            child_name=caller_name,
+            circle_contact_id=contact.id,
+            contact_name=contact.contact_name,
+        ))
+
+    return IncomingCallListResponse(
+        items=incoming_calls,
+        total=len(incoming_calls)
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/accept",
+    response_model=KidComsJoinResponse,
+    summary="Accept incoming call",
+    description="Accept a ringing call and get the token to join."
+)
+async def accept_incoming_call(
+    session_id: str,
+    current_child: ChildUser = Depends(get_current_child_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Accept an incoming call as a child.
+
+    - Changes session status from RINGING to ACTIVE
+    - Returns join token for Daily.co room
+    """
+    # Get the session
+    result = await db.execute(
+        select(KidComsSession).where(KidComsSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+
+    # Verify child is the recipient
+    if session.child_id != current_child.child_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not the recipient of this call"
+        )
+
+    # Check status
+    if session.status not in [SessionStatus.RINGING.value, SessionStatus.WAITING.value]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot accept call with status: {session.status}"
+        )
+
+    # Get child info
+    child_result = await db.execute(
+        select(Child).where(Child.id == current_child.child_id)
+    )
+    child = child_result.scalar_one_or_none()
+    child_name = child.display_name if child else "Child"
+
+    # Update session status to ACTIVE
+    session.start()  # This sets status to ACTIVE and started_at
+    await db.commit()
+
+    # Generate Daily.co meeting token
+    try:
+        token = await daily_service.create_meeting_token(
+            room_name=session.daily_room_name,
+            user_name=child_name,
+            user_id=str(current_child.child_id),
+            is_owner=False,
+            exp_minutes=120,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create meeting token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to generate meeting token. Please try again."
+        )
+
+    return KidComsJoinResponse(
+        session_id=session.id,
+        room_url=session.daily_room_url,
+        token=token,
+        participant_name=child_name,
+        participant_type=ParticipantType.CHILD.value,
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/reject",
+    response_model=KidComsSessionResponse,
+    summary="Reject incoming call",
+    description="Reject a ringing call."
+)
+async def reject_incoming_call(
+    session_id: str,
+    current_child: ChildUser = Depends(get_current_child_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reject an incoming call as a child.
+
+    - Changes session status to REJECTED
+    - Notifies the caller
+    """
+    # Get the session
+    result = await db.execute(
+        select(KidComsSession).where(KidComsSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+
+    # Verify child is the recipient
+    if session.child_id != current_child.child_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not the recipient of this call"
+        )
+
+    # Check status
+    if session.status not in [SessionStatus.RINGING.value, SessionStatus.WAITING.value]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot reject call with status: {session.status}"
+        )
+
+    # Update session status to REJECTED
+    session.status = SessionStatus.REJECTED.value
+    session.ended_at = datetime.utcnow()
+
+    # Clean up Daily.co room
+    try:
+        await daily_service.delete_room(session.daily_room_name)
+    except Exception as e:
+        logger.warning(f"Failed to delete Daily.co room: {e}")
+
+    await db.commit()
+    await db.refresh(session)
+
+    return _session_to_response(session)
+
+
+@router.post(
+    "/sessions/{session_id}/circle/accept",
+    response_model=KidComsJoinResponse,
+    summary="Accept incoming call as circle contact",
+    description="Accept a ringing call from a child and get the token to join."
+)
+async def accept_incoming_call_as_circle(
+    session_id: str,
+    current_circle_user: CircleUser = Depends(get_current_circle_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Accept an incoming call as a circle contact.
+
+    - Changes session status from WAITING to ACTIVE
+    - Returns join token for Daily.co room
+    """
+    # Get the session
+    result = await db.execute(
+        select(KidComsSession).where(KidComsSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+
+    # Get the circle contact
+    contact_result = await db.execute(
+        select(CircleContact).where(
+            CircleContact.id == current_circle_user.circle_contact_id
+        )
+    )
+    contact = contact_result.scalar_one_or_none()
+
+    if not contact:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Circle contact not found"
+        )
+
+    # Verify circle contact is a participant
+    participants = session.participants or []
+    is_participant = any(
+        p.get("id") == contact.id and p.get("type") == ParticipantType.CIRCLE_CONTACT.value
+        for p in participants
+    )
+
+    if not is_participant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not a participant in this call"
+        )
+
+    # Check status
+    if session.status not in [SessionStatus.RINGING.value, SessionStatus.WAITING.value]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot accept call with status: {session.status}"
+        )
+
+    # Update session status to ACTIVE
+    session.start()  # This sets status to ACTIVE and started_at
+    await db.commit()
+
+    # Generate Daily.co meeting token
+    try:
+        token = await daily_service.create_meeting_token(
+            room_name=session.daily_room_name,
+            user_name=contact.contact_name,
+            user_id=str(contact.id),
+            is_owner=False,
+            exp_minutes=120,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create meeting token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to generate meeting token. Please try again."
+        )
 
     return KidComsJoinResponse(
         session_id=session.id,

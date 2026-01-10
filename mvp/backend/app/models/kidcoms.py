@@ -29,9 +29,12 @@ class SessionStatus(str, Enum):
     """Status of a KidComs session."""
     SCHEDULED = "scheduled"
     WAITING = "waiting"  # Room created, waiting for participants
+    RINGING = "ringing"  # Call initiated, waiting for recipient to answer
     ACTIVE = "active"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    REJECTED = "rejected"  # Recipient declined the call
+    MISSED = "missed"  # Call timed out without answer
 
 
 class ParticipantType(str, Enum):
@@ -148,6 +151,10 @@ class KidComsSession(Base, UUIDMixin, TimestampMixin):
     child_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("children.id", ondelete="CASCADE"), index=True
     )
+    # Circle contact involved in the call (if any)
+    circle_contact_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("circle_contacts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # Session info
     session_type: Mapped[str] = mapped_column(String(20), default=SessionType.VIDEO_CALL.value)
@@ -169,6 +176,7 @@ class KidComsSession(Base, UUIDMixin, TimestampMixin):
 
     # Timing
     scheduled_for: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ringing_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # For call timeout
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -186,6 +194,7 @@ class KidComsSession(Base, UUIDMixin, TimestampMixin):
     # Relationships
     family_file = relationship("FamilyFile", back_populates="kidcoms_sessions")
     child = relationship("Child", back_populates="kidcoms_sessions")
+    circle_contact = relationship("CircleContact")
     messages = relationship("KidComsMessage", back_populates="session", cascade="all, delete-orphan")
 
     # Indexes

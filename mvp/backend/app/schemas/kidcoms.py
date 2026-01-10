@@ -274,6 +274,28 @@ class KidComsJoinResponse(BaseModel):
     participant_type: str
 
 
+class IncomingCallResponse(BaseModel):
+    """Schema for incoming call notification."""
+    session_id: str
+    caller_name: str
+    caller_type: str  # "circle_contact" or "child"
+    session_type: str  # "video_call" or "voice_call"
+    room_url: str
+    started_ringing_at: Optional[datetime] = None
+    # Include child info if caller is circle_contact
+    child_id: Optional[str] = None
+    child_name: Optional[str] = None
+    # Include contact info if caller is child
+    circle_contact_id: Optional[str] = None
+    contact_name: Optional[str] = None
+
+
+class IncomingCallListResponse(BaseModel):
+    """Schema for list of incoming calls."""
+    items: List[IncomingCallResponse]
+    total: int
+
+
 class KidComsEndSessionRequest(BaseModel):
     """Schema for ending a session."""
     notes: Optional[str] = None

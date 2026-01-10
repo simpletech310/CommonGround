@@ -5515,6 +5515,32 @@ export interface CommunicationLog {
   has_flags: boolean;
 }
 
+export interface IncomingCall {
+  session_id: string;
+  caller_name: string;
+  caller_type: 'circle_contact' | 'child';
+  session_type: 'video_call' | 'voice_call';
+  room_url: string;
+  started_ringing_at?: string;
+  child_id?: string;
+  child_name?: string;
+  circle_contact_id?: string;
+  contact_name?: string;
+}
+
+export interface IncomingCallList {
+  items: IncomingCall[];
+  total: number;
+}
+
+export interface CallJoinResponse {
+  session_id: string;
+  room_url: string;
+  token: string;
+  participant_name: string;
+  participant_type: string;
+}
+
 export const myCircleAPI = {
   // ==========================================================================
   // Room Management (Parent-facing)
@@ -5829,6 +5855,69 @@ export const myCircleAPI = {
     return fetchAPI<CommunicationLog[]>(
       `/my-circle/logs/${familyFileId}${queryString ? `?${queryString}` : ''}`
     );
+  },
+
+  // ==========================================================================
+  // Incoming Call Notifications
+  // ==========================================================================
+
+  /**
+   * Get incoming calls for a child (child auth required)
+   * Poll this endpoint to check for incoming calls from circle contacts
+   */
+  async getIncomingCallsForChild(): Promise<IncomingCallList> {
+    return fetchAPIWithChildAuth<IncomingCallList>('/kidcoms/sessions/incoming/child');
+  },
+
+  /**
+   * Get incoming calls for a circle contact (circle auth required)
+   * Poll this endpoint to check for incoming calls from children
+   */
+  async getIncomingCallsForCircle(): Promise<IncomingCallList> {
+    return fetchAPIWithCircleAuth<IncomingCallList>('/kidcoms/sessions/incoming/circle');
+  },
+
+  /**
+   * Accept an incoming call as a child (child auth required)
+   * Returns the join token to connect to the Daily.co room
+   */
+  async acceptIncomingCallAsChild(sessionId: string): Promise<CallJoinResponse> {
+    return fetchAPIWithChildAuth<CallJoinResponse>(`/kidcoms/sessions/${sessionId}/accept`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Reject an incoming call as a child (child auth required)
+   */
+  async rejectIncomingCallAsChild(sessionId: string): Promise<void> {
+    await fetchAPIWithChildAuth<void>(`/kidcoms/sessions/${sessionId}/reject`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Accept an incoming call as a circle contact (circle auth required)
+   * Returns the join token to connect to the Daily.co room
+   */
+  async acceptIncomingCallAsCircle(sessionId: string): Promise<CallJoinResponse> {
+    return fetchAPIWithCircleAuth<CallJoinResponse>(`/kidcoms/sessions/${sessionId}/circle/accept`, {
+      method: 'POST',
+    });
+  },
+
+  /**
+   * Create a session and call a child (circle auth required)
+   * Returns the join token to connect to the Daily.co room
+   */
+  async createCircleContactSession(childId: string, sessionType: 'video_call' | 'voice_call' = 'video_call'): Promise<CallJoinResponse> {
+    return fetchAPIWithCircleAuth<CallJoinResponse>('/kidcoms/sessions/circle/create', {
+      method: 'POST',
+      body: JSON.stringify({
+        child_id: childId,
+        session_type: sessionType,
+      }),
+    });
   },
 };
 

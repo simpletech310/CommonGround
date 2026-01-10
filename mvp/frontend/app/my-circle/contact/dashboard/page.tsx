@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Video,
@@ -15,8 +15,10 @@ import {
   Shield,
   ChevronRight,
   X,
+  PhoneIncoming,
 } from 'lucide-react';
-import { myCircleAPI, kidcomsAPI, CirclePermission, CircleContactSessionCreate } from '@/lib/api';
+import { myCircleAPI, kidcomsAPI, CirclePermission, IncomingCall } from '@/lib/api';
+import IncomingCallAlert from '@/components/my-circle/incoming-call-alert';
 
 interface CircleUserData {
   userId: string;
@@ -56,10 +58,40 @@ export default function CircleContactDashboardPage() {
   const [selectedChild, setSelectedChild] = useState<ChildWithPermissions | null>(null);
   const [isStartingCall, setIsStartingCall] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+
+  // Poll for incoming calls
+  const checkIncomingCalls = useCallback(async () => {
+    try {
+      const calls = await myCircleAPI.getIncomingCallsForCircle();
+      if (calls.items.length > 0) {
+        // Show the first incoming call
+        setIncomingCall(calls.items[0]);
+      } else {
+        setIncomingCall(null);
+      }
+    } catch (err) {
+      // Silently ignore polling errors
+      console.debug('Incoming call check failed:', err);
+    }
+  }, []);
 
   useEffect(() => {
     loadUserData();
   }, []);
+
+  // Set up polling for incoming calls (every 3 seconds)
+  useEffect(() => {
+    if (!userData) return;
+
+    // Initial check
+    checkIncomingCalls();
+
+    // Poll every 3 seconds
+    const interval = setInterval(checkIncomingCalls, 3000);
+
+    return () => clearInterval(interval);
+  }, [userData, checkIncomingCalls]);
 
   async function loadUserData() {
     try {
@@ -233,6 +265,35 @@ export default function CircleContactDashboardPage() {
     return days.map(d => dayAbbrev[d] || String(d)).join(', ');
   }
 
+  // Handle accepting an incoming call
+  function handleAcceptIncomingCall(joinData: { roomUrl: string; token: string; sessionId: string }) {
+    // Store session info for the call page
+    localStorage.setItem('circle_call_session', JSON.stringify({
+      roomUrl: joinData.roomUrl,
+      token: joinData.token,
+      sessionId: joinData.sessionId,
+      childName: incomingCall?.child_name || 'Child',
+      childAvatar: undefined,
+      sessionType: incomingCall?.session_type || 'video_call',
+      contactName: userData?.contactName,
+      isIncoming: true,
+    }));
+
+    // Clear incoming call state and navigate
+    setIncomingCall(null);
+    router.push('/my-circle/contact/call');
+  }
+
+  // Handle rejecting an incoming call
+  function handleRejectIncomingCall() {
+    setIncomingCall(null);
+  }
+
+  // Handle dismissing an incoming call alert (without action)
+  function handleDismissIncomingCall() {
+    setIncomingCall(null);
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-teal-50 to-cyan-50 flex items-center justify-center">
@@ -243,6 +304,17 @@ export default function CircleContactDashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-teal-50 to-cyan-50">
+      {/* Incoming Call Alert */}
+      {incomingCall && (
+        <IncomingCallAlert
+          call={incomingCall}
+          userType="circle"
+          onAccept={handleAcceptIncomingCall}
+          onReject={handleRejectIncomingCall}
+          onDismiss={handleDismissIncomingCall}
+        />
+      )}
+
       {/* Header */}
       <header className="bg-white shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
