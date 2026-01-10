@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
 
+    # Frontend URL (used for generating invite links, etc.)
+    FRONTEND_URL: str = "https://common-ground-blue.vercel.app"
+
     # CORS
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3001,https://common-ground-blue.vercel.app"
     # Allow Vercel preview/branch URLs by default (regex must match full origin)

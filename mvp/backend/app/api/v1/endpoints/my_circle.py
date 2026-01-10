@@ -384,7 +384,36 @@ async def invite_circle_user(
     await get_family_file_with_access(db, contact.family_file_id, current_user.id)
 
     try:
-        base_url = settings.FRONTEND_URL if hasattr(settings, 'FRONTEND_URL') else "http://localhost:3000"
+        # Create default permissions for all children in the family (if not already created)
+        children_result = await db.execute(
+            select(Child).where(Child.family_file_id == contact.family_file_id)
+        )
+        children = children_result.scalars().all()
+
+        for child in children:
+            # Check if permission already exists
+            existing_permission = await db.execute(
+                select(CirclePermission).where(
+                    and_(
+                        CirclePermission.circle_contact_id == contact.id,
+                        CirclePermission.child_id == child.id
+                    )
+                )
+            )
+            if not existing_permission.scalar_one_or_none():
+                permission = CirclePermission(
+                    circle_contact_id=contact.id,
+                    child_id=child.id,
+                    family_file_id=contact.family_file_id,
+                    can_video_call=True,
+                    can_voice_call=True,
+                    can_chat=True,
+                    can_theater=True,
+                    set_by_parent_id=current_user.id,
+                )
+                db.add(permission)
+
+        base_url = settings.FRONTEND_URL
         circle_user = await my_circle_service.create_circle_user_invite(
             db,
             circle_contact_id=invite_data.circle_contact_id,
