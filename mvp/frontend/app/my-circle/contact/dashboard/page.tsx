@@ -90,7 +90,7 @@ export default function CircleContactDashboardPage() {
       // Convert permissions to children with permissions
       const childrenData: ChildWithPermissions[] = permissionList.items.map((perm) => ({
         child_id: perm.child_id,
-        child_name: `Child ${perm.child_id.slice(0, 4)}`,
+        child_name: perm.child_name || `Child ${perm.child_id.slice(0, 4)}`,
         avatar_id: undefined,
         permissions: perm,
       }));

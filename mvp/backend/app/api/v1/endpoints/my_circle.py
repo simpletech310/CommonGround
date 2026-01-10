@@ -483,6 +483,25 @@ async def create_and_invite_circle_user(
             room.assigned_to_id = contact.id
             room.room_name = invite_data.contact_name
 
+        # Create default permissions for all children in the family
+        children_result = await db.execute(
+            select(Child).where(Child.family_file_id == invite_data.family_file_id)
+        )
+        children = children_result.scalars().all()
+
+        for child in children:
+            permission = CirclePermission(
+                circle_contact_id=contact.id,
+                child_id=child.id,
+                family_file_id=invite_data.family_file_id,
+                can_video_call=True,
+                can_voice_call=True,
+                can_chat=True,
+                can_theater=True,
+                set_by_parent_id=current_user.id,
+            )
+            db.add(permission)
+
         # Create the invite
         base_url = settings.FRONTEND_URL if hasattr(settings, 'FRONTEND_URL') else "http://localhost:3000"
         circle_user = await my_circle_service.create_circle_user_invite(
