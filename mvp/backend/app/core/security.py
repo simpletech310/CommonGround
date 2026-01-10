@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
-from app.models.kidcoms import ChildUser
+from app.models.kidcoms import ChildUser, CircleUser
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -272,3 +272,65 @@ async def get_current_child_user(
         )
 
     return child_user
+
+
+async def get_current_circle_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
+) -> CircleUser:
+    """
+    Get the current authenticated circle user from the JWT token.
+
+    Circle user tokens have type="circle_user" and include contact_id and family_file_id.
+
+    Args:
+        credentials: HTTP authorization credentials
+        db: Database session
+
+    Returns:
+        Current circle user
+
+    Raises:
+        HTTPException: If authentication fails
+    """
+    token = credentials.credentials
+
+    # Decode token
+    payload = decode_token(token)
+
+    # Verify it's a circle user token
+    token_type = payload.get("type")
+    if token_type != "circle_user":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type - expected circle_user token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Get circle user ID from token
+    circle_user_id: str = payload.get("sub")
+    if circle_user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Get circle user from database
+    result = await db.execute(select(CircleUser).where(CircleUser.id == circle_user_id))
+    circle_user = result.scalar_one_or_none()
+
+    if circle_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Circle user not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not circle_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive circle user",
+        )
+
+    return circle_user

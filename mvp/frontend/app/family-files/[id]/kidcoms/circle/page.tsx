@@ -16,14 +16,60 @@ import {
   CheckCircle,
   Clock,
   AlertCircle,
+  Video,
+  PhoneCall,
+  MessageCircle,
+  Film,
+  Shield,
+  ChevronDown,
+  ChevronUp,
+  Settings,
+  Calendar,
 } from 'lucide-react';
 import {
   circleAPI,
   familyFilesAPI,
+  myCircleAPI,
   CircleContact,
   CircleContactCreate,
   RelationshipChoice,
+  CirclePermission,
+  FamilyFileChild,
 } from '@/lib/api';
+
+const DAYS_OF_WEEK = [
+  { value: 0, label: 'Sun' },
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+];
+
+interface PermissionFormData {
+  can_video_call: boolean;
+  can_voice_call: boolean;
+  can_chat: boolean;
+  can_theater: boolean;
+  allowed_days: number[];
+  allowed_start_time: string;
+  allowed_end_time: string;
+  max_call_duration_minutes: number;
+  require_parent_present: boolean;
+}
+
+const DEFAULT_PERMISSION: PermissionFormData = {
+  can_video_call: true,
+  can_voice_call: true,
+  can_chat: true,
+  can_theater: true,
+  allowed_days: [0, 1, 2, 3, 4, 5, 6], // All days
+  allowed_start_time: '09:00',
+  allowed_end_time: '20:00',
+  max_call_duration_minutes: 60,
+  require_parent_present: false,
+};
 
 export default function CircleManagementPage() {
   const params = useParams();
@@ -34,10 +80,14 @@ export default function CircleManagementPage() {
   const [error, setError] = useState<string | null>(null);
   const [familyTitle, setFamilyTitle] = useState<string>('');
   const [contacts, setContacts] = useState<CircleContact[]>([]);
+  const [children, setChildren] = useState<FamilyFileChild[]>([]);
+  const [permissions, setPermissions] = useState<CirclePermission[]>([]);
   const [relationshipChoices, setRelationshipChoices] = useState<RelationshipChoice[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingContact, setEditingContact] = useState<CircleContact | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [expandedContactId, setExpandedContactId] = useState<string | null>(null);
+  const [savingPermission, setSavingPermission] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<CircleContactCreate>({
     family_file_id: familyFileId,
@@ -57,20 +107,82 @@ export default function CircleManagementPage() {
       setIsLoading(true);
       setError(null);
 
-      const [contactsData, familyData, choices] = await Promise.all([
+      const [contactsData, familyData, choices, childrenData, permissionsData] = await Promise.all([
         circleAPI.list(familyFileId, { includeInactive: true }),
         familyFilesAPI.get(familyFileId),
         circleAPI.getRelationshipChoices(),
+        familyFilesAPI.getChildren(familyFileId),
+        myCircleAPI.listPermissions(familyFileId),
       ]);
 
       setContacts(contactsData.items);
       setFamilyTitle(familyData.title);
       setRelationshipChoices(choices);
+      setChildren(childrenData.items);
+      setPermissions(permissionsData.items);
     } catch (err) {
       console.error('Error loading circle data:', err);
       setError('Failed to load circle contacts');
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  function getPermissionForContactAndChild(contactId: string, childId: string): CirclePermission | undefined {
+    return permissions.find(
+      (p) => p.circle_contact_id === contactId && p.child_id === childId
+    );
+  }
+
+  function getPermissionFormData(contactId: string, childId: string): PermissionFormData {
+    const existing = getPermissionForContactAndChild(contactId, childId);
+    if (existing) {
+      return {
+        can_video_call: existing.can_video_call,
+        can_voice_call: existing.can_voice_call,
+        can_chat: existing.can_chat,
+        can_theater: existing.can_theater,
+        allowed_days: existing.allowed_days || [0, 1, 2, 3, 4, 5, 6],
+        allowed_start_time: existing.allowed_start_time || '09:00',
+        allowed_end_time: existing.allowed_end_time || '20:00',
+        max_call_duration_minutes: existing.max_call_duration_minutes || 60,
+        require_parent_present: existing.require_parent_present,
+      };
+    }
+    return { ...DEFAULT_PERMISSION };
+  }
+
+  async function handleSavePermission(
+    contactId: string,
+    childId: string,
+    data: PermissionFormData
+  ) {
+    const key = `${contactId}-${childId}`;
+    setSavingPermission(key);
+
+    try {
+      const existing = getPermissionForContactAndChild(contactId, childId);
+
+      if (existing) {
+        // Update existing permission
+        const updated = await myCircleAPI.updatePermission(existing.id, data);
+        setPermissions((prev) =>
+          prev.map((p) => (p.id === updated.id ? updated : p))
+        );
+      } else {
+        // Create new permission
+        const created = await myCircleAPI.createPermission({
+          circle_contact_id: contactId,
+          child_id: childId,
+          ...data,
+        });
+        setPermissions((prev) => [...prev, created]);
+      }
+    } catch (err) {
+      console.error('Error saving permission:', err);
+      setError('Failed to save permission');
+    } finally {
+      setSavingPermission(null);
     }
   }
 
@@ -350,96 +462,357 @@ export default function CircleManagementPage() {
             {contacts.map((contact) => {
               const status = getApprovalStatus(contact);
               const StatusIcon = status.icon;
+              const isExpanded = expandedContactId === contact.id;
 
               return (
                 <div
                   key={contact.id}
-                  className={`bg-white rounded-xl shadow-sm border p-4 ${
+                  className={`bg-white rounded-xl shadow-sm border overflow-hidden ${
                     !contact.is_active ? 'opacity-50' : ''
                   }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-4">
-                      <div className="w-12 h-12 rounded-full bg-green-200 flex items-center justify-center text-green-700 font-semibold text-lg">
-                        {contact.contact_name[0]}
+                  {/* Contact Header */}
+                  <div className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start space-x-4">
+                        <div className="w-12 h-12 rounded-full bg-green-200 flex items-center justify-center text-green-700 font-semibold text-lg">
+                          {contact.contact_name[0]}
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <h3 className="font-semibold text-gray-900">
+                              {contact.contact_name}
+                            </h3>
+                            <span className={`flex items-center space-x-1 text-sm ${status.color}`}>
+                              <StatusIcon className="h-4 w-4" />
+                              <span>{status.text}</span>
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-500 capitalize">
+                            {contact.relationship_type.replace('_', ' ')}
+                          </p>
+                          <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
+                            {contact.contact_email && (
+                              <span className="flex items-center space-x-1">
+                                <Mail className="h-4 w-4" />
+                                <span>{contact.contact_email}</span>
+                              </span>
+                            )}
+                            {contact.contact_phone && (
+                              <span className="flex items-center space-x-1">
+                                <Phone className="h-4 w-4" />
+                                <span>{contact.contact_phone}</span>
+                              </span>
+                            )}
+                          </div>
+                          {contact.notes && (
+                            <p className="mt-2 text-sm text-gray-600">{contact.notes}</p>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <h3 className="font-semibold text-gray-900">
-                            {contact.contact_name}
-                          </h3>
-                          <span className={`flex items-center space-x-1 text-sm ${status.color}`}>
-                            <StatusIcon className="h-4 w-4" />
-                            <span>{status.text}</span>
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-500 capitalize">
-                          {contact.relationship_type.replace('_', ' ')}
-                        </p>
-                        <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-                          {contact.contact_email && (
-                            <span className="flex items-center space-x-1">
-                              <Mail className="h-4 w-4" />
-                              <span>{contact.contact_email}</span>
-                            </span>
-                          )}
-                          {contact.contact_phone && (
-                            <span className="flex items-center space-x-1">
-                              <Phone className="h-4 w-4" />
-                              <span>{contact.contact_phone}</span>
-                            </span>
-                          )}
-                        </div>
-                        {contact.notes && (
-                          <p className="mt-2 text-sm text-gray-600">{contact.notes}</p>
+
+                      <div className="flex items-center space-x-2">
+                        {!contact.is_fully_approved && (
+                          <button
+                            onClick={() => handleApprove(contact.id, true)}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                            title="Approve"
+                          >
+                            <Check className="h-5 w-5" />
+                          </button>
                         )}
+
+                        {!contact.is_verified && contact.contact_email && (
+                          <button
+                            onClick={() => handleSendInvite(contact.id)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                            title="Send verification invite"
+                          >
+                            <Send className="h-5 w-5" />
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => startEdit(contact)}
+                          className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+                          title="Edit"
+                        >
+                          <Edit className="h-5 w-5" />
+                        </button>
+
+                        <button
+                          onClick={() => handleDelete(contact.id)}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                          title="Remove"
+                        >
+                          <Trash2 className="h-5 w-5" />
+                        </button>
                       </div>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      {!contact.is_fully_approved && (
-                        <button
-                          onClick={() => handleApprove(contact.id, true)}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
-                          title="Approve"
-                        >
-                          <Check className="h-5 w-5" />
-                        </button>
-                      )}
-
-                      {!contact.is_verified && contact.contact_email && (
-                        <button
-                          onClick={() => handleSendInvite(contact.id)}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                          title="Send verification invite"
-                        >
-                          <Send className="h-5 w-5" />
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => startEdit(contact)}
-                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
-                        title="Edit"
-                      >
-                        <Edit className="h-5 w-5" />
-                      </button>
-
-                      <button
-                        onClick={() => handleDelete(contact.id)}
-                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
-                        title="Remove"
-                      >
-                        <Trash2 className="h-5 w-5" />
-                      </button>
                     </div>
                   </div>
+
+                  {/* Permissions Toggle */}
+                  {contact.is_fully_approved && children.length > 0 && (
+                    <button
+                      onClick={() => setExpandedContactId(isExpanded ? null : contact.id)}
+                      className="w-full px-4 py-3 bg-gray-50 border-t flex items-center justify-between hover:bg-gray-100 transition-colors"
+                    >
+                      <div className="flex items-center space-x-2 text-gray-700">
+                        <Settings className="h-4 w-4" />
+                        <span className="text-sm font-medium">Communication Permissions</span>
+                        <span className="text-xs text-gray-500">
+                          ({children.length} {children.length === 1 ? 'child' : 'children'})
+                        </span>
+                      </div>
+                      {isExpanded ? (
+                        <ChevronUp className="h-4 w-4 text-gray-500" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-gray-500" />
+                      )}
+                    </button>
+                  )}
+
+                  {/* Permissions Panel */}
+                  {isExpanded && contact.is_fully_approved && (
+                    <div className="border-t bg-gray-50 p-4">
+                      <div className="space-y-6">
+                        {children.map((child) => (
+                          <PermissionPanel
+                            key={child.id}
+                            contact={contact}
+                            child={child}
+                            initialData={getPermissionFormData(contact.id, child.id)}
+                            onSave={(data) => handleSavePermission(contact.id, child.id, data)}
+                            isSaving={savingPermission === `${contact.id}-${child.id}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+// Permission Panel Component
+interface PermissionPanelProps {
+  contact: CircleContact;
+  child: FamilyFileChild;
+  initialData: PermissionFormData;
+  onSave: (data: PermissionFormData) => Promise<void>;
+  isSaving: boolean;
+}
+
+function PermissionPanel({ contact, child, initialData, onSave, isSaving }: PermissionPanelProps) {
+  const [formData, setFormData] = useState<PermissionFormData>(initialData);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  function updateField<K extends keyof PermissionFormData>(
+    field: K,
+    value: PermissionFormData[K]
+  ) {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setHasChanges(true);
+  }
+
+  function toggleDay(day: number) {
+    const newDays = formData.allowed_days.includes(day)
+      ? formData.allowed_days.filter((d) => d !== day)
+      : [...formData.allowed_days, day].sort((a, b) => a - b);
+    updateField('allowed_days', newDays);
+  }
+
+  async function handleSave() {
+    await onSave(formData);
+    setHasChanges(false);
+  }
+
+  return (
+    <div className="bg-white rounded-lg border p-4">
+      {/* Child Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+            <span className="text-purple-600 font-semibold">
+              {child.first_name[0]}
+            </span>
+          </div>
+          <div>
+            <h4 className="font-medium text-gray-900">{child.first_name}</h4>
+            <p className="text-xs text-gray-500">
+              Permissions for {contact.contact_name}
+            </p>
+          </div>
+        </div>
+        {hasChanges && (
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center space-x-1"
+          >
+            {isSaving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Check className="h-4 w-4" />
+                <span>Save</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      {/* Communication Methods */}
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Allowed Communication
+        </label>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <button
+            type="button"
+            onClick={() => updateField('can_video_call', !formData.can_video_call)}
+            className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-colors ${
+              formData.can_video_call
+                ? 'bg-green-50 border-green-300 text-green-700'
+                : 'bg-gray-50 border-gray-200 text-gray-400'
+            }`}
+          >
+            <Video className="h-4 w-4" />
+            <span className="text-sm">Video</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => updateField('can_voice_call', !formData.can_voice_call)}
+            className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-colors ${
+              formData.can_voice_call
+                ? 'bg-green-50 border-green-300 text-green-700'
+                : 'bg-gray-50 border-gray-200 text-gray-400'
+            }`}
+          >
+            <PhoneCall className="h-4 w-4" />
+            <span className="text-sm">Voice</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => updateField('can_chat', !formData.can_chat)}
+            className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-colors ${
+              formData.can_chat
+                ? 'bg-green-50 border-green-300 text-green-700'
+                : 'bg-gray-50 border-gray-200 text-gray-400'
+            }`}
+          >
+            <MessageCircle className="h-4 w-4" />
+            <span className="text-sm">Chat</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => updateField('can_theater', !formData.can_theater)}
+            className={`flex items-center justify-center space-x-2 p-2 rounded-lg border transition-colors ${
+              formData.can_theater
+                ? 'bg-green-50 border-green-300 text-green-700'
+                : 'bg-gray-50 border-gray-200 text-gray-400'
+            }`}
+          >
+            <Film className="h-4 w-4" />
+            <span className="text-sm">Theater</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Allowed Days */}
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          <Calendar className="h-4 w-4 inline mr-1" />
+          Allowed Days
+        </label>
+        <div className="flex flex-wrap gap-1">
+          {DAYS_OF_WEEK.map((day) => (
+            <button
+              key={day.value}
+              type="button"
+              onClick={() => toggleDay(day.value)}
+              className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                formData.allowed_days.includes(day.value)
+                  ? 'bg-purple-50 border-purple-300 text-purple-700'
+                  : 'bg-gray-50 border-gray-200 text-gray-400'
+              }`}
+            >
+              {day.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Time Restrictions */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Start Time
+          </label>
+          <input
+            type="time"
+            value={formData.allowed_start_time}
+            onChange={(e) => updateField('allowed_start_time', e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            End Time
+          </label>
+          <input
+            type="time"
+            value={formData.allowed_end_time}
+            onChange={(e) => updateField('allowed_end_time', e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Max Duration (min)
+          </label>
+          <input
+            type="number"
+            min="5"
+            max="180"
+            step="5"
+            value={formData.max_call_duration_minutes}
+            onChange={(e) => updateField('max_call_duration_minutes', parseInt(e.target.value) || 60)}
+            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+          />
+        </div>
+      </div>
+
+      {/* Supervision Option */}
+      <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+        <div className="flex items-center space-x-2">
+          <Shield className="h-5 w-5 text-yellow-600" />
+          <div>
+            <p className="text-sm font-medium text-yellow-800">Require Parent Present</p>
+            <p className="text-xs text-yellow-600">
+              A parent must be on the call with the child
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => updateField('require_parent_present', !formData.require_parent_present)}
+          className={`relative w-12 h-6 rounded-full transition-colors ${
+            formData.require_parent_present ? 'bg-yellow-500' : 'bg-gray-300'
+          }`}
+        >
+          <span
+            className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+              formData.require_parent_present ? 'translate-x-7' : 'translate-x-1'
+            }`}
+          />
+        </button>
+      </div>
     </div>
   );
 }

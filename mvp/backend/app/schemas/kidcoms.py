@@ -181,6 +181,26 @@ class ChildSessionCreate(BaseModel):
     )
 
 
+class CircleContactSessionCreate(BaseModel):
+    """Schema for a circle contact to initiate a KidComs session.
+
+    Used when a circle contact (grandparent, aunt, etc.) initiates a call with a child.
+    The circle contact's user info comes from their auth token.
+    """
+    # Target child to call
+    child_id: str = Field(
+        ...,
+        description="ID of the child to call"
+    )
+
+    # Session type
+    session_type: str = Field(
+        default="video_call",
+        pattern=r"^(video_call|voice_call)$",
+        description="Type of session - video_call or voice_call"
+    )
+
+
 class KidComsSessionUpdate(BaseModel):
     """Schema for updating a KidComs session."""
     title: Optional[str] = Field(default=None, max_length=200)

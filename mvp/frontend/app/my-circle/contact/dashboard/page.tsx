@@ -16,7 +16,7 @@ import {
   ChevronRight,
   X,
 } from 'lucide-react';
-import { myCircleAPI, CirclePermission } from '@/lib/api';
+import { myCircleAPI, kidcomsAPI, CirclePermission, CircleContactSessionCreate } from '@/lib/api';
 
 interface CircleUserData {
   userId: string;
@@ -175,12 +175,35 @@ export default function CircleContactDashboardPage() {
     }
 
     setIsStartingCall(true);
-    // TODO: Implement actual call initiation via kidcomsAPI
-    setTimeout(() => {
-      alert(`Starting ${type} call with ${child.child_name}...`);
+    setError(null);
+
+    try {
+      // Create session via API
+      const sessionType = type === 'video' ? 'video_call' : 'voice_call';
+      const response = await kidcomsAPI.createCircleContactSession({
+        child_id: child.child_id,
+        session_type: sessionType,
+      });
+
+      // Store session info for the call page
+      localStorage.setItem('circle_call_session', JSON.stringify({
+        roomUrl: response.room_url,
+        token: response.token,
+        sessionId: response.session_id,
+        childName: child.child_name,
+        childAvatar: child.avatar_id,
+        sessionType: sessionType,
+        contactName: userData?.contactName,
+      }));
+
+      // Navigate to call page
+      router.push('/my-circle/contact/call');
+    } catch (err: any) {
+      console.error('Error starting call:', err);
+      const errorMessage = err?.message || 'Failed to start call. Please try again.';
+      setError(errorMessage);
       setIsStartingCall(false);
-      setSelectedChild(null);
-    }, 1000);
+    }
   }
 
   function formatTime(timeStr?: string): string {

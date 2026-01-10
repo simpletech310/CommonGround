@@ -178,6 +178,14 @@ function getChildAuthToken(): string | null {
 }
 
 /**
+ * Get circle user auth token from localStorage (for circle contact-initiated API calls)
+ */
+function getCircleAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('circle_token');
+}
+
+/**
  * Fetch API with child authentication token
  */
 async function fetchAPIWithChildAuth<T>(
@@ -196,6 +204,54 @@ async function fetchAPIWithChildAuth<T>(
     defaultHeaders['Authorization'] = `Bearer ${token}`;
   } else {
     throw new Error('Child not authenticated');
+  }
+
+  const config: RequestInit = {
+    ...options,
+    headers: {
+      ...defaultHeaders,
+      ...options.headers,
+    },
+  };
+
+  try {
+    const response = await fetch(url, config);
+    const contentType = response.headers.get('content-type');
+    const isJSON = contentType?.includes('application/json');
+
+    if (!response.ok) {
+      const errorData = isJSON ? await response.json() : { detail: response.statusText };
+      throw new Error(errorData.detail || errorData.message || `API error: ${response.status}`);
+    }
+
+    if (isJSON) {
+      return await response.json();
+    }
+    return {} as T;
+  } catch (error) {
+    throw error;
+  }
+}
+
+/**
+ * Fetch API with circle user authentication token
+ */
+async function fetchAPIWithCircleAuth<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const url = `${API_URL}${endpoint}`;
+
+  const defaultHeaders: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+
+  // Add circle auth token
+  const token = getCircleAuthToken();
+  if (token) {
+    defaultHeaders['Authorization'] = `Bearer ${token}`;
+  } else {
+    throw new Error('Circle user not authenticated');
   }
 
   const config: RequestInit = {
@@ -5119,6 +5175,11 @@ export interface ChildSessionCreate {
   session_type?: 'video_call' | 'voice_call';
 }
 
+export interface CircleContactSessionCreate {
+  child_id: string;
+  session_type?: 'video_call' | 'voice_call';
+}
+
 export const kidcomsAPI = {
   // Settings
   /**
@@ -5238,6 +5299,18 @@ export const kidcomsAPI = {
   async childJoinSession(sessionId: string): Promise<JoinSessionResponse> {
     return fetchAPIWithChildAuth<JoinSessionResponse>(`/kidcoms/sessions/child/${sessionId}/join`, {
       method: 'POST',
+    });
+  },
+
+  // Circle contact-initiated sessions
+  /**
+   * Create a session initiated by a circle contact (grandparent, aunt, etc.)
+   * Uses circle_token from localStorage for authentication
+   */
+  async createCircleContactSession(data: CircleContactSessionCreate): Promise<JoinSessionResponse> {
+    return fetchAPIWithCircleAuth<JoinSessionResponse>('/kidcoms/sessions/circle/create', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
 

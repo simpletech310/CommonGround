@@ -16,7 +16,7 @@ import secrets
 logger = logging.getLogger(__name__)
 
 from app.core.database import get_db
-from app.core.security import get_current_user, get_current_child_user
+from app.core.security import get_current_user, get_current_child_user, get_current_circle_user
 from app.services.daily_video import daily_service
 from app.models.user import User
 from app.models.family_file import FamilyFile
@@ -31,6 +31,8 @@ from app.models.kidcoms import (
     SessionType,
     ParticipantType,
     ChildUser,
+    CircleUser,
+    CirclePermission,
 )
 from app.schemas.kidcoms import (
     KidComsSettingsCreate,
@@ -56,6 +58,7 @@ from app.schemas.kidcoms import (
     ARIAChatAnalyzeResponse,
     SESSION_TYPES,
     ChildSessionCreate,
+    CircleContactSessionCreate,
 )
 
 router = APIRouter()
@@ -861,6 +864,227 @@ async def child_join_session(
         token=token,
         participant_name=child_name,
         participant_type=ParticipantType.CHILD.value,
+    )
+
+
+# ============================================================
+# Circle Contact Session Endpoints
+# ============================================================
+
+@router.post(
+    "/sessions/circle/create",
+    status_code=status.HTTP_201_CREATED,
+    response_model=KidComsJoinResponse,
+    summary="Create session as circle contact",
+    description="Allows a circle contact (grandparent, aunt, etc.) to initiate a call with a child."
+)
+async def create_circle_contact_session(
+    session_data: CircleContactSessionCreate,
+    current_circle_user: CircleUser = Depends(get_current_circle_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create a new KidComs session initiated by a circle contact.
+
+    - Validates circle contact has permission for this child
+    - Checks time restrictions (allowed days/hours)
+    - Creates Daily.co room and session
+    - Returns room URL and token to join
+    """
+    # Get the circle contact associated with this user
+    contact_result = await db.execute(
+        select(CircleContact).where(
+            CircleContact.id == current_circle_user.circle_contact_id
+        )
+    )
+    contact = contact_result.scalar_one_or_none()
+
+    if not contact:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Circle contact not found"
+        )
+
+    if not contact.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Circle contact is not active"
+        )
+
+    if not contact.is_fully_approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Circle contact is not fully approved yet"
+        )
+
+    family_file_id = contact.family_file_id
+
+    # Get KidComs settings
+    settings_result = await db.execute(
+        select(KidComsSettings).where(KidComsSettings.family_file_id == family_file_id)
+    )
+    settings = settings_result.scalar_one_or_none()
+
+    if not settings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="KidComs not configured for this family"
+        )
+
+    if not settings.is_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="KidComs is not enabled for this family"
+        )
+
+    # Get the child
+    child_result = await db.execute(
+        select(Child).where(
+            and_(
+                Child.id == session_data.child_id,
+                Child.family_file_id == family_file_id
+            )
+        )
+    )
+    child = child_result.scalar_one_or_none()
+
+    if not child:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Child not found in this family"
+        )
+
+    # Check permissions for this circle contact + child combination
+    permission_result = await db.execute(
+        select(CirclePermission).where(
+            and_(
+                CirclePermission.circle_contact_id == contact.id,
+                CirclePermission.child_id == session_data.child_id
+            )
+        )
+    )
+    permission = permission_result.scalar_one_or_none()
+
+    if not permission:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No permission to communicate with this child"
+        )
+
+    # Check allowed communication type
+    if session_data.session_type == "video_call" and not permission.can_video_call:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Video calls are not enabled for this connection"
+        )
+
+    if session_data.session_type == "voice_call" and not permission.can_voice_call:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Voice calls are not enabled for this connection"
+        )
+
+    # Check time restrictions
+    from datetime import datetime
+    now = datetime.now()
+
+    # Check allowed days (0=Sunday, 6=Saturday)
+    if permission.allowed_days:
+        today = now.weekday()
+        # Convert Python weekday (0=Monday) to JS weekday (0=Sunday)
+        js_weekday = (today + 1) % 7
+        if js_weekday not in permission.allowed_days:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Calls are not allowed on this day"
+            )
+
+    # Check allowed hours
+    if permission.allowed_start_time and permission.allowed_end_time:
+        current_time = now.strftime("%H:%M")
+        if current_time < permission.allowed_start_time or current_time > permission.allowed_end_time:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Calls are only allowed between {permission.allowed_start_time} and {permission.allowed_end_time}"
+            )
+
+    # Generate Daily.co room
+    room_name = generate_room_name()
+
+    # Create room via Daily.co API
+    try:
+        max_duration = permission.max_call_duration_minutes or 60
+        room_data = await daily_service.create_room(
+            room_name=room_name,
+            privacy="private",
+            exp_minutes=max_duration + 30,
+            max_participants=settings.max_participants_per_session,
+            enable_chat=settings.allowed_features.get("chat", True),
+            enable_recording=settings.record_sessions,
+        )
+        room_url = room_data.get("url", f"https://{daily_service.domain}/{room_name}")
+    except Exception as e:
+        logger.error(f"Failed to create Daily.co room: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to create video room. Please try again later."
+        )
+
+    # Create session
+    session = KidComsSession(
+        family_file_id=family_file_id,
+        child_id=session_data.child_id,
+        session_type=session_data.session_type,
+        title=f"Call from {contact.contact_name}",
+        daily_room_name=room_name,
+        daily_room_url=room_url,
+        initiated_by_id=current_circle_user.id,
+        initiated_by_type=ParticipantType.CIRCLE_CONTACT.value,
+        status=SessionStatus.WAITING.value,
+    )
+
+    # Add circle contact as first participant
+    session.add_participant(
+        participant_id=contact.id,
+        participant_type=ParticipantType.CIRCLE_CONTACT.value,
+        name=contact.contact_name
+    )
+
+    # Add child as invited participant
+    session.add_participant(
+        participant_id=str(child.id),
+        participant_type=ParticipantType.CHILD.value,
+        name=child.display_name
+    )
+
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+
+    # Generate Daily.co meeting token for the circle contact
+    try:
+        token = await daily_service.create_meeting_token(
+            room_name=session.daily_room_name,
+            user_name=contact.contact_name,
+            user_id=str(contact.id),
+            is_owner=False,  # Circle contacts are not owners
+            exp_minutes=permission.max_call_duration_minutes or 60,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create meeting token: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to generate meeting token. Please try again."
+        )
+
+    # TODO: Send notification to child/parents about incoming call
+
+    return KidComsJoinResponse(
+        session_id=session.id,
+        room_url=session.daily_room_url,
+        token=token,
+        participant_name=contact.contact_name,
+        participant_type=ParticipantType.CIRCLE_CONTACT.value,
     )
 
 
